@@ -1,138 +1,230 @@
 #!/bin/bash
-# 04-archinstall-template.sh - 生成 archinstall 4.1 可配置 JSON
-# 用法: bash 04-archinstall-template.sh
-# 在 USB 安装盘或正常系统环境中运行，交互式选择后生成 user_configuration.json 和 user_credentials.json
+# ╔═══════════════════════════════════════════════════════════════════════════════╗
+# ║  archinstall-template.sh — Archinstall 4.1 Interactive Configuration Generator
+# ║  Generates user_configuration.json & user_credentials.json                  ║
+# ║  Run from Arch ISO or a running Arch system                                 ║
+# ╚═══════════════════════════════════════════════════════════════════════════════╝
 set -euo pipefail
 
-# 权限处理: blockdev 等操作需要 root 权限
-# 在 Live USB 中通常已是 root；在正常系统中需要 sudo
-if [ "$EUID" -eq 0 ]; then
-    SUDO=""
-else
-    if command -v sudo &>/dev/null && sudo -n true 2>/dev/null; then
-        SUDO="sudo"
-    else
-        echo "部分操作需要 root 权限（读取磁盘信息），尝试 sudo 提权..."
-        # 触发一次密码输入，后续命令在 sudo 缓存期内不再需要
-        if sudo true 2>/dev/null; then
-            SUDO="sudo"
-        else
-            echo "错误: 无法获取 root 权限，请使用 sudo 运行此脚本"
-            exit 1
-        fi
-    fi
-fi
+# ─── Source UI library ───
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/lib/ui.sh"
 
-echo "=== Archinstall 4.1 配置生成器 ==="
-echo ""
+# ─── Initialize logging ───
+ui::log_init "/tmp/archinstall-template-$(date '+%Y%m%d-%H%M%S').log"
 
-# 1. 选择语言
-echo "请选择系统语言:"
-echo "  1) zh_CN.UTF-8 (简体中文)"
-echo "  2) en_US.UTF-8 (English)"
-echo "  3) ja_JP.UTF-8 (日本語)"
-read -rp "选择 [1-3, 默认 1]: " LANG_CHOICE
-LANG_CHOICE="${LANG_CHOICE:-1}"
+# ═══════════════════════════════════════════════════════════════════════════════
+# Banner
+# ═══════════════════════════════════════════════════════════════════════════════
 
-case "$LANG_CHOICE" in
-    1) SYS_LANG="zh_CN.UTF-8" ;;
-    2) SYS_LANG="en_US.UTF-8" ;;
-    3) SYS_LANG="ja_JP.UTF-8" ;;
-    *) SYS_LANG="zh_CN.UTF-8" ;;
-esac
+ui::banner \
+    '   █████  ██████   ██████ ██   ██' \
+    '  ██   ██ ██   ██ ██      ██   ██' \
+    '  ███████ ██████  ██      ███████' \
+    '  ██   ██ ██   ██ ██      ██   ██' \
+    '  ██   ██ ██   ██  ██████ ██   ██' \
+    '' \
+    "  ${UI_DIM}Bootstrap · Archinstall 4.1 Configuration Generator${UI_NC}"
 
-# 2. 选择安装目标磁盘
-echo ""
-echo "可用磁盘:"
-lsblk -d -o NAME,SIZE,MODEL | grep -v loop
-echo ""
-read -rp "请输入目标磁盘 (如 nvme1n1, sda) [默认 nvme1n1]: " TARGET_DISK
-TARGET_DISK="${TARGET_DISK:-nvme1n1}"
-TARGET_DEV="/dev/${TARGET_DISK}"
+# ═══════════════════════════════════════════════════════════════════════════════
+# §0. Privilege Check
+# ═══════════════════════════════════════════════════════════════════════════════
 
-if [ ! -b "$TARGET_DEV" ]; then
-    echo "错误: $TARGET_DEV 不存在"
+ui::require_root || exit 1
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# §1. Select System Language
+# ═══════════════════════════════════════════════════════════════════════════════
+
+ui::section "语言 / Language" "选择系统语言 (locale)"
+
+SYS_LANG=$(ui::select "系统语言 System Language" \
+    "简体中文  zh_CN.UTF-8|zh_CN.UTF-8" \
+    "English   en_US.UTF-8|en_US.UTF-8" \
+    "日本語    ja_JP.UTF-8|ja_JP.UTF-8") || SYS_LANG="zh_CN.UTF-8"
+
+ui::success "语言: ${SYS_LANG}"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# §2. Select Target Disk (with preview)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+ui::section "磁盘 / Disk" "选择安装目标磁盘"
+
+# Build disk list dynamically
+declare -a DISK_ITEMS=()
+while IFS= read -r line; do
+    disk_name=$(echo "$line" | awk '{print $1}')
+    disk_size=$(echo "$line" | awk '{print $2}')
+    disk_model=$(echo "$line" | awk '{$1=$2=""; print}' | sed 's/^ *//')
+    DISK_ITEMS+=("${disk_name}  ${disk_size}  ${disk_model}|${disk_name}")
+done < <(lsblk -d -n -o NAME,SIZE,MODEL | grep -v loop)
+
+if [[ ${#DISK_ITEMS[@]} -eq 0 ]]; then
+    ui::error "No disks found!"
     exit 1
 fi
 
-# 3. 选择网络后端
-echo ""
-echo "请选择网络管理方式:"
-echo "  1) nm_iwd  - NetworkManager + iwd (推荐，更省电)"
-echo "  2) nm      - NetworkManager + wpa_supplicant (传统)"
-read -rp "选择 [1-2, 默认 1]: " NET_CHOICE
-NET_CHOICE="${NET_CHOICE:-1}"
+# Preview command shows detailed partition/filesystem info for the selected disk
+TARGET_DISK=$(ui::select_with_preview "安装目标磁盘 Target Disk" \
+    "lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT,LABEL /dev/{}" \
+    "${DISK_ITEMS[@]}") || {
+    ui::warn "No disk selected, defaulting to first available disk"
+    TARGET_DISK=$(echo "${DISK_ITEMS[0]}" | cut -d'|' -f2)
+}
 
-case "$NET_CHOICE" in
-    1) NET_TYPE="nm_iwd" ;;
-    2) NET_TYPE="nm" ;;
-    *) NET_TYPE="nm_iwd" ;;
-esac
+TARGET_DEV="/dev/${TARGET_DISK}"
 
-# 4. 是否启用 multilib
-echo ""
-read -rp "是否启用 multilib 仓库 (用于 32 位兼容，如 Steam)? [Y/n]: " MULTILIB_CHOICE
-MULTILIB_CHOICE="${MULTILIB_CHOICE:-Y}"
+if [[ ! -b "$TARGET_DEV" ]]; then
+    ui::error "${TARGET_DEV} does not exist"
+    exit 1
+fi
 
-if [[ "$MULTILIB_CHOICE" =~ ^[Yy] ]]; then
+ui::success "目标磁盘: ${TARGET_DEV}"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# §3. Select Network Backend
+# ═══════════════════════════════════════════════════════════════════════════════
+
+ui::section "网络 / Network" "选择网络管理方式"
+
+NET_TYPE=$(ui::select "网络后端 Network Backend" \
+    "NetworkManager + iwd  (推荐，更省电)|nm_iwd" \
+    "NetworkManager + wpa_supplicant  (传统)|nm") || NET_TYPE="nm_iwd"
+
+ui::success "网络: ${NET_TYPE}"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# §4. Optional Repositories
+# ═══════════════════════════════════════════════════════════════════════════════
+
+ui::section "仓库 / Repositories" "选择要启用的可选仓库"
+
+OPTIONAL_REPOS=""
+if ui::confirm "启用 multilib 仓库? (32 位兼容，如 Steam)" "Y"; then
     OPTIONAL_REPOS='"multilib"'
+    ui::success "multilib: 已启用"
 else
-    OPTIONAL_REPOS=''
+    ui::log "multilib: 未启用"
 fi
 
-# 5. 非英文语言时的额外包
+# ═══════════════════════════════════════════════════════════════════════════════
+# §5. Extra Packages (auto-detect based on language)
+# ═══════════════════════════════════════════════════════════════════════════════
+
 EXTRA_PACKAGES='"neovim", "git", "7zip", "base-devel", "zsh"'
-if [ "$SYS_LANG" != "en_US.UTF-8" ]; then
-    EXTRA_PACKAGES="$EXTRA_PACKAGES, \"kmscon\""
-    echo ""
-    echo "提示: 已自动添加 kmscon 包用于非英文 TTY 显示支持"
+NEED_KMSCON=false
+
+if [[ "$SYS_LANG" != "en_US.UTF-8" ]]; then
+    EXTRA_PACKAGES="${EXTRA_PACKAGES}, \"kmscon\""
+    NEED_KMSCON=true
+    ui::log "已自动添加 ${UI_BOLD}kmscon${UI_NC} 用于非英文 TTY 显示支持"
 fi
 
-# 6. 获取磁盘大小（字节）用于分区计算
+# ═══════════════════════════════════════════════════════════════════════════════
+# §6. Partition Calculation
+# ═══════════════════════════════════════════════════════════════════════════════
+
+ui::step 1 2 "Reading disk geometry..."
+
 DISK_SIZE_BYTES=$($SUDO blockdev --getsize64 "$TARGET_DEV")
-# EFI 分区 1GiB，起始于 1MiB
+# EFI: 1GiB starting at 1MiB
 EFI_START_BYTES=1048576
 EFI_SIZE_GIB=1
 BTRFS_START_BYTES=$((EFI_START_BYTES + EFI_SIZE_GIB * 1073741824))
 BTRFS_SIZE_BYTES=$((DISK_SIZE_BYTES - BTRFS_START_BYTES))
 
-# 7. 设置用户凭据
-echo ""
-# 默认用户名: 若通过 sudo 执行则取原始用户名，直接 root 则无默认值
-if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
+DISK_SIZE_HUMAN=$(numfmt --to=iec-i --suffix=B "$DISK_SIZE_BYTES" 2>/dev/null || echo "${DISK_SIZE_BYTES} bytes")
+BTRFS_SIZE_HUMAN=$(numfmt --to=iec-i --suffix=B "$BTRFS_SIZE_BYTES" 2>/dev/null || echo "${BTRFS_SIZE_BYTES} bytes")
+
+ui::step 2 2 "Partition layout calculated"
+ui::info_kv "EFI" "1 GiB" "(FAT32, /boot)"
+ui::info_kv "Btrfs" "${BTRFS_SIZE_HUMAN}" "(compress=zstd, subvols: @ @home @log @pkg)"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# §7. User Credentials
+# ═══════════════════════════════════════════════════════════════════════════════
+
+ui::section "用户 / User Account" "配置用户名和密码"
+
+# Smart default: SUDO_USER > USER > (no default if root)
+if [[ -n "${SUDO_USER:-}" ]] && [[ "$SUDO_USER" != "root" ]]; then
     DEFAULT_USER="$SUDO_USER"
-elif [ "$EUID" -ne 0 ] && [ -n "${USER:-}" ]; then
+elif [[ "$EUID" -ne 0 ]] && [[ -n "${USER:-}" ]]; then
     DEFAULT_USER="$USER"
 else
     DEFAULT_USER=""
 fi
 
-if [ -n "$DEFAULT_USER" ]; then
-    read -rp "请输入用户名 [默认 ${DEFAULT_USER}]: " USERNAME
-    USERNAME="${USERNAME:-$DEFAULT_USER}"
+if [[ -n "$DEFAULT_USER" ]]; then
+    USERNAME=$(ui::input "用户名 Username" "$DEFAULT_USER")
 else
-    while true; do
-        read -rp "请输入用户名: " USERNAME
-        [ -n "$USERNAME" ] && break
-        echo "错误: 用户名不能为空"
-    done
+    # No default — require input with validation
+    _validate_username() {
+        local u="$1"
+        if [[ -z "$u" ]]; then
+            echo "用户名不能为空" >&2
+            return 1
+        fi
+        if [[ ! "$u" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
+            echo "用户名只能包含小写字母、数字、下划线和连字符" >&2
+            return 1
+        fi
+        return 0
+    }
+    USERNAME=$(ui::input_validate "用户名 Username" _validate_username)
 fi
 
-echo ""
-read -srp "请输入用户密码: " USER_PASSWORD
-echo ""
-read -srp "请输入 root 密码 (留空则不设置 root 密码): " ROOT_PASSWORD
-echo ""
+ui::success "用户名: ${USERNAME}"
 
-# 生成加密密码
-USER_ENC_PASSWORD=$(openssl passwd -6 -stdin <<< "$USER_PASSWORD" 2>/dev/null || python3 -c "import crypt; print(crypt.crypt('$USER_PASSWORD', crypt.mksalt(crypt.METHOD_SHA512)))")
-if [ -n "$ROOT_PASSWORD" ]; then
-    ROOT_ENC_PASSWORD=$(openssl passwd -6 -stdin <<< "$ROOT_PASSWORD" 2>/dev/null || python3 -c "import crypt; print(crypt.crypt('$ROOT_PASSWORD', crypt.mksalt(crypt.METHOD_SHA512)))")
+# Passwords
+echo ""
+USER_PASSWORD=$(ui::password "用户密码 User Password")
+while [[ -z "$USER_PASSWORD" ]]; do
+    ui::warn "用户密码不能为空"
+    USER_PASSWORD=$(ui::password "用户密码 User Password")
+done
+
+ROOT_PASSWORD=$(ui::password "Root 密码 (留空则不设置)")
+
+# Generate encrypted passwords
+USER_ENC_PASSWORD=$(openssl passwd -6 -stdin <<< "$USER_PASSWORD" 2>/dev/null \
+    || python3 -c "import crypt; print(crypt.crypt('$USER_PASSWORD', crypt.mksalt(crypt.METHOD_SHA512)))")
+
+ROOT_ENC_PASSWORD=""
+if [[ -n "$ROOT_PASSWORD" ]]; then
+    ROOT_ENC_PASSWORD=$(openssl passwd -6 -stdin <<< "$ROOT_PASSWORD" 2>/dev/null \
+        || python3 -c "import crypt; print(crypt.crypt('$ROOT_PASSWORD', crypt.mksalt(crypt.METHOD_SHA512)))")
+    ui::success "Root 密码: 已设置"
 else
-    ROOT_ENC_PASSWORD=""
+    ui::log "Root 密码: 未设置"
 fi
 
-# 8. 生成 user_configuration.json (archinstall 4.1 格式)
+# ═══════════════════════════════════════════════════════════════════════════════
+# §8. Configuration Summary
+# ═══════════════════════════════════════════════════════════════════════════════
+
+ui::dashboard \
+    "系统语言|${SYS_LANG}" \
+    "目标磁盘|${TARGET_DEV} (${DISK_SIZE_HUMAN})" \
+    "网络后端|${NET_TYPE}" \
+    "Multilib|$([ -n "$OPTIONAL_REPOS" ] && echo '已启用' || echo '未启用')" \
+    "用户名|${USERNAME}" \
+    "Root 密码|$([ -n "$ROOT_ENC_PASSWORD" ] && echo '已设置' || echo '未设置')" \
+    "kmscon|$([ "$NEED_KMSCON" = true ] && echo '已添加' || echo '不需要')" \
+    "版本|archinstall 4.1"
+
+if ! ui::confirm "以上配置正确？生成 JSON 文件?" "Y"; then
+    ui::warn "已取消"
+    exit 0
+fi
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# §9. Generate user_configuration.json
+# ═══════════════════════════════════════════════════════════════════════════════
+
+ui::step 1 2 "Generating user_configuration.json..."
+
 cat > user_configuration.json << JSONEOF
 {
     "app_config": {
@@ -281,9 +373,16 @@ cat > user_configuration.json << JSONEOF
 }
 JSONEOF
 
-# 9. 生成 user_credentials.json (archinstall 4.1 独立凭据文件)
-# root_enc_password: 有值则写入，留空则不包含该字段（不设置 root 密码）
-if [ -n "$ROOT_ENC_PASSWORD" ]; then
+ui::success "user_configuration.json generated"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# §10. Generate user_credentials.json
+# ═══════════════════════════════════════════════════════════════════════════════
+
+ui::step 2 2 "Generating user_credentials.json..."
+
+# Build root password line conditionally
+if [[ -n "$ROOT_ENC_PASSWORD" ]]; then
     ROOT_CRED_LINE="    \"root_enc_password\": \"${ROOT_ENC_PASSWORD}\","
 else
     ROOT_CRED_LINE=""
@@ -303,75 +402,83 @@ ${ROOT_CRED_LINE}
 }
 JSONEOF
 
-# 清理: 若无 root 密码，删除空行（root_enc_password 行为空时 cat 会产生空行）
-if [ -z "$ROOT_ENC_PASSWORD" ]; then
+# Clean up empty lines when no root password
+if [[ -z "$ROOT_ENC_PASSWORD" ]]; then
     sed -i '/^$/d' user_credentials.json
 fi
 
-echo ""
-echo "=== 配置已生成 ==="
-echo "  user_configuration.json  (系统配置)"
-echo "  user_credentials.json    (用户凭据)"
-echo ""
-echo "  系统语言: $SYS_LANG"
-echo "  目标磁盘: $TARGET_DEV"
-echo "  网络后端: $NET_TYPE"
-echo "  multilib: $([ -n "$OPTIONAL_REPOS" ] && echo '已启用' || echo '未启用')"
-echo "  用户名:   $USERNAME"
-echo "  版本:     4.1"
-echo ""
-echo "使用方法:"
-echo "  archinstall --config user_configuration.json --creds user_credentials.json"
-echo ""
-if [ "$SYS_LANG" != "en_US.UTF-8" ]; then
-    echo "提示: 安装完成首次启动后，请启用 kmscon 替代默认 TTY:"
-    echo "  sudo systemctl enable --now kmscon@tty1"
-fi
+ui::success "user_credentials.json generated"
 
-# 10. 检测 ISO 安装环境并提示自动安装
-NEED_KMSCON=false
-if [ "$SYS_LANG" != "en_US.UTF-8" ]; then
-    NEED_KMSCON=true
-fi
+# ═══════════════════════════════════════════════════════════════════════════════
+# §11. Output Summary
+# ═══════════════════════════════════════════════════════════════════════════════
 
-if [ -d /run/archiso ]; then
+ui::box "生成完毕 / Files Generated" \
+    "${UI_GREEN}✔${UI_NC}  user_configuration.json  ${UI_DIM}(系统配置)${UI_NC}" \
+    "${UI_GREEN}✔${UI_NC}  user_credentials.json    ${UI_DIM}(用户凭据)${UI_NC}" \
+    "" \
+    "${UI_DIM}Usage:${UI_NC}" \
+    "  archinstall --config user_configuration.json --creds user_credentials.json"
+
+if [[ "$NEED_KMSCON" == true ]] && [[ ! -d /run/archiso ]]; then
     echo ""
-    echo "检测到 Arch Linux ISO 安装环境"
-    read -rp "是否立刻执行 archinstall 安装? [y/N]: " DO_INSTALL
-    if [[ "$DO_INSTALL" =~ ^[Yy] ]]; then
+    ui::log "提示: 安装完成首次启动后，请启用 kmscon 替代默认 TTY:"
+    echo -e "      ${UI_BOLD}sudo systemctl enable --now kmscon@tty1${UI_NC}"
+fi
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# §12. ISO Detection — Auto Install
+# ═══════════════════════════════════════════════════════════════════════════════
+
+if [[ -d /run/archiso ]]; then
+    echo ""
+    ui::section "安装 / Install" "检测到 Arch Linux ISO 安装环境"
+
+    if ui::confirm "立刻执行 archinstall 安装?" "N"; then
+        ui::divider "archinstall"
+        ui::log "Starting archinstall..."
         echo ""
-        echo "开始执行 archinstall..."
+
         INSTALL_EXIT=0
         archinstall --config user_configuration.json --creds user_credentials.json || INSTALL_EXIT=$?
 
-        if [ $INSTALL_EXIT -ne 0 ]; then
-            echo "错误: archinstall 退出码 $INSTALL_EXIT"
+        if [[ $INSTALL_EXIT -ne 0 ]]; then
+            ui::error "archinstall exited with code ${INSTALL_EXIT}"
             exit $INSTALL_EXIT
         fi
 
-        # Fix 4: 安装后 chroot 启用 kmscon（仅在非英文语言时）
-        if [ "$NEED_KMSCON" = true ]; then
-            echo ""
-            echo "安装完成，正在 chroot 启用 kmscon@tty1..."
+        ui::success "archinstall completed successfully"
 
-            # archinstall 默认挂载点为 /mnt/archinstall
+        # Post-install: enable kmscon in the new system via chroot
+        if [[ "$NEED_KMSCON" == true ]]; then
+            ui::step 1 1 "Enabling kmscon@tty1 in new system..."
+
+            # archinstall 4.x mounts to /mnt/archinstall
             CHROOT_DIR="/mnt/archinstall"
-            if [ ! -d "$CHROOT_DIR/etc" ]; then
-                # 回退到 /mnt
+            if [[ ! -d "$CHROOT_DIR/etc" ]]; then
                 CHROOT_DIR="/mnt"
             fi
 
-            if [ -d "$CHROOT_DIR/etc" ]; then
-                arch-chroot "$CHROOT_DIR" systemctl enable kmscon@tty1
-                echo "已在新系统中启用 kmscon@tty1"
+            if [[ -d "$CHROOT_DIR/etc" ]]; then
+                ui::exe arch-chroot "$CHROOT_DIR" systemctl enable kmscon@tty1
             else
-                echo "警告: 未找到已安装系统的挂载点，请手动启用 kmscon:"
-                echo "  arch-chroot /mnt systemctl enable kmscon@tty1"
+                ui::warn "未找到安装目标挂载点，请手动启用 kmscon:"
+                echo -e "      ${UI_BOLD}arch-chroot /mnt systemctl enable kmscon@tty1${UI_NC}"
             fi
         fi
 
+        # Completion banner
         echo ""
-        echo "=== 安装完成 ==="
-        echo "可以重启进入新系统: reboot"
+        ui::box "安装完成 / Installation Complete" \
+            "${UI_GREEN}系统已安装成功${UI_NC}" \
+            "" \
+            "重启进入新系统:" \
+            "  ${UI_BOLD}reboot${UI_NC}"
+
+        if ui::countdown 30 "Auto-reboot" "n"; then
+            reboot
+        fi
     fi
 fi
+
+ui::log "Log file: $(ui::log_path)"

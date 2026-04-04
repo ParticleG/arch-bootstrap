@@ -203,7 +203,74 @@ _step_repos() {
     return 0
 }
 
-# ─── Step 5: Username ───
+# ─── Step 5: GPU Drivers ───
+_step_gpu_drivers() {
+    # Auto-detect GPU vendors via lspci
+    local preselect=""
+    local lspci_out=""
+    if command -v lspci &>/dev/null; then
+        lspci_out=$(lspci 2>/dev/null || true)
+    fi
+
+    if echo "$lspci_out" | grep -qiE 'VGA.*AMD|VGA.*ATI|Display.*AMD'; then
+        preselect+="amd,"
+    fi
+    if echo "$lspci_out" | grep -qiE 'VGA.*Intel|Display.*Intel'; then
+        preselect+="intel,"
+    fi
+    if echo "$lspci_out" | grep -qiE 'VGA.*NVIDIA|3D.*NVIDIA|Display.*NVIDIA'; then
+        preselect+="nvidia,"
+    fi
+    preselect="${preselect%,}"  # trim trailing comma
+
+    local -a selected_vendors=()
+    readarray -t selected_vendors < <(ui::checklist "显卡驱动 GPU Drivers" "$preselect" \
+        "amd|AMD (Radeon)" \
+        "intel|Intel (HD/UHD/Arc)" \
+        "nvidia|NVIDIA (GeForce/Quadro)")
+    local rc=$?
+    if (( rc != 0 )); then return $rc; fi
+
+    # Always include mesa (common for all GPUs)
+    local -a gpu_packages=("mesa")
+
+    # Append vendor-specific packages
+    GPU_VENDORS=""
+    for v in "${selected_vendors[@]}"; do
+        [[ -z "$v" ]] && continue
+        case "$v" in
+            amd)
+                gpu_packages+=("vulkan-radeon" "xf86-video-amdgpu" "xf86-video-ati")
+                GPU_VENDORS+="AMD "
+                ;;
+            intel)
+                gpu_packages+=("intel-media-driver" "libva-intel-driver" "vulkan-intel")
+                GPU_VENDORS+="Intel "
+                ;;
+            nvidia)
+                gpu_packages+=("dkms" "libva-nvidia-driver" "nvidia-open-dkms" "vulkan-nouveau" "xf86-video-nouveau")
+                GPU_VENDORS+="NVIDIA "
+                ;;
+        esac
+    done
+    GPU_VENDORS="${GPU_VENDORS% }"  # trim trailing space
+
+    # Append GPU packages to EXTRA_PACKAGES
+    for pkg in "${gpu_packages[@]}"; do
+        EXTRA_PACKAGES="${EXTRA_PACKAGES}, \"${pkg}\""
+    done
+
+    if [[ -n "$GPU_VENDORS" ]]; then
+        ui::success "显卡驱动: ${GPU_VENDORS}"
+        ui::progress_set "显卡 GPU" "${GPU_VENDORS}"
+    else
+        ui::log "显卡驱动: 仅 mesa (通用)"
+        ui::progress_set "显卡 GPU" "mesa (通用)"
+    fi
+    return 0
+}
+
+# ─── Step 6: Username ───
 _step_username() {
     if [[ -n "$DEFAULT_USER" ]]; then
         USERNAME=$(ui::input "用户名 Username" "$DEFAULT_USER")
@@ -220,7 +287,7 @@ _step_username() {
     return 0
 }
 
-# ─── Step 6: User Password ───
+# ─── Step 7: User Password ───
 _step_user_password() {
     USER_PASSWORD=$(ui::password "用户密码 User Password")
     local rc=$?
@@ -237,7 +304,7 @@ _step_user_password() {
     return 0
 }
 
-# ─── Step 7: Root Password ───
+# ─── Step 8: Root Password ───
 _step_root_password() {
     ROOT_PASSWORD=$(ui::password "Root 密码 (留空则不设置)")
     local rc=$?
@@ -254,10 +321,10 @@ _step_root_password() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Wizard Loop — steps 1-7 interactive + step 8 confirm, with back/abort
+# Wizard Loop — steps 1-8 interactive + step 9 confirm, with back/abort
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# Step 8 helper: build summary + confirm
+# Step 9 helper: build summary + confirm
 _step_confirm() {
     # Generate encrypted passwords
     USER_ENC_PASSWORD=$(openssl passwd -6 -stdin <<< "$USER_PASSWORD" 2>/dev/null \
@@ -272,6 +339,7 @@ _step_confirm() {
     MULTILIB_STATUS=$([ -n "${OPTIONAL_REPOS:-}" ] && echo '已启用' || echo '未启用')
     ROOT_PW_STATUS=$([ -n "$ROOT_ENC_PASSWORD" ] && echo '已设置' || echo '未设置')
     KMSCON_STATUS=$([ "${NEED_KMSCON:-false}" = true ] && echo '已添加' || echo '不需要')
+    GPU_STATUS="${GPU_VENDORS:-mesa (通用)}"
 
     # Print dashboard to scrollback
     ui::dashboard \
@@ -279,6 +347,7 @@ _step_confirm() {
         "目标磁盘|${TARGET_DEV} (${DISK_SIZE_HUMAN})" \
         "网络后端|${NET_TYPE}" \
         "Multilib|${MULTILIB_STATUS}" \
+        "显卡驱动|${GPU_STATUS}" \
         "用户名|${USERNAME}" \
         "Root 密码|${ROOT_PW_STATUS}" \
         "kmscon|${KMSCON_STATUS}" \
@@ -294,6 +363,7 @@ _step_confirm() {
     _summary+="  \033[1;32m✔\033[0m \033[1m目标磁盘\033[0m    ${TARGET_DEV} (${DISK_SIZE_HUMAN})\n"
     _summary+="  \033[1;32m✔\033[0m \033[1m网络后端\033[0m    ${NET_TYPE}\n"
     _summary+="  \033[1;32m✔\033[0m \033[1mMultilib\033[0m    ${MULTILIB_STATUS}\n"
+    _summary+="  \033[1;32m✔\033[0m \033[1m显卡驱动\033[0m    ${GPU_STATUS}\n"
     _summary+="  \033[1;32m✔\033[0m \033[1m用户名\033[0m      ${USERNAME}\n"
     _summary+="  \033[1;32m✔\033[0m \033[1mRoot 密码\033[0m   ${ROOT_PW_STATUS}\n"
     _summary+="  \033[1;32m✔\033[0m \033[1mkmscon\033[0m      ${KMSCON_STATUS}\n"
@@ -320,7 +390,7 @@ _step_confirm() {
 }
 
 _STEP=1
-_MAX_STEP=8  # steps 1-7 = interactive, step 8 = confirm
+_MAX_STEP=9  # steps 1-8 = interactive, step 9 = confirm
 
 while (( _STEP <= _MAX_STEP )); do
     case $_STEP in
@@ -328,10 +398,11 @@ while (( _STEP <= _MAX_STEP )); do
         2) _step_disk           ;;
         3) _step_network        ;;
         4) _step_repos          ;;
-        5) _step_username       ;;
-        6) _step_user_password  ;;
-        7) _step_root_password  ;;
-        8) _step_confirm        ;;
+        5) _step_gpu_drivers    ;;
+        6) _step_username       ;;
+        7) _step_user_password  ;;
+        8) _step_root_password  ;;
+        9) _step_confirm        ;;
     esac
     _rc=$?
     case $_rc in

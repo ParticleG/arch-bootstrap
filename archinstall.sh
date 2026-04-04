@@ -1,0 +1,417 @@
+#!/bin/bash
+# ╔═══════════════════════════════════════════════════════════════════════════════╗
+# ║  archinstall-template.sh — Archinstall 4.1 Interactive Configuration Generator
+# ║  Generates user_configuration.json & user_credentials.json                  ║
+# ║  Run from Arch ISO or a running Arch system                                 ║
+# ╚═══════════════════════════════════════════════════════════════════════════════╝
+set -euo pipefail
+
+# ─── Source libraries ───
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/lib/ui.sh"
+source "${SCRIPT_DIR}/lib/config.sh"
+source "${SCRIPT_DIR}/lib/wizard.sh"
+source "${SCRIPT_DIR}/lib/generate.sh"
+
+# ─── Initialize ───
+ui::log_init "/tmp/archinstall-template-$(date '+%Y%m%d-%H%M%S').log"
+ui::fullscreen "Archinstall 4.1 Config"
+ui::progress_init
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Banner — Arch logo (left) + FIGlet text (right)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Banner colors: {C}=cyan {B}=blue {M}=magenta {D}=dim {0}=reset
+# Art is stored in a quoted heredoc (no expansion) to keep source clean,
+# then placeholders are replaced with actual ANSI codes before printing.
+_BANNER=$(cat << 'BANNER'
+{C}                 -@               {0}  {B}  ___           _          _     _                                {0}
+{C}                .##@              {0}  {B} / _ \         | |        | |   (_)                               {0}
+{C}               .####@             {0}  {B}/ /_\ \_ __ ___| |__      | |    _ _ __  _   ___  __              {0}
+{C}               @#####@            {0}  {B}|  _  | '__/ __| '_ \     | |   | | '_ \| | | \ \/ /              {0}
+{C}             . *######@           {0}  {B}| | | | | | (__| | | |    | |___| | | | | |_| |>  <               {0}
+{C}            .##@o@#####@          {0}  {B}\_| |_/_|  \___|_| |_|    \_____/_|_| |_|\__,_/_/\_\              {0}
+{C}           /############@         {0}  {M}                                                               {0}
+{C}          /##############@        {0}  {M}______             _       _                                   {0}
+{C}         @######@**%######@       {0}  {M}| ___ \           | |     | |                                  {0}
+{C}        @######`     %#####o      {0}  {M}| |_/ / ___   ___ | |_ ___| |_ _ __ __ _ _ __  _ __   ___ _ __ {0}
+{C}       @######@       ######%     {0}  {M}| ___ \/ _ \ / _ \| __/ __| __| '__/ _` | '_ \| '_ \ / _ \ '__|{0}
+{C}     -@#######h       ######@.`   {0}  {M}| |_/ / (_) | (_) | |_\__ \ |_| | | (_| | |_) | |_) |  __/ |   {0}
+{C}    /#####h**``       `**%@####@  {0}  {M}\____/ \___/ \___/ \__|___/\__|_|  \__,_| .__/| .__/ \___|_|   {0}
+{C}   @H@*`                    `*%#@ {0}  {M}                                        | |   | |              {0}
+{C}  *`                            `*{0}  {M}                                        |_|   |_|              {0}
+
+  {D}Archinstall 4.1 Configuration Generator{0}
+BANNER
+)
+
+declare -A _BANNER_COLORS=([C]=$'\033[1;36m' [B]=$'\033[1;34m' [M]=$'\033[1;35m' [D]=$'\033[2m' [0]=$'\033[0m')
+for _k in "${!_BANNER_COLORS[@]}"; do
+    _BANNER="${_BANNER//\{${_k}\}/${_BANNER_COLORS[$_k]}}"
+done
+unset _k
+
+_show_banner() { printf '%s\n' "$_BANNER"; }
+ui::set_banner _show_banner 17
+_show_banner
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Privilege check & navigation
+# ═══════════════════════════════════════════════════════════════════════════════
+
+ui::require_root || exit 1
+ui::enable_nav
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Pre-computed state (before wizard)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Smart username default
+if [[ -n "${SUDO_USER:-}" ]] && [[ "$SUDO_USER" != "root" ]]; then
+    DEFAULT_USER="$SUDO_USER"
+elif [[ "$EUID" -ne 0 ]] && [[ -n "${USER:-}" ]]; then
+    DEFAULT_USER="$USER"
+else
+    DEFAULT_USER=""
+fi
+
+_validate_username() {
+    local u="$1"
+    if [[ -z "$u" ]]; then
+        echo "用户名不能为空" >&2; return 1
+    fi
+    if [[ ! "$u" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
+        echo "用户名只能包含小写字母、数字、下划线和连字符" >&2; return 1
+    fi
+    return 0
+}
+
+# Build disk list once
+declare -a DISK_ITEMS=()
+while IFS= read -r line; do
+    disk_name=$(echo "$line" | awk '{print $1}')
+    disk_size=$(echo "$line" | awk '{print $2}')
+    disk_model=$(echo "$line" | awk '{$1=$2=""; print}' | sed 's/^ *//')
+    DISK_ITEMS+=("${disk_name}  ${disk_size}  ${disk_model}|${disk_name}")
+done < <(lsblk -d -n -o NAME,SIZE,MODEL | grep -v loop)
+
+if [[ ${#DISK_ITEMS[@]} -eq 0 ]]; then
+    ui::error "No disks found!"
+    exit 1
+fi
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Wizard state — per-step contribution arrays (handles back-navigation cleanly)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+declare -a LANG_PACKAGES=()         # kmscon if non-English
+declare -a GPU_DRIVER_PACKAGES=()   # mesa + vendor drivers
+declare -a OPTIONAL_REPOS=()        # multilib if enabled
+NEED_KMSCON=false
+GPU_VENDORS=""
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Step functions — each returns 0=ok, 2=back, 130=abort
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_step_language() {
+    SYS_LANG=$(ui::select "系统语言 System Language" "${LANG_OPTIONS[@]}")
+    local rc=$?; (( rc != 0 )) && return $rc
+
+    ui::success "语言: ${SYS_LANG}"
+    ui::progress_set "语言 Language" "${SYS_LANG}"
+
+    # Reset language-dependent packages on re-entry
+    LANG_PACKAGES=()
+    NEED_KMSCON=false
+    if [[ "$SYS_LANG" != "en_US.UTF-8" ]]; then
+        LANG_PACKAGES=("kmscon")
+        NEED_KMSCON=true
+        ui::log "已自动添加 ${UI_BOLD}kmscon${UI_NC} 用于非英文 TTY 显示支持"
+    fi
+    return 0
+}
+
+_step_disk() {
+    TARGET_DISK=$(ui::select_with_preview "安装目标磁盘 Target Disk" \
+        "lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT,LABEL /dev/{}" \
+        "${DISK_ITEMS[@]}")
+    local rc=$?; (( rc != 0 )) && return $rc
+
+    TARGET_DEV="/dev/${TARGET_DISK}"
+    if [[ ! -b "$TARGET_DEV" ]]; then
+        ui::error "${TARGET_DEV} does not exist"; exit 1
+    fi
+
+    ui::success "目标磁盘: ${TARGET_DEV}"
+    ui::progress_set "磁盘 Disk" "${TARGET_DEV}"
+
+    # Partition layout
+    DISK_SIZE_BYTES=$($SUDO blockdev --getsize64 "$TARGET_DEV")
+    EFI_START_BYTES=1048576
+    EFI_SIZE_GIB=1
+    BTRFS_START_BYTES=$((EFI_START_BYTES + EFI_SIZE_GIB * 1073741824))
+    BTRFS_SIZE_BYTES=$((DISK_SIZE_BYTES - BTRFS_START_BYTES))
+    DISK_SIZE_HUMAN=$(numfmt --to=iec-i --suffix=B "$DISK_SIZE_BYTES" 2>/dev/null || echo "${DISK_SIZE_BYTES} bytes")
+    BTRFS_SIZE_HUMAN=$(numfmt --to=iec-i --suffix=B "$BTRFS_SIZE_BYTES" 2>/dev/null || echo "${BTRFS_SIZE_BYTES} bytes")
+
+    ui::info_kv "EFI" "1 GiB" "(FAT32, /boot)"
+    ui::info_kv "Btrfs" "${BTRFS_SIZE_HUMAN}" "(compress=zstd, subvols: @ @home @log @pkg)"
+    return 0
+}
+
+_step_network() {
+    NET_TYPE=$(ui::select "网络后端 Network Backend" "${NET_OPTIONS[@]}")
+    local rc=$?; (( rc != 0 )) && return $rc
+
+    ui::success "网络: ${NET_TYPE}"
+    ui::progress_set "网络 Network" "${NET_TYPE}"
+    return 0
+}
+
+_step_repos() {
+    ui::confirm "启用 multilib 仓库? (32 位兼容，如 Steam)" "Y"
+    local rc=$?
+    if (( rc == 2 || rc == 130 )); then return $rc; fi
+
+    if (( rc == 0 )); then
+        OPTIONAL_REPOS=("multilib")
+        ui::success "multilib: 已启用"
+        ui::progress_set "Multilib" "已启用"
+    else
+        OPTIONAL_REPOS=()
+        ui::log "multilib: 未启用"
+        ui::progress_set "Multilib" "未启用"
+    fi
+    return 0
+}
+
+_step_gpu_drivers() {
+    # Auto-detect GPU vendors via lspci
+    local preselect="" lspci_out=""
+    if command -v lspci &>/dev/null; then
+        lspci_out=$(lspci 2>/dev/null || true)
+    fi
+    for vendor in "${GPU_VENDOR_ORDER[@]}"; do
+        if echo "$lspci_out" | grep -qiE "${GPU_DETECT[$vendor]}"; then
+            preselect+="${vendor},"
+        fi
+    done
+    preselect="${preselect%,}"
+
+    # Build checklist items from config data
+    local -a checklist_items=()
+    for vendor in "${GPU_VENDOR_ORDER[@]}"; do
+        checklist_items+=("${vendor}|${GPU_LABELS[$vendor]}")
+    done
+
+    local -a selected_vendors=()
+    readarray -t selected_vendors < <(ui::checklist "显卡驱动 GPU Drivers" "$preselect" \
+        "${checklist_items[@]}")
+    local rc=$?; (( rc != 0 )) && return $rc
+
+    # Reset on re-entry, always include common packages
+    GPU_DRIVER_PACKAGES=()
+    local pkg
+    for pkg in ${GPU_PACKAGES[common]}; do
+        GPU_DRIVER_PACKAGES+=("$pkg")
+    done
+
+    # Append vendor-specific packages
+    GPU_VENDORS=""
+    for v in "${selected_vendors[@]}"; do
+        [[ -z "$v" ]] && continue
+        if [[ -n "${GPU_PACKAGES[$v]:-}" ]]; then
+            for pkg in ${GPU_PACKAGES[$v]}; do
+                GPU_DRIVER_PACKAGES+=("$pkg")
+            done
+            GPU_VENDORS+="${GPU_LABELS[$v]%% *} "  # short name: "AMD" "Intel" "NVIDIA"
+        fi
+    done
+    GPU_VENDORS="${GPU_VENDORS% }"
+
+    if [[ -n "$GPU_VENDORS" ]]; then
+        ui::success "显卡驱动: ${GPU_VENDORS}"
+        ui::progress_set "显卡 GPU" "${GPU_VENDORS}"
+    else
+        ui::log "显卡驱动: 仅 mesa (通用)"
+        ui::progress_set "显卡 GPU" "mesa (通用)"
+    fi
+    return 0
+}
+
+_step_username() {
+    if [[ -n "$DEFAULT_USER" ]]; then
+        USERNAME=$(ui::input "用户名 Username" "$DEFAULT_USER")
+    else
+        USERNAME=$(ui::input_validate "用户名 Username" _validate_username)
+    fi
+    local rc=$?; (( rc != 0 )) && return $rc
+
+    ui::success "用户名: ${USERNAME}"
+    ui::progress_set "用户 User" "${USERNAME}"
+    return 0
+}
+
+_step_user_password() {
+    USER_PASSWORD=$(ui::password "用户密码 User Password")
+    local rc=$?; (( rc != 0 )) && return $rc
+
+    while [[ -z "$USER_PASSWORD" ]]; do
+        ui::warn "用户密码不能为空" > /dev/tty
+        USER_PASSWORD=$(ui::password "用户密码 User Password")
+        rc=$?; (( rc != 0 )) && return $rc
+    done
+
+    ui::progress_set "用户密码" "已设置"
+    return 0
+}
+
+_step_root_password() {
+    ROOT_PASSWORD=$(ui::password "Root 密码 (留空则不设置)")
+    local rc=$?; (( rc != 0 )) && return $rc
+
+    if [[ -n "$ROOT_PASSWORD" ]]; then
+        ui::success "Root 密码: 已设置"
+        ui::progress_set "Root 密码" "已设置"
+    else
+        ui::log "Root 密码: 未设置"
+        ui::progress_set "Root 密码" "未设置"
+    fi
+    return 0
+}
+
+_step_confirm() {
+    local multilib_status root_pw_status kmscon_status gpu_status
+    multilib_status=$([[ ${#OPTIONAL_REPOS[@]} -gt 0 ]] && echo '已启用' || echo '未启用')
+    root_pw_status=$([[ -n "${ROOT_PASSWORD:-}" ]] && echo '已设置' || echo '未设置')
+    kmscon_status=$([[ "${NEED_KMSCON:-false}" == true ]] && echo '已添加' || echo '不需要')
+    gpu_status="${GPU_VENDORS:-mesa (通用)}"
+
+    # Build summary items (single source for dashboard + preview)
+    local -a summary_items=(
+        "系统语言|${SYS_LANG}"
+        "目标磁盘|${TARGET_DEV} (${DISK_SIZE_HUMAN})"
+        "网络后端|${NET_TYPE}"
+        "Multilib|${multilib_status}"
+        "显卡驱动|${gpu_status}"
+        "用户名|${USERNAME}"
+        "Root 密码|${root_pw_status}"
+        "kmscon|${kmscon_status}"
+        "版本|archinstall 4.1"
+    )
+
+    ui::dashboard "${summary_items[@]}"
+
+    local _summary
+    _summary=$(generate::build_confirm_preview "${summary_items[@]}")
+
+    ui::confirm "以上配置正确？生成 JSON 文件?" "Y" "" "$_summary"
+    local rc=$?
+    case $rc in
+        0)   return 0 ;;
+        1)   ui::warn "已取消"; exit 0 ;;
+        2)   return 2 ;;
+        130) return 130 ;;
+        *)   return $rc ;;
+    esac
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Register wizard steps & run
+# ═══════════════════════════════════════════════════════════════════════════════
+
+wizard::register "语言"     _step_language
+wizard::register "磁盘"     _step_disk
+wizard::register "网络"     _step_network
+wizard::register "仓库"     _step_repos
+wizard::register "显卡"     _step_gpu_drivers
+wizard::register "用户名"   _step_username
+wizard::register "用户密码" _step_user_password
+wizard::register "Root密码" _step_root_password
+wizard::register "确认"     _step_confirm
+
+wizard::run
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Generate JSON files
+# ═══════════════════════════════════════════════════════════════════════════════
+
+ui::step 1 2 "Generating user_configuration.json..."
+generate::user_configuration
+ui::success "user_configuration.json generated"
+
+ui::step 2 2 "Generating user_credentials.json..."
+generate::user_credentials
+ui::success "user_credentials.json generated"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Output summary
+# ═══════════════════════════════════════════════════════════════════════════════
+
+ui::box "生成完毕 / Files Generated" \
+    "${UI_GREEN}✔${UI_NC}  user_configuration.json  ${UI_DIM}(系统配置)${UI_NC}" \
+    "${UI_GREEN}✔${UI_NC}  user_credentials.json    ${UI_DIM}(用户凭据)${UI_NC}" \
+    "" \
+    "${UI_DIM}Usage:${UI_NC}" \
+    "  archinstall --config user_configuration.json --creds user_credentials.json"
+
+if [[ "$NEED_KMSCON" == true ]] && [[ ! -d /run/archiso ]]; then
+    echo ""
+    ui::log "提示: 安装完成首次启动后，请启用 kmscon 替代默认 TTY:"
+    echo -e "      ${UI_BOLD}sudo systemctl enable --now kmscon@tty1${UI_NC}"
+fi
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ISO detection — auto install
+# ═══════════════════════════════════════════════════════════════════════════════
+
+if [[ -d /run/archiso ]]; then
+    echo ""
+    ui::section "安装 / Install" "检测到 Arch Linux ISO 安装环境"
+
+    if ui::confirm "立刻执行 archinstall 安装?" "N"; then
+        ui::divider "archinstall"
+        ui::log "Starting archinstall..."
+        echo ""
+
+        INSTALL_EXIT=0
+        archinstall --config user_configuration.json --creds user_credentials.json || INSTALL_EXIT=$?
+
+        if [[ $INSTALL_EXIT -ne 0 ]]; then
+            ui::error "archinstall exited with code ${INSTALL_EXIT}"
+            exit $INSTALL_EXIT
+        fi
+
+        ui::success "archinstall completed successfully"
+
+        # Post-install: enable kmscon in the new system via chroot
+        if [[ "$NEED_KMSCON" == true ]]; then
+            ui::step 1 1 "Enabling kmscon@tty1 in new system..."
+
+            CHROOT_DIR="/mnt/archinstall"
+            [[ ! -d "$CHROOT_DIR/etc" ]] && CHROOT_DIR="/mnt"
+
+            if [[ -d "$CHROOT_DIR/etc" ]]; then
+                ui::exe arch-chroot "$CHROOT_DIR" systemctl enable kmscon@tty1
+            else
+                ui::warn "未找到安装目标挂载点，请手动启用 kmscon:"
+                echo -e "      ${UI_BOLD}arch-chroot /mnt systemctl enable kmscon@tty1${UI_NC}"
+            fi
+        fi
+
+        echo ""
+        ui::box "安装完成 / Installation Complete" \
+            "${UI_GREEN}系统已安装成功${UI_NC}" \
+            "" \
+            "重启进入新系统:" \
+            "  ${UI_BOLD}reboot${UI_NC}"
+
+        if ui::countdown 30 "Auto-reboot" "n"; then
+            reboot
+        fi
+    fi
+fi
+
+ui::log "Log file: $(ui::log_path)"

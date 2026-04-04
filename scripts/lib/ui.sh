@@ -902,7 +902,18 @@ ui::input_validate() {
 }
 
 # Password input — fzf-based in fullscreen mode to maintain split-pane layout
-# Uses --color to hide query text + transform-prompt to show asterisks
+# Uses transform-query to replace typed text with asterisks in real-time.
+# The real password is reconstructed and stored in a temp file because
+# transform-query mutates {q}, so we can't read it back directly.
+#
+# How reconstruction works:
+#   After transform-query turns "abc" → "***", the next keystroke gives "***d".
+#   The helper compares new {q} length with stored password length:
+#     - Longer → new char(s) = {q}[old_len:], append to stored password
+#     - Shorter → backspace detected, truncate stored password
+#     - Same → no change (e.g. modifier keys)
+#   Limitation: mid-string cursor edits won't work (acceptable for passwords).
+#
 # Usage: password=$(ui::password "Enter password")
 ui::password() {
     local prompt="$1"
@@ -917,23 +928,79 @@ ui::password() {
         return 0
     fi
 
-    # fzf-based password: query text hidden, asterisks shown in prompt
     _ui_ensure_fzf || return 1
 
+    # Temp files for password state
+    local pw_file pw_helper pw_mask
+    pw_file=$(mktemp /tmp/ui-pw-XXXXXX)
+    pw_helper=$(mktemp /tmp/ui-pw-helper-XXXXXX.sh)
+    pw_mask=$(mktemp /tmp/ui-pw-mask-XXXXXX.sh)
+    : > "$pw_file"
+    chmod 600 "$pw_file"
+
+    # Helper: reconstruct real password from asterisk-corrupted query
+    # Called as: pw_helper.sh <pw_file> <new_query>
+    cat > "$pw_helper" << 'HELPER_EOF'
+#!/usr/bin/env bash
+pw_file="$1"
+shift
+new_q="$*"
+old_pw=""
+[[ -f "$pw_file" ]] && old_pw=$(cat "$pw_file")
+old_len=${#old_pw}
+new_len=${#new_q}
+if (( new_len > old_len )); then
+    # New character(s) appended — extract the non-asterisk tail
+    appended="${new_q:$old_len}"
+    printf '%s' "${old_pw}${appended}" > "$pw_file"
+elif (( new_len < old_len )); then
+    # Backspace — truncate stored password
+    printf '%s' "${old_pw:0:$new_len}" > "$pw_file"
+fi
+# If same length, do nothing (modifier key, etc.)
+HELPER_EOF
+    chmod +x "$pw_helper"
+
+    # Mask: output asterisks matching stored password length
+    # Called as: pw_mask.sh <pw_file>
+    cat > "$pw_mask" << 'MASK_EOF'
+#!/usr/bin/env bash
+pw_file="$1"
+pw=""
+[[ -f "$pw_file" ]] && pw=$(cat "$pw_file")
+len=${#pw}
+if (( len == 0 )); then
+    echo ""
+else
+    printf '%*s' "$len" '' | tr ' ' '*'
+fi
+MASK_EOF
+    chmod +x "$pw_mask"
+
+    # Build fzf args — NOT using _ui_fzf_common_args because j/k must be typeable
     local -a fzf_args=()
-    readarray -t fzf_args < <(_ui_fzf_common_args)
-    fzf_args+=(--print-query)
-    fzf_args+=(--disabled)
+    fzf_args+=(--ansi)
+    fzf_args+=(--layout=reverse)
+    fzf_args+=(--color="marker:cyan,pointer:cyan,label:yellow,border:magenta")
+    fzf_args+=(--margin=0,2)
+    fzf_args+=(--bind 'ctrl-c:abort,esc:abort')
     fzf_args+=(--info=hidden)
+    fzf_args+=(--no-sort)
     fzf_args+=(--border=rounded)
     fzf_args+=(--border-label="  ${prompt}  ")
     fzf_args+=(--border-label-pos=5)
     fzf_args+=(--prompt="  🔒 ")
     fzf_args+=(--header=" Type password (masked), press Enter to confirm")
-    # Hide actual typed text: set query fg to black (invisible on dark bg)
-    fzf_args+=(--color="query:black")
-    # Show asterisks in the prompt area as user types
-    fzf_args+=(--bind 'change:transform-prompt:printf "  🔒 %s " "$(printf "%s" {q} | sed "s/./*/g")"')
+    # On each keystroke: save real password, then replace query with asterisks
+    fzf_args+=(--bind "change:execute-silent(${pw_helper} ${pw_file} {q})+transform-query(${pw_mask} ${pw_file})")
+    # On Enter: output the real password from the temp file
+    fzf_args+=(--bind "enter:become(cat ${pw_file})")
+
+    # Add preview panel for fullscreen mode
+    if [[ "$_UI_FULLSCREEN" == "1" ]] && [[ -n "$_UI_PREVIEW_SCRIPT" ]]; then
+        fzf_args+=(--preview="${_UI_PREVIEW_SCRIPT} ${_UI_PROGRESS_FILE} ${_UI_LOG_FILE} '${_UI_PROGRESS_HEADER}'")
+        fzf_args+=(--preview-window="right:45%:wrap:border-left")
+    fi
 
     local height_arg
     height_arg=$(_ui_fzf_height_arg 2)
@@ -942,9 +1009,10 @@ ui::password() {
     local result
     result=$(echo "" | fzf "${fzf_args[@]}" 2>/dev/null) || true
 
-    local query
-    query=$(head -1 <<< "$result")
-    echo "$query"
+    # Clean up temp files
+    rm -f "$pw_file" "$pw_helper" "$pw_mask"
+
+    echo "$result"
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════

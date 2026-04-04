@@ -289,7 +289,14 @@ _ui_fzf_common_args() {
     args+=(--color="marker:cyan,pointer:cyan,label:yellow,border:magenta")
     args+=(--pointer="›")
     args+=(--margin=0,2)
-    args+=(--bind 'j:down,k:up,ctrl-c:abort,esc:abort')
+    # Navigation-aware bindings: when nav is enabled, write signal before aborting
+    if [[ "$_UI_NAV_ENABLED" == "1" ]] && [[ -n "$_UI_NAV_FILE" ]]; then
+        args+=(--bind "j:down,k:up")
+        args+=(--bind "esc:execute-silent(printf %s BACK > ${_UI_NAV_FILE})+abort")
+        args+=(--bind "ctrl-c:execute-silent(printf %s ABORT > ${_UI_NAV_FILE})+abort")
+    else
+        args+=(--bind 'j:down,k:up,ctrl-c:abort,esc:abort')
+    fi
 
     if [[ "$_UI_FULLSCREEN" == "1" ]] && [[ -n "$_UI_PREVIEW_SCRIPT" ]]; then
         # Full-screen with progress preview on right
@@ -396,6 +403,80 @@ _ui_fzf_height_with_banner() {
     # fzf gets remaining rows after banner (+ 1 for blank line after banner)
     local fzf_height=$(( term_lines - _UI_BANNER_HEIGHT - 1 ))
     echo "--height=${fzf_height}"
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# §4d. Wizard Navigation — Back (Esc) / Abort (Ctrl-C)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# When navigation mode is enabled, fzf functions differentiate between:
+#   Esc    → "go back" (return code 2)
+#   Ctrl-C → "abort entire script" (return code 130)
+#
+# Without nav mode, both Esc and Ctrl-C produce the same result (cancel/fail),
+# preserving backward compatibility for scripts that don't use wizard navigation.
+#
+# Signal communication: fzf's esc/ctrl-c bindings write "BACK" or "ABORT" to a
+# temp file via execute-silent, then call abort. After fzf exits non-zero, we
+# read the signal file to determine which action was taken.
+#
+# Usage:
+#   ui::enable_nav       # call once before wizard loop
+#   result=$(ui::select ...) ; rc=$?
+#   case $rc in
+#       0)   ;; # selected
+#       2)   ;; # back (Esc)
+#       130) ;; # abort (Ctrl-C)
+#   esac
+#   ui::nav_cleanup      # call on exit (or use trap)
+
+_UI_NAV_ENABLED=0
+_UI_NAV_FILE=""
+
+# Enable wizard navigation mode
+# Creates a temp file for signal communication between fzf and the shell
+ui::enable_nav() {
+    _UI_NAV_ENABLED=1
+    _UI_NAV_FILE=$(mktemp /tmp/ui-nav-XXXXXX)
+    : > "$_UI_NAV_FILE"
+}
+
+# Clean up navigation temp file
+ui::nav_cleanup() {
+    [[ -n "$_UI_NAV_FILE" ]] && rm -f "$_UI_NAV_FILE"
+    _UI_NAV_FILE=""
+    _UI_NAV_ENABLED=0
+}
+
+# Internal: clear signal file before each fzf invocation
+_ui_nav_clear() {
+    [[ "$_UI_NAV_ENABLED" == "1" ]] && [[ -n "$_UI_NAV_FILE" ]] && : > "$_UI_NAV_FILE"
+}
+
+# Internal: read signal file after fzf exits non-zero
+# Returns: 2 = back (Esc), 130 = abort (Ctrl-C), 1 = legacy/unknown
+_ui_nav_check() {
+    if [[ "$_UI_NAV_ENABLED" != "1" ]] || [[ -z "$_UI_NAV_FILE" ]]; then
+        return 1  # nav not enabled — legacy behavior
+    fi
+    local signal=""
+    [[ -f "$_UI_NAV_FILE" ]] && signal=$(cat "$_UI_NAV_FILE" 2>/dev/null)
+    case "$signal" in
+        BACK)  return 2 ;;
+        ABORT) return 130 ;;
+        *)     return 1 ;;  # unknown — treat as generic cancel
+    esac
+}
+
+# Internal: get fzf header hint text for navigation
+# When nav is enabled: "[Esc] Back  [Ctrl-C] Abort"
+# When nav is disabled: "[Esc] Cancel"
+_ui_nav_header_hint() {
+    if [[ "$_UI_NAV_ENABLED" == "1" ]]; then
+        echo "[Esc] Back  [Ctrl-C] Abort"
+    else
+        echo "[Esc] Cancel"
+    fi
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -894,7 +975,7 @@ ui::confirm() {
     fzf_args+=(--border=rounded)
     fzf_args+=(--border-label="  ${prompt}  ")
     fzf_args+=(--border-label-pos=5)
-    fzf_args+=(--header=" [Enter] Confirm  [Esc] Cancel")
+    fzf_args+=(--header=" [Enter] Confirm  $(_ui_nav_header_hint)")
     fzf_args+=(--no-multi)
 
     # Override preview with summary text if provided
@@ -919,16 +1000,22 @@ ui::confirm() {
     height_arg=$(_ui_fzf_height_arg 2)
     [[ -n "$height_arg" ]] && fzf_args+=("$height_arg")
 
+    _ui_nav_clear
     _ui_show_banner
     local selected
     selected=$(printf "%s\n" "${items[@]}" | fzf "${fzf_args[@]}" 2>/dev/null) || {
         # Cleanup temp file on abort
         [[ -n "$_confirm_summary_file" ]] && rm -f "$_confirm_summary_file"
-        # Esc/abort — return based on default
-        case "$default" in
-            [Yy]*) return 0 ;;
-            *)     return 1 ;;
-        esac
+        if [[ "$_UI_NAV_ENABLED" == "1" ]]; then
+            # Nav mode: propagate back/abort signals
+            _ui_nav_check; return $?
+        else
+            # Legacy: Esc/abort — return based on default
+            case "$default" in
+                [Yy]*) return 0 ;;
+                *)     return 1 ;;
+            esac
+        fi
     }
 
     [[ -n "$_confirm_summary_file" ]] && rm -f "$_confirm_summary_file"
@@ -971,7 +1058,7 @@ ui::input() {
     fzf_args+=(--border=rounded)
     fzf_args+=(--border-label="  ${prompt}  ")
     fzf_args+=(--border-label-pos=5)
-    fzf_args+=(--header=" Type your answer, then press Enter")
+    fzf_args+=(--header=" Type your answer, then press Enter  $(_ui_nav_header_hint)")
     fzf_args+=(--query="${default}")
     fzf_args+=(--prompt="  › ")
 
@@ -979,9 +1066,16 @@ ui::input() {
     height_arg=$(_ui_fzf_height_arg 2)
     [[ -n "$height_arg" ]] && fzf_args+=("$height_arg")
 
+    _ui_nav_clear
     _ui_show_banner
     local result
-    result=$(echo "" | fzf "${fzf_args[@]}" 2>/dev/null) || true
+    if [[ "$_UI_NAV_ENABLED" == "1" ]]; then
+        result=$(echo "" | fzf "${fzf_args[@]}" 2>/dev/null) || {
+            _ui_nav_check; return $?
+        }
+    else
+        result=$(echo "" | fzf "${fzf_args[@]}" 2>/dev/null) || true
+    fi
 
     # --print-query outputs: line1=query, line2=selected item
     # We want line1 (the query = what user typed)
@@ -1002,6 +1096,11 @@ ui::input_validate() {
     while true; do
         local answer
         answer=$(ui::input "$prompt" "$default")
+        local rc=$?
+        # Propagate nav signals (back=2, abort=130)
+        if (( rc == 2 || rc == 130 )); then
+            return $rc
+        fi
 
         if $validator "$answer" 2>/tmp/_ui_validate_err; then
             echo "$answer"
@@ -1096,14 +1195,20 @@ MASK_EOF
     fzf_args+=(--layout=reverse)
     fzf_args+=(--color="marker:cyan,pointer:cyan,label:yellow,border:magenta")
     fzf_args+=(--margin=0,2)
-    fzf_args+=(--bind 'ctrl-c:abort,esc:abort')
+    # Navigation-aware bindings (replicated from _ui_fzf_common_args, without j/k)
+    if [[ "$_UI_NAV_ENABLED" == "1" ]] && [[ -n "$_UI_NAV_FILE" ]]; then
+        fzf_args+=(--bind "esc:execute-silent(printf %s BACK > ${_UI_NAV_FILE})+abort")
+        fzf_args+=(--bind "ctrl-c:execute-silent(printf %s ABORT > ${_UI_NAV_FILE})+abort")
+    else
+        fzf_args+=(--bind 'ctrl-c:abort,esc:abort')
+    fi
     fzf_args+=(--info=hidden)
     fzf_args+=(--no-sort)
     fzf_args+=(--border=rounded)
     fzf_args+=(--border-label="  ${prompt}  ")
     fzf_args+=(--border-label-pos=5)
     fzf_args+=(--prompt="  🔒 ")
-    fzf_args+=(--header=" Type password (masked), press Enter to confirm")
+    fzf_args+=(--header=" Type password (masked), press Enter to confirm  $(_ui_nav_header_hint)")
     # On each keystroke: save real password, then replace query with asterisks
     fzf_args+=(--bind "change:execute-silent(${pw_helper} ${pw_file} {q})+transform-query(${pw_mask} ${pw_file})")
     # On Enter: output the real password from the temp file
@@ -1119,9 +1224,19 @@ MASK_EOF
     height_arg=$(_ui_fzf_height_arg 2)
     [[ -n "$height_arg" ]] && fzf_args+=("$height_arg")
 
+    _ui_nav_clear
     _ui_show_banner
     local result
-    result=$(echo "" | fzf "${fzf_args[@]}" 2>/dev/null) || true
+    if [[ "$_UI_NAV_ENABLED" == "1" ]]; then
+        result=$(echo "" | fzf "${fzf_args[@]}" 2>/dev/null) || {
+            local _pw_rc=0
+            _ui_nav_check; _pw_rc=$?
+            rm -f "$pw_file" "$pw_helper" "$pw_mask"
+            return $_pw_rc
+        }
+    else
+        result=$(echo "" | fzf "${fzf_args[@]}" 2>/dev/null) || true
+    fi
 
     # Clean up temp files
     rm -f "$pw_file" "$pw_helper" "$pw_mask"
@@ -1184,15 +1299,18 @@ ui::select() {
     fzf_args+=(--border=rounded)
     fzf_args+=(--border-label="  ${title}  ")
     fzf_args+=(--border-label-pos=5)
-    fzf_args+=(--header=" [j/k] Navigate  [Enter] Select  [Esc] Cancel")
+    fzf_args+=(--header=" [j/k] Navigate  [Enter] Select  $(_ui_nav_header_hint)")
 
     local height_arg
     height_arg=$(_ui_fzf_height_arg "${#items[@]}")
     [[ -n "$height_arg" ]] && fzf_args+=("$height_arg")
 
+    _ui_nav_clear
     _ui_show_banner
     local selected
-    selected=$(printf "%b\n" "${fzf_lines[@]}" | fzf "${fzf_args[@]}" 2>/dev/null) || return 1
+    selected=$(printf "%b\n" "${fzf_lines[@]}" | fzf "${fzf_args[@]}" 2>/dev/null) || {
+        _ui_nav_check; return $?
+    }
 
     # Extract value (after tab)
     echo "${selected##*$'\t'}"
@@ -1238,14 +1356,21 @@ ui::select_with_preview() {
     fzf_args+=(--color="marker:cyan,pointer:cyan,label:yellow,border:magenta")
     fzf_args+=(--pointer="›")
     fzf_args+=(--margin=0,2)
-    fzf_args+=(--bind 'j:down,k:up,ctrl-c:abort,esc:abort')
+    # Navigation-aware bindings (replicated from _ui_fzf_common_args)
+    if [[ "$_UI_NAV_ENABLED" == "1" ]] && [[ -n "$_UI_NAV_FILE" ]]; then
+        fzf_args+=(--bind "j:down,k:up")
+        fzf_args+=(--bind "esc:execute-silent(printf %s BACK > ${_UI_NAV_FILE})+abort")
+        fzf_args+=(--bind "ctrl-c:execute-silent(printf %s ABORT > ${_UI_NAV_FILE})+abort")
+    else
+        fzf_args+=(--bind 'j:down,k:up,ctrl-c:abort,esc:abort')
+    fi
     fzf_args+=(--delimiter=$'\t')
     fzf_args+=(--with-nth=1)
     fzf_args+=(--info=hidden)
     fzf_args+=(--border=rounded)
     fzf_args+=(--border-label="  ${title}  ")
     fzf_args+=(--border-label-pos=5)
-    fzf_args+=(--header=" [j/k] Navigate  [Enter] Select  [Esc] Cancel")
+    fzf_args+=(--header=" [j/k] Navigate  [Enter] Select  $(_ui_nav_header_hint)")
     fzf_args+=(--preview="${combined_preview}")
     fzf_args+=(--preview-window="right:50%:wrap:border-left")
 
@@ -1253,9 +1378,12 @@ ui::select_with_preview() {
     height_arg=$(_ui_fzf_height_arg "${#items[@]}")
     [[ -n "$height_arg" ]] && fzf_args+=("$height_arg")
 
+    _ui_nav_clear
     _ui_show_banner
     local selected
-    selected=$(printf "%b\n" "${fzf_lines[@]}" | fzf "${fzf_args[@]}" 2>/dev/null) || return 1
+    selected=$(printf "%b\n" "${fzf_lines[@]}" | fzf "${fzf_args[@]}" 2>/dev/null) || {
+        _ui_nav_check; return $?
+    }
 
     echo "${selected##*$'\t'}"
 }
@@ -1290,7 +1418,7 @@ ui::multiselect() {
     fzf_args+=(--border=rounded)
     fzf_args+=(--border-label="  ${title}  ")
     fzf_args+=(--border-label-pos=5)
-    fzf_args+=(--header=" [TAB] Toggle  [Ctrl-A] All  [Ctrl-D] None  [Enter] Confirm")
+    fzf_args+=(--header=" [TAB] Toggle  [Ctrl-A] All  [Ctrl-D] None  [Enter] Confirm  $(_ui_nav_header_hint)")
     fzf_args+=(--marker="✔ ")
     fzf_args+=(--bind 'ctrl-a:select-all,ctrl-d:deselect-all')
 
@@ -1298,9 +1426,12 @@ ui::multiselect() {
     height_arg=$(_ui_fzf_height_arg "${#items[@]}")
     [[ -n "$height_arg" ]] && fzf_args+=("$height_arg")
 
+    _ui_nav_clear
     _ui_show_banner
     local selected
-    selected=$(printf "%b\n" "${fzf_lines[@]}" | fzf "${fzf_args[@]}" 2>/dev/null) || return 1
+    selected=$(printf "%b\n" "${fzf_lines[@]}" | fzf "${fzf_args[@]}" 2>/dev/null) || {
+        _ui_nav_check; return $?
+    }
 
     # Extract values
     while IFS= read -r line; do
@@ -1353,7 +1484,7 @@ ui::checklist() {
     fzf_args+=(--border=rounded)
     fzf_args+=(--border-label="  ${title}  ")
     fzf_args+=(--border-label-pos=5)
-    fzf_args+=(--header=" [TAB] Toggle  [Ctrl-A] All  [Ctrl-D] None  [Enter] Confirm")
+    fzf_args+=(--header=" [TAB] Toggle  [Ctrl-A] All  [Ctrl-D] None  [Enter] Confirm  $(_ui_nav_header_hint)")
     fzf_args+=(--marker="✔ ")
     fzf_args+=(--bind "${select_bind}")
     fzf_args+=(--bind 'ctrl-a:select-all,ctrl-d:deselect-all')
@@ -1362,9 +1493,12 @@ ui::checklist() {
     height_arg=$(_ui_fzf_height_arg "${#items[@]}")
     [[ -n "$height_arg" ]] && fzf_args+=("$height_arg")
 
+    _ui_nav_clear
     _ui_show_banner
     local selected
-    selected=$(printf "%b\n" "${fzf_lines[@]}" | fzf "${fzf_args[@]}" 2>/dev/null) || return 1
+    selected=$(printf "%b\n" "${fzf_lines[@]}" | fzf "${fzf_args[@]}" 2>/dev/null) || {
+        _ui_nav_check; return $?
+    }
 
     while IFS= read -r line; do
         echo "${line##*$'\t'}"
@@ -1457,6 +1591,8 @@ ui::cleanup() {
     echo -ne "${UI_NC}"
     # Clean up progress temp files
     ui::progress_cleanup 2>/dev/null || true
+    # Clean up navigation temp file
+    ui::nav_cleanup 2>/dev/null || true
 }
 
 # System dashboard — info panel in double-line box

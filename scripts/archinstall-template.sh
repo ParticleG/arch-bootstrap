@@ -67,26 +67,43 @@ _show_banner
 ui::require_root || exit 1
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# §1. Select System Language
+# Enable wizard navigation: Esc = back, Ctrl-C = abort
 # ═══════════════════════════════════════════════════════════════════════════════
 
-ui::section "语言 / Language" "选择系统语言 (locale)"
-
-SYS_LANG=$(ui::select "系统语言 System Language" \
-    "简体中文  zh_CN.UTF-8|zh_CN.UTF-8" \
-    "English   en_US.UTF-8|en_US.UTF-8" \
-    "日本語    ja_JP.UTF-8|ja_JP.UTF-8") || SYS_LANG="zh_CN.UTF-8"
-
-ui::success "语言: ${SYS_LANG}"
-ui::progress_set "语言 Language" "${SYS_LANG}"
+ui::enable_nav
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# §2. Select Target Disk (with preview)
+# Smart username default (computed once, used in step 5)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-ui::section "磁盘 / Disk" "选择安装目标磁盘"
+if [[ -n "${SUDO_USER:-}" ]] && [[ "$SUDO_USER" != "root" ]]; then
+    DEFAULT_USER="$SUDO_USER"
+elif [[ "$EUID" -ne 0 ]] && [[ -n "${USER:-}" ]]; then
+    DEFAULT_USER="$USER"
+else
+    DEFAULT_USER=""
+fi
 
-# Build disk list dynamically
+# Username validator (defined once, used in step 5)
+_validate_username() {
+    local u="$1"
+    if [[ -z "$u" ]]; then
+        echo "用户名不能为空" >&2
+        return 1
+    fi
+    if [[ ! "$u" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
+        echo "用户名只能包含小写字母、数字、下划线和连字符" >&2
+        return 1
+    fi
+    return 0
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Wizard Step Functions — each returns 0=ok, 2=back, 130=abort
+# Variables are set as globals so they persist across steps.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Disk list is built once (before wizard), reused on re-entry to step 2
 declare -a DISK_ITEMS=()
 while IFS= read -r line; do
     disk_name=$(echo "$line" | awk '{print $1}')
@@ -100,193 +117,242 @@ if [[ ${#DISK_ITEMS[@]} -eq 0 ]]; then
     exit 1
 fi
 
-# Preview command shows detailed partition/filesystem info for the selected disk
-TARGET_DISK=$(ui::select_with_preview "安装目标磁盘 Target Disk" \
-    "lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT,LABEL /dev/{}" \
-    "${DISK_ITEMS[@]}") || {
-    ui::warn "No disk selected, defaulting to first available disk"
-    TARGET_DISK=$(echo "${DISK_ITEMS[0]}" | cut -d'|' -f2)
+# ─── Step 1: Language ───
+_step_language() {
+    SYS_LANG=$(ui::select "系统语言 System Language" \
+        "简体中文  zh_CN.UTF-8|zh_CN.UTF-8" \
+        "English   en_US.UTF-8|en_US.UTF-8" \
+        "日本語    ja_JP.UTF-8|ja_JP.UTF-8")
+    local rc=$?
+    if (( rc != 0 )); then return $rc; fi
+
+    ui::success "语言: ${SYS_LANG}"
+    ui::progress_set "语言 Language" "${SYS_LANG}"
+
+    # Auto-compute extra packages based on language
+    EXTRA_PACKAGES='"neovim", "git", "7zip", "base-devel", "zsh"'
+    NEED_KMSCON=false
+    if [[ "$SYS_LANG" != "en_US.UTF-8" ]]; then
+        EXTRA_PACKAGES="${EXTRA_PACKAGES}, \"kmscon\""
+        NEED_KMSCON=true
+        ui::log "已自动添加 ${UI_BOLD}kmscon${UI_NC} 用于非英文 TTY 显示支持"
+    fi
+    return 0
 }
 
-TARGET_DEV="/dev/${TARGET_DISK}"
+# ─── Step 2: Disk ───
+_step_disk() {
+    TARGET_DISK=$(ui::select_with_preview "安装目标磁盘 Target Disk" \
+        "lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT,LABEL /dev/{}" \
+        "${DISK_ITEMS[@]}")
+    local rc=$?
+    if (( rc != 0 )); then return $rc; fi
 
-if [[ ! -b "$TARGET_DEV" ]]; then
-    ui::error "${TARGET_DEV} does not exist"
-    exit 1
-fi
+    TARGET_DEV="/dev/${TARGET_DISK}"
 
-ui::success "目标磁盘: ${TARGET_DEV}"
-ui::progress_set "磁盘 Disk" "${TARGET_DEV}"
+    if [[ ! -b "$TARGET_DEV" ]]; then
+        ui::error "${TARGET_DEV} does not exist"
+        exit 1
+    fi
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# §3. Select Network Backend
-# ═══════════════════════════════════════════════════════════════════════════════
+    ui::success "目标磁盘: ${TARGET_DEV}"
+    ui::progress_set "磁盘 Disk" "${TARGET_DEV}"
 
-ui::section "网络 / Network" "选择网络管理方式"
+    # Auto-compute partition layout
+    DISK_SIZE_BYTES=$($SUDO blockdev --getsize64 "$TARGET_DEV")
+    EFI_START_BYTES=1048576
+    EFI_SIZE_GIB=1
+    BTRFS_START_BYTES=$((EFI_START_BYTES + EFI_SIZE_GIB * 1073741824))
+    BTRFS_SIZE_BYTES=$((DISK_SIZE_BYTES - BTRFS_START_BYTES))
+    DISK_SIZE_HUMAN=$(numfmt --to=iec-i --suffix=B "$DISK_SIZE_BYTES" 2>/dev/null || echo "${DISK_SIZE_BYTES} bytes")
+    BTRFS_SIZE_HUMAN=$(numfmt --to=iec-i --suffix=B "$BTRFS_SIZE_BYTES" 2>/dev/null || echo "${BTRFS_SIZE_BYTES} bytes")
 
-NET_TYPE=$(ui::select "网络后端 Network Backend" \
-    "NetworkManager + iwd  (推荐，更省电)|nm_iwd" \
-    "NetworkManager + wpa_supplicant  (传统)|nm") || NET_TYPE="nm_iwd"
+    ui::info_kv "EFI" "1 GiB" "(FAT32, /boot)"
+    ui::info_kv "Btrfs" "${BTRFS_SIZE_HUMAN}" "(compress=zstd, subvols: @ @home @log @pkg)"
+    return 0
+}
 
-ui::success "网络: ${NET_TYPE}"
-ui::progress_set "网络 Network" "${NET_TYPE}"
+# ─── Step 3: Network ───
+_step_network() {
+    NET_TYPE=$(ui::select "网络后端 Network Backend" \
+        "NetworkManager + iwd  (推荐，更省电)|nm_iwd" \
+        "NetworkManager + wpa_supplicant  (传统)|nm")
+    local rc=$?
+    if (( rc != 0 )); then return $rc; fi
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# §4. Optional Repositories
-# ═══════════════════════════════════════════════════════════════════════════════
+    ui::success "网络: ${NET_TYPE}"
+    ui::progress_set "网络 Network" "${NET_TYPE}"
+    return 0
+}
 
-ui::section "仓库 / Repositories" "选择要启用的可选仓库"
+# ─── Step 4: Repositories ───
+_step_repos() {
+    ui::confirm "启用 multilib 仓库? (32 位兼容，如 Steam)" "Y"
+    local rc=$?
+    if (( rc == 2 || rc == 130 )); then return $rc; fi
 
-OPTIONAL_REPOS=""
-if ui::confirm "启用 multilib 仓库? (32 位兼容，如 Steam)" "Y"; then
-    OPTIONAL_REPOS='"multilib"'
-    ui::success "multilib: 已启用"
-    ui::progress_set "Multilib" "已启用"
-else
-    ui::log "multilib: 未启用"
-    ui::progress_set "Multilib" "未启用"
-fi
+    if (( rc == 0 )); then
+        OPTIONAL_REPOS='"multilib"'
+        ui::success "multilib: 已启用"
+        ui::progress_set "Multilib" "已启用"
+    else
+        OPTIONAL_REPOS=""
+        ui::log "multilib: 未启用"
+        ui::progress_set "Multilib" "未启用"
+    fi
+    return 0
+}
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# §5. Extra Packages (auto-detect based on language)
-# ═══════════════════════════════════════════════════════════════════════════════
+# ─── Step 5: Username ───
+_step_username() {
+    if [[ -n "$DEFAULT_USER" ]]; then
+        USERNAME=$(ui::input "用户名 Username" "$DEFAULT_USER")
+        local rc=$?
+        if (( rc != 0 )); then return $rc; fi
+    else
+        USERNAME=$(ui::input_validate "用户名 Username" _validate_username)
+        local rc=$?
+        if (( rc != 0 )); then return $rc; fi
+    fi
 
-EXTRA_PACKAGES='"neovim", "git", "7zip", "base-devel", "zsh"'
-NEED_KMSCON=false
+    ui::success "用户名: ${USERNAME}"
+    ui::progress_set "用户 User" "${USERNAME}"
+    return 0
+}
 
-if [[ "$SYS_LANG" != "en_US.UTF-8" ]]; then
-    EXTRA_PACKAGES="${EXTRA_PACKAGES}, \"kmscon\""
-    NEED_KMSCON=true
-    ui::log "已自动添加 ${UI_BOLD}kmscon${UI_NC} 用于非英文 TTY 显示支持"
-fi
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# §6. Partition Calculation
-# ═══════════════════════════════════════════════════════════════════════════════
-
-ui::step 1 2 "Reading disk geometry..."
-
-DISK_SIZE_BYTES=$($SUDO blockdev --getsize64 "$TARGET_DEV")
-# EFI: 1GiB starting at 1MiB
-EFI_START_BYTES=1048576
-EFI_SIZE_GIB=1
-BTRFS_START_BYTES=$((EFI_START_BYTES + EFI_SIZE_GIB * 1073741824))
-BTRFS_SIZE_BYTES=$((DISK_SIZE_BYTES - BTRFS_START_BYTES))
-
-DISK_SIZE_HUMAN=$(numfmt --to=iec-i --suffix=B "$DISK_SIZE_BYTES" 2>/dev/null || echo "${DISK_SIZE_BYTES} bytes")
-BTRFS_SIZE_HUMAN=$(numfmt --to=iec-i --suffix=B "$BTRFS_SIZE_BYTES" 2>/dev/null || echo "${BTRFS_SIZE_BYTES} bytes")
-
-ui::step 2 2 "Partition layout calculated"
-ui::info_kv "EFI" "1 GiB" "(FAT32, /boot)"
-ui::info_kv "Btrfs" "${BTRFS_SIZE_HUMAN}" "(compress=zstd, subvols: @ @home @log @pkg)"
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# §7. User Credentials
-# ═══════════════════════════════════════════════════════════════════════════════
-
-ui::section "用户 / User Account" "配置用户名和密码"
-
-# Smart default: SUDO_USER > USER > (no default if root)
-if [[ -n "${SUDO_USER:-}" ]] && [[ "$SUDO_USER" != "root" ]]; then
-    DEFAULT_USER="$SUDO_USER"
-elif [[ "$EUID" -ne 0 ]] && [[ -n "${USER:-}" ]]; then
-    DEFAULT_USER="$USER"
-else
-    DEFAULT_USER=""
-fi
-
-if [[ -n "$DEFAULT_USER" ]]; then
-    USERNAME=$(ui::input "用户名 Username" "$DEFAULT_USER")
-else
-    # No default — require input with validation
-    _validate_username() {
-        local u="$1"
-        if [[ -z "$u" ]]; then
-            echo "用户名不能为空" >&2
-            return 1
-        fi
-        if [[ ! "$u" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
-            echo "用户名只能包含小写字母、数字、下划线和连字符" >&2
-            return 1
-        fi
-        return 0
-    }
-    USERNAME=$(ui::input_validate "用户名 Username" _validate_username)
-fi
-
-ui::success "用户名: ${USERNAME}"
-ui::progress_set "用户 User" "${USERNAME}"
-
-# Passwords
-echo ""
-USER_PASSWORD=$(ui::password "用户密码 User Password")
-while [[ -z "$USER_PASSWORD" ]]; do
-    ui::warn "用户密码不能为空"
+# ─── Step 6: User Password ───
+_step_user_password() {
     USER_PASSWORD=$(ui::password "用户密码 User Password")
+    local rc=$?
+    if (( rc != 0 )); then return $rc; fi
+
+    while [[ -z "$USER_PASSWORD" ]]; do
+        ui::warn "用户密码不能为空" > /dev/tty
+        USER_PASSWORD=$(ui::password "用户密码 User Password")
+        rc=$?
+        if (( rc != 0 )); then return $rc; fi
+    done
+
+    ui::progress_set "用户密码" "已设置"
+    return 0
+}
+
+# ─── Step 7: Root Password ───
+_step_root_password() {
+    ROOT_PASSWORD=$(ui::password "Root 密码 (留空则不设置)")
+    local rc=$?
+    if (( rc != 0 )); then return $rc; fi
+
+    if [[ -n "$ROOT_PASSWORD" ]]; then
+        ui::success "Root 密码: 已设置"
+        ui::progress_set "Root 密码" "已设置"
+    else
+        ui::log "Root 密码: 未设置"
+        ui::progress_set "Root 密码" "未设置"
+    fi
+    return 0
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Wizard Loop — steps 1-7 interactive + step 8 confirm, with back/abort
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Step 8 helper: build summary + confirm
+_step_confirm() {
+    # Generate encrypted passwords
+    USER_ENC_PASSWORD=$(openssl passwd -6 -stdin <<< "$USER_PASSWORD" 2>/dev/null \
+        || python3 -c "import crypt; print(crypt.crypt('$USER_PASSWORD', crypt.mksalt(crypt.METHOD_SHA512)))")
+    ROOT_ENC_PASSWORD=""
+    if [[ -n "${ROOT_PASSWORD:-}" ]]; then
+        ROOT_ENC_PASSWORD=$(openssl passwd -6 -stdin <<< "$ROOT_PASSWORD" 2>/dev/null \
+            || python3 -c "import crypt; print(crypt.crypt('$ROOT_PASSWORD', crypt.mksalt(crypt.METHOD_SHA512)))")
+    fi
+
+    # Build status strings
+    MULTILIB_STATUS=$([ -n "${OPTIONAL_REPOS:-}" ] && echo '已启用' || echo '未启用')
+    ROOT_PW_STATUS=$([ -n "$ROOT_ENC_PASSWORD" ] && echo '已设置' || echo '未设置')
+    KMSCON_STATUS=$([ "${NEED_KMSCON:-false}" = true ] && echo '已添加' || echo '不需要')
+
+    # Print dashboard to scrollback
+    ui::dashboard \
+        "系统语言|${SYS_LANG}" \
+        "目标磁盘|${TARGET_DEV} (${DISK_SIZE_HUMAN})" \
+        "网络后端|${NET_TYPE}" \
+        "Multilib|${MULTILIB_STATUS}" \
+        "用户名|${USERNAME}" \
+        "Root 密码|${ROOT_PW_STATUS}" \
+        "kmscon|${KMSCON_STATUS}" \
+        "版本|archinstall 4.1"
+
+    # Build ANSI-formatted summary for the confirm preview panel
+    local _summary=""
+    _summary+="\033[1;36m  ╔══════════════════════════════════════╗\033[0m\n"
+    _summary+="\033[1;36m  ║  \033[1;35mCONFIGURATION SUMMARY\033[0m\n"
+    _summary+="\033[1;36m  ╚══════════════════════════════════════╝\033[0m\n"
+    _summary+="\n"
+    _summary+="  \033[1;32m✔\033[0m \033[1m系统语言\033[0m    ${SYS_LANG}\n"
+    _summary+="  \033[1;32m✔\033[0m \033[1m目标磁盘\033[0m    ${TARGET_DEV} (${DISK_SIZE_HUMAN})\n"
+    _summary+="  \033[1;32m✔\033[0m \033[1m网络后端\033[0m    ${NET_TYPE}\n"
+    _summary+="  \033[1;32m✔\033[0m \033[1mMultilib\033[0m    ${MULTILIB_STATUS}\n"
+    _summary+="  \033[1;32m✔\033[0m \033[1m用户名\033[0m      ${USERNAME}\n"
+    _summary+="  \033[1;32m✔\033[0m \033[1mRoot 密码\033[0m   ${ROOT_PW_STATUS}\n"
+    _summary+="  \033[1;32m✔\033[0m \033[1mkmscon\033[0m      ${KMSCON_STATUS}\n"
+    _summary+="  \033[1;32m✔\033[0m \033[1m版本\033[0m        archinstall 4.1\n"
+    _summary+="\n"
+    _summary+="  \033[2m─────────────────────────────────────────\033[0m\n"
+    _summary+="  \033[1;34mBoot\033[0m    EFISTUB (UKI)\n"
+    _summary+="  \033[1;34mFS\033[0m      Btrfs + zstd + Snapper\n"
+    _summary+="  \033[1;34mAudio\033[0m   PipeWire\n"
+    _summary+="  \033[1;34mBT\033[0m      Enabled\n"
+
+    ui::confirm "以上配置正确？生成 JSON 文件?" "Y" "" "$_summary"
+    local rc=$?
+    case $rc in
+        0)   return 0 ;;    # Confirmed
+        1)   # Selected "No" — user explicitly declined, cancel gracefully
+             ui::warn "已取消"
+             exit 0
+             ;;
+        2)   return 2 ;;    # Back
+        130) return 130 ;;  # Abort
+        *)   return $rc ;;
+    esac
+}
+
+_STEP=1
+_MAX_STEP=8  # steps 1-7 = interactive, step 8 = confirm
+
+while (( _STEP <= _MAX_STEP )); do
+    case $_STEP in
+        1) _step_language       ;;
+        2) _step_disk           ;;
+        3) _step_network        ;;
+        4) _step_repos          ;;
+        5) _step_username       ;;
+        6) _step_user_password  ;;
+        7) _step_root_password  ;;
+        8) _step_confirm        ;;
+    esac
+    _rc=$?
+    case $_rc in
+        0)   (( _STEP++ )) ;;
+        2)   # Back — go to previous step (min 1)
+             if (( _STEP > 1 )); then
+                 (( _STEP-- ))
+             else
+                 ui::warn "已经是第一步"
+             fi
+             ;;
+        130) # Abort
+             ui::warn "已中止"
+             exit 1
+             ;;
+        *)   # Unexpected error
+             ui::error "Step ${_STEP} failed with exit code ${_rc}"
+             exit "$_rc"
+             ;;
+    esac
 done
-
-ROOT_PASSWORD=$(ui::password "Root 密码 (留空则不设置)")
-
-# Generate encrypted passwords
-USER_ENC_PASSWORD=$(openssl passwd -6 -stdin <<< "$USER_PASSWORD" 2>/dev/null \
-    || python3 -c "import crypt; print(crypt.crypt('$USER_PASSWORD', crypt.mksalt(crypt.METHOD_SHA512)))")
-
-ROOT_ENC_PASSWORD=""
-if [[ -n "$ROOT_PASSWORD" ]]; then
-    ROOT_ENC_PASSWORD=$(openssl passwd -6 -stdin <<< "$ROOT_PASSWORD" 2>/dev/null \
-        || python3 -c "import crypt; print(crypt.crypt('$ROOT_PASSWORD', crypt.mksalt(crypt.METHOD_SHA512)))")
-    ui::success "Root 密码: 已设置"
-    ui::progress_set "Root 密码" "已设置"
-else
-    ui::log "Root 密码: 未设置"
-    ui::progress_set "Root 密码" "未设置"
-fi
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# §8. Configuration Summary
-# ═══════════════════════════════════════════════════════════════════════════════
-
-# Build summary for both terminal output and confirm preview panel
-MULTILIB_STATUS=$([ -n "$OPTIONAL_REPOS" ] && echo '已启用' || echo '未启用')
-ROOT_PW_STATUS=$([ -n "$ROOT_ENC_PASSWORD" ] && echo '已设置' || echo '未设置')
-KMSCON_STATUS=$([ "$NEED_KMSCON" = true ] && echo '已添加' || echo '不需要')
-
-# Print dashboard to scrollback (visible after fzf exits)
-ui::dashboard \
-    "系统语言|${SYS_LANG}" \
-    "目标磁盘|${TARGET_DEV} (${DISK_SIZE_HUMAN})" \
-    "网络后端|${NET_TYPE}" \
-    "Multilib|${MULTILIB_STATUS}" \
-    "用户名|${USERNAME}" \
-    "Root 密码|${ROOT_PW_STATUS}" \
-    "kmscon|${KMSCON_STATUS}" \
-    "版本|archinstall 4.1"
-
-# Build ANSI-formatted summary for the confirm preview panel
-_summary=""
-_summary+="\033[1;36m  ╔══════════════════════════════════════╗\033[0m\n"
-_summary+="\033[1;36m  ║  \033[1;35mCONFIGURATION SUMMARY\033[0m\n"
-_summary+="\033[1;36m  ╚══════════════════════════════════════╝\033[0m\n"
-_summary+="\n"
-_summary+="  \033[1;32m✔\033[0m \033[1m系统语言\033[0m    ${SYS_LANG}\n"
-_summary+="  \033[1;32m✔\033[0m \033[1m目标磁盘\033[0m    ${TARGET_DEV} (${DISK_SIZE_HUMAN})\n"
-_summary+="  \033[1;32m✔\033[0m \033[1m网络后端\033[0m    ${NET_TYPE}\n"
-_summary+="  \033[1;32m✔\033[0m \033[1mMultilib\033[0m    ${MULTILIB_STATUS}\n"
-_summary+="  \033[1;32m✔\033[0m \033[1m用户名\033[0m      ${USERNAME}\n"
-_summary+="  \033[1;32m✔\033[0m \033[1mRoot 密码\033[0m   ${ROOT_PW_STATUS}\n"
-_summary+="  \033[1;32m✔\033[0m \033[1mkmscon\033[0m      ${KMSCON_STATUS}\n"
-_summary+="  \033[1;32m✔\033[0m \033[1m版本\033[0m        archinstall 4.1\n"
-_summary+="\n"
-_summary+="  \033[2m─────────────────────────────────────────\033[0m\n"
-_summary+="  \033[1;34mBoot\033[0m    EFISTUB (UKI)\n"
-_summary+="  \033[1;34mFS\033[0m      Btrfs + zstd + Snapper\n"
-_summary+="  \033[1;34mAudio\033[0m   PipeWire\n"
-_summary+="  \033[1;34mBT\033[0m      Enabled\n"
-
-if ! ui::confirm "以上配置正确？生成 JSON 文件?" "Y" "" "$_summary"; then
-    ui::warn "已取消"
-    exit 0
-fi
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # §9. Generate user_configuration.json

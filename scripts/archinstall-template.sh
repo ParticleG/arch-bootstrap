@@ -13,6 +13,10 @@ source "${SCRIPT_DIR}/lib/ui.sh"
 # ─── Initialize logging ───
 ui::log_init "/tmp/archinstall-template-$(date '+%Y%m%d-%H%M%S').log"
 
+# ─── Enable fullscreen fzf with progress panel ───
+ui::fullscreen "Archinstall 4.1 Config"
+ui::progress_init
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Banner
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -24,7 +28,13 @@ ui::banner \
     '  ██   ██ ██   ██ ██      ██   ██' \
     '  ██   ██ ██   ██  ██████ ██   ██' \
     '' \
-    "  ${UI_DIM}Bootstrap · Archinstall 4.1 Configuration Generator${UI_NC}"
+    '  ██████   ██████   ██████  ████████ ███████ ████████ ██████   █████  ██████  ' \
+    '  ██   ██ ██    ██ ██    ██    ██    ██         ██    ██   ██ ██   ██ ██   ██ ' \
+    '  ██████  ██    ██ ██    ██    ██    ███████    ██    ██████  ███████ ██████  ' \
+    '  ██   ██ ██    ██ ██    ██    ██         ██    ██    ██   ██ ██   ██ ██      ' \
+    '  ██████   ██████   ██████     ██    ███████    ██    ██   ██ ██   ██ ██      ' \
+    '' \
+    "  ${UI_DIM}Archinstall 4.1 Configuration Generator${UI_NC}"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # §0. Privilege Check
@@ -44,6 +54,7 @@ SYS_LANG=$(ui::select "系统语言 System Language" \
     "日本語    ja_JP.UTF-8|ja_JP.UTF-8") || SYS_LANG="zh_CN.UTF-8"
 
 ui::success "语言: ${SYS_LANG}"
+ui::progress_set "语言 Language" "${SYS_LANG}"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # §2. Select Target Disk (with preview)
@@ -81,6 +92,7 @@ if [[ ! -b "$TARGET_DEV" ]]; then
 fi
 
 ui::success "目标磁盘: ${TARGET_DEV}"
+ui::progress_set "磁盘 Disk" "${TARGET_DEV}"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # §3. Select Network Backend
@@ -93,6 +105,7 @@ NET_TYPE=$(ui::select "网络后端 Network Backend" \
     "NetworkManager + wpa_supplicant  (传统)|nm") || NET_TYPE="nm_iwd"
 
 ui::success "网络: ${NET_TYPE}"
+ui::progress_set "网络 Network" "${NET_TYPE}"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # §4. Optional Repositories
@@ -104,8 +117,10 @@ OPTIONAL_REPOS=""
 if ui::confirm "启用 multilib 仓库? (32 位兼容，如 Steam)" "Y"; then
     OPTIONAL_REPOS='"multilib"'
     ui::success "multilib: 已启用"
+    ui::progress_set "Multilib" "已启用"
 else
     ui::log "multilib: 未启用"
+    ui::progress_set "Multilib" "未启用"
 fi
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -176,6 +191,7 @@ else
 fi
 
 ui::success "用户名: ${USERNAME}"
+ui::progress_set "用户 User" "${USERNAME}"
 
 # Passwords
 echo ""
@@ -196,8 +212,10 @@ if [[ -n "$ROOT_PASSWORD" ]]; then
     ROOT_ENC_PASSWORD=$(openssl passwd -6 -stdin <<< "$ROOT_PASSWORD" 2>/dev/null \
         || python3 -c "import crypt; print(crypt.crypt('$ROOT_PASSWORD', crypt.mksalt(crypt.METHOD_SHA512)))")
     ui::success "Root 密码: 已设置"
+    ui::progress_set "Root 密码" "已设置"
 else
     ui::log "Root 密码: 未设置"
+    ui::progress_set "Root 密码" "未设置"
 fi
 
 # ═══════════════════════════════════════════════════════════════════════════════

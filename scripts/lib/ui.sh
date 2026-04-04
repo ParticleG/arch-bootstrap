@@ -94,13 +94,17 @@ _ui_strlen() {
     echo "${#stripped}"
 }
 
-# Repeat a character N times
+# Repeat a character (or multi-byte string) N times
+# Uses bash string substitution instead of tr to correctly handle
+# multi-byte UTF-8 characters like ─ (U+2500, 3 bytes), ═, ━, etc.
 _ui_repeat() {
     local char="$1" count="$2"
     if (( count <= 0 )); then
         return
     fi
-    printf "%${count}s" '' | tr ' ' "$char"
+    local s
+    printf -v s '%*s' "$count" ''
+    printf '%s' "${s// /$char}"
 }
 
 # Get terminal width
@@ -202,6 +206,116 @@ ui::debug() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# §4b. Progress Tracking System — Persistent right-pane via fzf --preview
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# When fullscreen mode is enabled, all fzf calls use full terminal height
+# and show a progress preview panel on the right side.
+_UI_FULLSCREEN=0
+_UI_PROGRESS_FILE=""
+_UI_PREVIEW_SCRIPT=""
+_UI_PROGRESS_HEADER=""
+
+# Enable fullscreen fzf mode with progress panel
+# Usage: ui::fullscreen "App Title"
+ui::fullscreen() {
+    _UI_FULLSCREEN=1
+    _UI_PROGRESS_HEADER="${1:-Progress}"
+}
+
+# Initialize progress tracking. Creates temp files for progress state + preview script.
+# Usage: ui::progress_init
+ui::progress_init() {
+    _UI_PROGRESS_FILE=$(mktemp /tmp/ui-progress-XXXXXX)
+    _UI_PREVIEW_SCRIPT=$(mktemp /tmp/ui-preview-XXXXXX.sh)
+    chmod +x "$_UI_PREVIEW_SCRIPT"
+
+    # Write the preview script that fzf --preview will call.
+    # It reads progress entries and formats them into a nice panel.
+    cat > "$_UI_PREVIEW_SCRIPT" << 'PREVIEW_EOF'
+#!/bin/bash
+PROGRESS_FILE="$1"
+LOG_FILE="$2"
+HEADER="$3"
+
+NC='\033[0m'
+BOLD='\033[1m'
+DIM='\033[2m'
+CYAN='\033[1;36m'
+GREEN='\033[1;32m'
+YELLOW='\033[1;33m'
+PURPLE='\033[1;35m'
+GRAY='\033[1;90m'
+BLUE='\033[1;34m'
+
+# Title
+echo -e "${BOLD}${CYAN}  ╔══════════════════════════════════════╗${NC}"
+echo -e "${BOLD}${CYAN}  ║  ${PURPLE}${HEADER}${CYAN}${NC}"
+echo -e "${BOLD}${CYAN}  ╚══════════════════════════════════════╝${NC}"
+echo ""
+
+# Show completed steps from progress file
+if [[ -f "$PROGRESS_FILE" ]] && [[ -s "$PROGRESS_FILE" ]]; then
+    while IFS='|' read -r key val; do
+        echo -e "  ${GREEN}✔${NC} ${BOLD}${key}${NC}  ${DIM}${val}${NC}"
+    done < "$PROGRESS_FILE"
+    echo ""
+fi
+
+# Show recent log entries
+if [[ -n "$LOG_FILE" ]] && [[ -f "$LOG_FILE" ]] && [[ -s "$LOG_FILE" ]]; then
+    echo -e "  ${GRAY}─── Recent Log ───${NC}"
+    tail -5 "$LOG_FILE" | while IFS= read -r line; do
+        echo -e "  ${DIM}${line}${NC}"
+    done
+fi
+PREVIEW_EOF
+}
+
+# Record a completed step in the progress panel
+# Usage: ui::progress_set "语言 Language" "zh_CN.UTF-8"
+ui::progress_set() {
+    local key="$1" val="$2"
+    [[ -z "$_UI_PROGRESS_FILE" ]] && return 0
+    echo "${key}|${val}" >> "$_UI_PROGRESS_FILE"
+}
+
+# Get common fzf args for fullscreen + preview mode
+# Returns args array via stdout (one per line)
+_ui_fzf_common_args() {
+    local -a args=()
+    args+=(--ansi)
+    args+=(--layout=reverse)
+    args+=(--color="marker:cyan,pointer:cyan,label:yellow,border:magenta")
+    args+=(--pointer="›")
+    args+=(--margin=0,2)
+    args+=(--bind 'j:down,k:up,ctrl-c:abort,esc:abort')
+
+    if [[ "$_UI_FULLSCREEN" == "1" ]] && [[ -n "$_UI_PREVIEW_SCRIPT" ]]; then
+        # Full-screen with progress preview on right
+        args+=(--preview="${_UI_PREVIEW_SCRIPT} ${_UI_PROGRESS_FILE} ${_UI_LOG_FILE} '${_UI_PROGRESS_HEADER}'")
+        args+=(--preview-window="right:45%:wrap:border-left")
+    fi
+    printf '%s\n' "${args[@]}"
+}
+
+# Build --height arg (only used when NOT fullscreen)
+_ui_fzf_height_arg() {
+    local count="$1"
+    if [[ "$_UI_FULLSCREEN" == "1" ]]; then
+        echo ""
+    else
+        echo "--height=~$((count + 4))"
+    fi
+}
+
+# Clean up progress temp files
+ui::progress_cleanup() {
+    [[ -n "$_UI_PROGRESS_FILE" ]] && rm -f "$_UI_PROGRESS_FILE"
+    [[ -n "$_UI_PREVIEW_SCRIPT" ]] && rm -f "$_UI_PREVIEW_SCRIPT"
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # §5. Visual Components — Layout
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -225,6 +339,8 @@ ui::banner() {
 }
 
 # Section header — rounded box with title and subtitle
+# Right-side border dropped from content lines to avoid CJK alignment issues
+# (Chinese chars are 2 columns wide but ${#var} counts them as 1)
 # Usage: ui::section "Title" "Subtitle"
 ui::section() {
     local title="$1" subtitle="${2:-}"
@@ -236,9 +352,9 @@ ui::section() {
 
     echo ""
     echo -e "${UI_PURPLE}╭${bar}╮${UI_NC}"
-    echo -e "${UI_PURPLE}│${UI_NC} ${UI_BOLD}${UI_WHITE}${title}${UI_NC}$(_ui_pad_right "  ${title}" "$box_w")${UI_PURPLE}│${UI_NC}"
+    echo -e "${UI_PURPLE}│${UI_NC} ${UI_BOLD}${UI_WHITE}${title}${UI_NC}"
     if [[ -n "$subtitle" ]]; then
-        echo -e "${UI_PURPLE}│${UI_NC} ${UI_CYAN}${subtitle}${UI_NC}$(_ui_pad_right "  ${subtitle}" "$box_w")${UI_PURPLE}│${UI_NC}"
+        echo -e "${UI_PURPLE}│${UI_NC} ${UI_CYAN}${subtitle}${UI_NC}"
     fi
     echo -e "${UI_PURPLE}╰${bar}╯${UI_NC}"
     _ui_write_log "SECTION" "${title}${subtitle:+ — ${subtitle}}"
@@ -255,6 +371,7 @@ ui::info_kv() {
 }
 
 # Arbitrary content box — rounded border, auto-width
+# Right-side border dropped from content lines to avoid CJK alignment issues
 # Usage: ui::box "Title" "line1" "line2" ...
 # Or piped: echo "content" | ui::box "Title"
 ui::box() {
@@ -284,19 +401,13 @@ ui::box() {
     local box_w=$(( max_len + 4 ))
     (( box_w < 30 )) && box_w=30
     (( box_w > cols - 4 )) && box_w=$(( cols - 4 ))
-    local inner_w=$(( box_w - 2 ))
 
     local bar
     bar=$(_ui_repeat '─' "$box_w")
 
-    # Title row
-    local title_raw="  ${title}"
-    local title_pad
-    title_pad=$(_ui_pad_right "$title_raw" "$inner_w")
-
     echo ""
     echo -e "${UI_PURPLE}╭${bar}╮${UI_NC}"
-    echo -e "${UI_PURPLE}│${UI_NC} ${UI_BOLD}${title}${UI_NC}${title_pad}${UI_PURPLE}│${UI_NC}"
+    echo -e "${UI_PURPLE}│${UI_NC} ${UI_BOLD}${title}${UI_NC}"
 
     if [[ ${#lines[@]} -gt 0 ]]; then
         local sep
@@ -304,11 +415,7 @@ ui::box() {
         echo -e "${UI_PURPLE}├${sep}┤${UI_NC}"
 
         for line in "${lines[@]}"; do
-            local raw
-            raw=$(_ui_strip_ansi "$line")
-            local pad
-            pad=$(_ui_pad_right "  ${raw}" "$inner_w")
-            echo -e "${UI_PURPLE}│${UI_NC} ${line}${pad}${UI_PURPLE}│${UI_NC}"
+            echo -e "${UI_PURPLE}│${UI_NC} ${line}"
         done
     fi
     echo -e "${UI_PURPLE}╰${bar}╯${UI_NC}"
@@ -626,7 +733,7 @@ ui::countdown() {
 # §8. User Input
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# Y/N confirmation
+# Y/N confirmation via fzf (fullscreen-aware with preview)
 # Usage: ui::confirm "Proceed with installation?" [Y|N] [timeout_seconds]
 #   Returns 0 for yes, 1 for no
 ui::confirm() {
@@ -634,61 +741,141 @@ ui::confirm() {
     local default="${2:-}"
     local timeout="${3:-}"
 
-    local hint=""
+    # When fzf is not available or not fullscreen, fall back to read-based
+    if ! command -v fzf &>/dev/null || [[ "$_UI_FULLSCREEN" != "1" ]]; then
+        local hint=""
+        case "$default" in
+            [Yy]*) hint="Y/n" ;;
+            [Nn]*) hint="y/N" ;;
+            *)     hint="y/n" ;;
+        esac
+
+        local timeout_hint=""
+        [[ -n "$timeout" ]] && timeout_hint=" (${timeout}s timeout)"
+
+        local read_args=(-r)
+        [[ -n "$timeout" ]] && read_args+=(-t "$timeout")
+
+        local answer=""
+        while true; do
+            echo -ne "   ${UI_CYAN}${prompt} [${hint}]${timeout_hint}: ${UI_NC}"
+
+            if read "${read_args[@]}" answer; then
+                : # normal input
+            else
+                # Timeout or error
+                echo ""
+                answer="$default"
+            fi
+            answer="${answer:-$default}"
+
+            case "$answer" in
+                [Yy]|[Yy]es) return 0 ;;
+                [Nn]|[Nn]o)  return 1 ;;
+                "")
+                    [[ -z "$default" ]] && { ui::warn "Please enter y or n"; continue; }
+                    ;;
+                *)
+                    ui::warn "Please enter y or n"
+                    continue
+                    ;;
+            esac
+        done
+    fi
+
+    # fzf-based confirm with preview
+    _ui_ensure_fzf || return 1
+
+    local yes_label="  ✔  Yes"
+    local no_label="  ✘  No"
+
+    # Build items: default first
+    local -a items=()
     case "$default" in
-        [Yy]*) hint="Y/n" ;;
-        [Nn]*) hint="y/N" ;;
-        *)     hint="y/n" ;;
+        [Yy]*) items=("${yes_label}" "${no_label}") ;;
+        [Nn]*) items=("${no_label}" "${yes_label}") ;;
+        *)     items=("${yes_label}" "${no_label}") ;;
     esac
 
-    local timeout_hint=""
-    [[ -n "$timeout" ]] && timeout_hint=" (${timeout}s timeout)"
+    # Build fzf args
+    local -a fzf_args=()
+    readarray -t fzf_args < <(_ui_fzf_common_args)
+    fzf_args+=(--info=hidden)
+    fzf_args+=(--border=rounded)
+    fzf_args+=(--border-label="  ${prompt}  ")
+    fzf_args+=(--border-label-pos=5)
+    fzf_args+=(--header=" [Enter] Confirm  [Esc] Cancel")
+    fzf_args+=(--no-multi)
 
-    local read_args=(-r)
-    [[ -n "$timeout" ]] && read_args+=(-t "$timeout")
+    local height_arg
+    height_arg=$(_ui_fzf_height_arg 2)
+    [[ -n "$height_arg" ]] && fzf_args+=("$height_arg")
 
-    local answer=""
-    while true; do
-        echo -ne "   ${UI_CYAN}${prompt} [${hint}]${timeout_hint}: ${UI_NC}"
-
-        if read "${read_args[@]}" answer; then
-            : # normal input
-        else
-            # Timeout or error
-            echo ""
-            answer="$default"
-        fi
-        answer="${answer:-$default}"
-
-        case "$answer" in
-            [Yy]|[Yy]es) return 0 ;;
-            [Nn]|[Nn]o)  return 1 ;;
-            "")
-                [[ -z "$default" ]] && { ui::warn "Please enter y or n"; continue; }
-                ;;
-            *)
-                ui::warn "Please enter y or n"
-                continue
-                ;;
+    local selected
+    selected=$(printf "%s\n" "${items[@]}" | fzf "${fzf_args[@]}" 2>/dev/null) || {
+        # Esc/abort — return based on default
+        case "$default" in
+            [Yy]*) return 0 ;;
+            *)     return 1 ;;
         esac
-    done
+    }
+
+    [[ "$selected" == *"Yes"* ]] && return 0
+    return 1
 }
 
-# Text input with optional default
+# Text input with optional default via fzf (fullscreen-aware with preview)
 # Usage: result=$(ui::input "Enter hostname" "archlinux")
+# Uses fzf --print-query --disabled so user types in the query field
 ui::input() {
     local prompt="$1"
     local default="${2:-}"
 
-    local display_prompt="   ${UI_CYAN}${prompt}"
-    [[ -n "$default" ]] && display_prompt+=" [${default}]"
-    display_prompt+=": ${UI_NC}"
+    # When fzf is not available or not fullscreen, fall back to /dev/tty
+    if ! command -v fzf &>/dev/null || [[ "$_UI_FULLSCREEN" != "1" ]]; then
+        local display_prompt="   ${UI_CYAN}${prompt}"
+        [[ -n "$default" ]] && display_prompt+=" [${default}]"
+        display_prompt+=": ${UI_NC}"
 
-    local answer=""
-    echo -ne "$display_prompt"
-    read -r answer
-    answer="${answer:-$default}"
-    echo "$answer"
+        local answer=""
+        echo -ne "$display_prompt" > /dev/tty
+        read -r answer < /dev/tty
+        answer="${answer:-$default}"
+        echo "$answer"
+        return 0
+    fi
+
+    # fzf-based input: --print-query captures the query string, --disabled ignores item filtering
+    _ui_ensure_fzf || return 1
+
+    local placeholder_text="${prompt}"
+    [[ -n "$default" ]] && placeholder_text+=" [${default}]"
+
+    local -a fzf_args=()
+    readarray -t fzf_args < <(_ui_fzf_common_args)
+    fzf_args+=(--print-query)
+    fzf_args+=(--disabled)
+    fzf_args+=(--info=hidden)
+    fzf_args+=(--border=rounded)
+    fzf_args+=(--border-label="  ${prompt}  ")
+    fzf_args+=(--border-label-pos=5)
+    fzf_args+=(--header=" Type your answer, then press Enter")
+    fzf_args+=(--query="${default}")
+    fzf_args+=(--prompt="  › ")
+
+    local height_arg
+    height_arg=$(_ui_fzf_height_arg 2)
+    [[ -n "$height_arg" ]] && fzf_args+=("$height_arg")
+
+    local result
+    result=$(echo "" | fzf "${fzf_args[@]}" 2>/dev/null) || true
+
+    # --print-query outputs: line1=query, line2=selected item
+    # We want line1 (the query = what user typed)
+    local query
+    query=$(head -1 <<< "$result")
+    query="${query:-$default}"
+    echo "$query"
 }
 
 # Text input with validation callback
@@ -709,19 +896,19 @@ ui::input_validate() {
         else
             local err_msg
             err_msg=$(cat /tmp/_ui_validate_err 2>/dev/null)
-            ui::warn "${err_msg:-Invalid input}"
+            ui::warn "${err_msg:-Invalid input}" > /dev/tty
         fi
     done
 }
 
-# Password input (silent)
+# Password input (silent) — writes prompt to /dev/tty to avoid subshell capture
 # Usage: password=$(ui::password "Enter password")
 ui::password() {
     local prompt="$1"
     local answer=""
-    echo -ne "   ${UI_CYAN}${prompt}: ${UI_NC}"
-    read -rs answer
-    echo ""  # newline after silent input
+    echo -ne "   ${UI_CYAN}${prompt}: ${UI_NC}" > /dev/tty
+    read -rs answer < /dev/tty
+    echo "" > /dev/tty  # newline after silent input
     echo "$answer"
 }
 
@@ -749,7 +936,7 @@ _ui_ensure_fzf() {
     ui::success "fzf installed"
 }
 
-# Single-select menu via fzf
+# Single-select menu via fzf (fullscreen-aware with progress preview)
 # Usage: result=$(ui::select "Select Language" "简体中文|zh_CN" "English|en_US" "日本語|ja_JP")
 #   Each item: "Display Label|return_value" or just "Display Label" (value = label)
 #   Returns the value portion of the selected item
@@ -771,29 +958,30 @@ ui::select() {
         (( idx++ ))
     done
 
+    # Build fzf args
+    local -a fzf_args=()
+    readarray -t fzf_args < <(_ui_fzf_common_args)
+    fzf_args+=(--delimiter=$'\t')
+    fzf_args+=(--with-nth=1)
+    fzf_args+=(--info=hidden)
+    fzf_args+=(--border=rounded)
+    fzf_args+=(--border-label="  ${title}  ")
+    fzf_args+=(--border-label-pos=5)
+    fzf_args+=(--header=" [j/k] Navigate  [Enter] Select  [Esc] Cancel")
+
+    local height_arg
+    height_arg=$(_ui_fzf_height_arg "${#items[@]}")
+    [[ -n "$height_arg" ]] && fzf_args+=("$height_arg")
+
     local selected
-    selected=$(printf "%b\n" "${fzf_lines[@]}" | fzf \
-        --ansi \
-        --delimiter=$'\t' \
-        --with-nth=1 \
-        --info=hidden \
-        --layout=reverse \
-        --border=rounded \
-        --border-label="  ${title}  " \
-        --border-label-pos=5 \
-        --color="marker:cyan,pointer:cyan,label:yellow,border:magenta" \
-        --header=" [j/k] Navigate  [Enter] Select  [Esc] Cancel" \
-        --pointer="›" \
-        --margin=0,2 \
-        --bind 'j:down,k:up,ctrl-c:abort,esc:abort' \
-        --height="~$((${#items[@]} + 4))" \
-        2>/dev/null) || return 1
+    selected=$(printf "%b\n" "${fzf_lines[@]}" | fzf "${fzf_args[@]}" 2>/dev/null) || return 1
 
     # Extract value (after tab)
     echo "${selected##*$'\t'}"
 }
 
 # Single-select with preview pane (split-pane effect)
+# In fullscreen mode, the preview shows BOTH the item preview AND the progress panel
 # Usage: result=$(ui::select_with_preview "Select Disk" "lsblk -o NAME,SIZE,FSTYPE /dev/{}" \
 #          "nvme0n1|nvme0n1" "nvme1n1|nvme1n1")
 #   The {} in preview_cmd is replaced with the value
@@ -815,30 +1003,45 @@ ui::select_with_preview() {
         (( idx++ ))
     done
 
+    # Build combined preview command:
+    # If fullscreen + progress enabled, show item preview first, then progress below
+    local combined_preview
+    if [[ "$_UI_FULLSCREEN" == "1" ]] && [[ -n "$_UI_PREVIEW_SCRIPT" ]]; then
+        combined_preview="echo {2} | xargs -I{} ${preview_cmd}; echo ''; echo '────────────────────────────────'; ${_UI_PREVIEW_SCRIPT} ${_UI_PROGRESS_FILE} ${_UI_LOG_FILE} '${_UI_PROGRESS_HEADER}'"
+    else
+        combined_preview="echo {2} | xargs -I{} ${preview_cmd}"
+    fi
+
+    # Build fzf args
+    local -a fzf_args=()
+    # Don't use _ui_fzf_common_args here because we handle preview manually
+    fzf_args+=(--ansi)
+    fzf_args+=(--layout=reverse)
+    fzf_args+=(--color="marker:cyan,pointer:cyan,label:yellow,border:magenta")
+    fzf_args+=(--pointer="›")
+    fzf_args+=(--margin=0,2)
+    fzf_args+=(--bind 'j:down,k:up,ctrl-c:abort,esc:abort')
+    fzf_args+=(--delimiter=$'\t')
+    fzf_args+=(--with-nth=1)
+    fzf_args+=(--info=hidden)
+    fzf_args+=(--border=rounded)
+    fzf_args+=(--border-label="  ${title}  ")
+    fzf_args+=(--border-label-pos=5)
+    fzf_args+=(--header=" [j/k] Navigate  [Enter] Select  [Esc] Cancel")
+    fzf_args+=(--preview="${combined_preview}")
+    fzf_args+=(--preview-window="right:50%:wrap:border-left")
+
+    local height_arg
+    height_arg=$(_ui_fzf_height_arg "${#items[@]}")
+    [[ -n "$height_arg" ]] && fzf_args+=("$height_arg")
+
     local selected
-    selected=$(printf "%b\n" "${fzf_lines[@]}" | fzf \
-        --ansi \
-        --delimiter=$'\t' \
-        --with-nth=1 \
-        --info=hidden \
-        --layout=reverse \
-        --border=rounded \
-        --border-label="  ${title}  " \
-        --border-label-pos=5 \
-        --color="marker:cyan,pointer:cyan,label:yellow,border:magenta" \
-        --header=" [j/k] Navigate  [Enter] Select  [Esc] Cancel" \
-        --pointer="›" \
-        --margin=0,2 \
-        --preview="echo {2} | xargs -I{} ${preview_cmd}" \
-        --preview-window="right:50%:wrap:border-left" \
-        --bind 'j:down,k:up,ctrl-c:abort,esc:abort' \
-        --height="~$((${#items[@]} + 6))" \
-        2>/dev/null) || return 1
+    selected=$(printf "%b\n" "${fzf_lines[@]}" | fzf "${fzf_args[@]}" 2>/dev/null) || return 1
 
     echo "${selected##*$'\t'}"
 }
 
-# Multi-select menu via fzf (TAB to toggle)
+# Multi-select menu via fzf (TAB to toggle, fullscreen-aware)
 # Usage: readarray -t results < <(ui::multiselect "Select Packages" "neovim|neovim" "git|git" "zsh|zsh")
 #   Returns one value per line
 ui::multiselect() {
@@ -858,25 +1061,26 @@ ui::multiselect() {
         (( idx++ ))
     done
 
+    # Build fzf args
+    local -a fzf_args=()
+    readarray -t fzf_args < <(_ui_fzf_common_args)
+    fzf_args+=(--multi)
+    fzf_args+=(--delimiter=$'\t')
+    fzf_args+=(--with-nth=1)
+    fzf_args+=(--info=inline)
+    fzf_args+=(--border=rounded)
+    fzf_args+=(--border-label="  ${title}  ")
+    fzf_args+=(--border-label-pos=5)
+    fzf_args+=(--header=" [TAB] Toggle  [Ctrl-A] All  [Ctrl-D] None  [Enter] Confirm")
+    fzf_args+=(--marker="✔ ")
+    fzf_args+=(--bind 'ctrl-a:select-all,ctrl-d:deselect-all')
+
+    local height_arg
+    height_arg=$(_ui_fzf_height_arg "${#items[@]}")
+    [[ -n "$height_arg" ]] && fzf_args+=("$height_arg")
+
     local selected
-    selected=$(printf "%b\n" "${fzf_lines[@]}" | fzf \
-        --multi \
-        --ansi \
-        --delimiter=$'\t' \
-        --with-nth=1 \
-        --info=inline \
-        --layout=reverse \
-        --border=rounded \
-        --border-label="  ${title}  " \
-        --border-label-pos=5 \
-        --color="marker:cyan,pointer:cyan,label:yellow,border:magenta" \
-        --header=" [TAB] Toggle  [Ctrl-A] All  [Ctrl-D] None  [Enter] Confirm" \
-        --pointer="›" \
-        --marker="✔ " \
-        --margin=0,2 \
-        --bind 'j:down,k:up,ctrl-a:select-all,ctrl-d:deselect-all,ctrl-c:abort,esc:abort' \
-        --height="~$((${#items[@]} + 5))" \
-        2>/dev/null) || return 1
+    selected=$(printf "%b\n" "${fzf_lines[@]}" | fzf "${fzf_args[@]}" 2>/dev/null) || return 1
 
     # Extract values
     while IFS= read -r line; do
@@ -884,7 +1088,7 @@ ui::multiselect() {
     done <<< "$selected"
 }
 
-# Checklist — multi-select with pre-selected items
+# Checklist — multi-select with pre-selected items (fullscreen-aware)
 # Usage: readarray -t results < <(ui::checklist "Modules" "grub,apps" \
 #          "grub|GRUB Theme" "apps|Install Apps" "snapshot|Create Snapshot")
 #   First arg after title is comma-separated pre-selected values
@@ -919,26 +1123,27 @@ ui::checklist() {
     done
     select_bind="${select_bind%+}"  # Remove trailing +
 
+    # Build fzf args
+    local -a fzf_args=()
+    readarray -t fzf_args < <(_ui_fzf_common_args)
+    fzf_args+=(--multi)
+    fzf_args+=(--delimiter=$'\t')
+    fzf_args+=(--with-nth=1)
+    fzf_args+=(--info=inline)
+    fzf_args+=(--border=rounded)
+    fzf_args+=(--border-label="  ${title}  ")
+    fzf_args+=(--border-label-pos=5)
+    fzf_args+=(--header=" [TAB] Toggle  [Ctrl-A] All  [Ctrl-D] None  [Enter] Confirm")
+    fzf_args+=(--marker="✔ ")
+    fzf_args+=(--bind "${select_bind}")
+    fzf_args+=(--bind 'ctrl-a:select-all,ctrl-d:deselect-all')
+
+    local height_arg
+    height_arg=$(_ui_fzf_height_arg "${#items[@]}")
+    [[ -n "$height_arg" ]] && fzf_args+=("$height_arg")
+
     local selected
-    selected=$(printf "%b\n" "${fzf_lines[@]}" | fzf \
-        --multi \
-        --ansi \
-        --delimiter=$'\t' \
-        --with-nth=1 \
-        --info=inline \
-        --layout=reverse \
-        --border=rounded \
-        --border-label="  ${title}  " \
-        --border-label-pos=5 \
-        --color="marker:cyan,pointer:cyan,label:yellow,border:magenta" \
-        --header=" [TAB] Toggle  [Ctrl-A] All  [Ctrl-D] None  [Enter] Confirm" \
-        --pointer="›" \
-        --marker="✔ " \
-        --margin=0,2 \
-        --bind "${select_bind}" \
-        --bind 'j:down,k:up,ctrl-a:select-all,ctrl-d:deselect-all,ctrl-c:abort,esc:abort' \
-        --height="~$((${#items[@]} + 5))" \
-        2>/dev/null) || return 1
+    selected=$(printf "%b\n" "${fzf_lines[@]}" | fzf "${fzf_args[@]}" 2>/dev/null) || return 1
 
     while IFS= read -r line; do
         echo "${line##*$'\t'}"
@@ -1022,16 +1227,19 @@ ui::require_root() {
     return 1
 }
 
-# Trap handler — clean exit (restore terminal state)
+# Trap handler — clean exit (restore terminal state + cleanup temps)
 # Usage: trap ui::cleanup EXIT INT TERM
 ui::cleanup() {
     # Restore cursor visibility
     tput cnorm 2>/dev/null || true
     # Reset colors
     echo -ne "${UI_NC}"
+    # Clean up progress temp files
+    ui::progress_cleanup 2>/dev/null || true
 }
 
 # System dashboard — info panel in double-line box
+# Right-side border dropped from content lines to avoid CJK alignment issues
 # Usage: ui::dashboard "Kernel|$(uname -r)" "User|$(whoami)" "Disk|/dev/nvme0n1"
 ui::dashboard() {
     local -a entries=("$@")
@@ -1057,28 +1265,18 @@ ui::dashboard() {
     bar=$(_ui_repeat '═' "$inner_w")
     local title="CONFIGURATION SUMMARY"
     local title_pad=$(( (inner_w - ${#title}) / 2 ))
-    local title_pad_r=$(( inner_w - ${#title} - title_pad ))
 
     echo ""
     echo -e "   ${UI_BLUE}╔${bar}╗${UI_NC}"
-    printf "   ${UI_BLUE}║${UI_NC}%*s${UI_BOLD}%s${UI_NC}%*s${UI_BLUE}║${UI_NC}\n" \
-        "$title_pad" "" "$title" "$title_pad_r" ""
+    printf "   ${UI_BLUE}║${UI_NC}%*s${UI_BOLD}%s${UI_NC}\n" \
+        "$title_pad" "" "$title"
     echo -e "   ${UI_BLUE}╠${bar}╣${UI_NC}"
 
     for entry in "${entries[@]}"; do
         local key="${entry%%|*}"
         local val="${entry#*|}"
-        local val_raw
-        val_raw=$(_ui_strip_ansi "$val")
 
-        local content
-        printf -v content " %-${max_key}s  : %s" "$key" "$val"
-        local content_raw
-        printf -v content_raw " %-${max_key}s  : %s" "$key" "$val_raw"
-        local pad=$(( inner_w - ${#content_raw} ))
-        (( pad < 0 )) && pad=0
-
-        printf "   ${UI_BLUE}║${UI_NC}${content}%*s${UI_BLUE}║${UI_NC}\n" "$pad" ""
+        printf "   ${UI_BLUE}║${UI_NC} %-${max_key}s  : %s\n" "$key" "$val"
     done
 
     echo -e "   ${UI_BLUE}╚${bar}╝${UI_NC}"

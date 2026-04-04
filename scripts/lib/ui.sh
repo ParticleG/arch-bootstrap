@@ -736,10 +736,17 @@ ui::countdown() {
 # Y/N confirmation via fzf (fullscreen-aware with preview)
 # Usage: ui::confirm "Proceed with installation?" [Y|N] [timeout_seconds]
 #   Returns 0 for yes, 1 for no
+# Confirm dialog — fzf-based Yes/No selector with preview
+# Usage: ui::confirm "prompt" [default] [timeout] [summary]
+#   default:  "Y" or "N" (which option is pre-selected)
+#   timeout:  auto-confirm after N seconds (non-fzf fallback only)
+#   summary:  ANSI text to display in the preview panel (replaces default progress view)
+#             Pass "" to skip. Useful for showing a configuration summary before final confirm.
 ui::confirm() {
     local prompt="$1"
     local default="${2:-}"
     local timeout="${3:-}"
+    local summary="${4:-}"
 
     # When fzf is not available or not fullscreen, fall back to read-based
     if ! command -v fzf &>/dev/null || [[ "$_UI_FULLSCREEN" != "1" ]]; then
@@ -807,12 +814,32 @@ ui::confirm() {
     fzf_args+=(--header=" [Enter] Confirm  [Esc] Cancel")
     fzf_args+=(--no-multi)
 
+    # Override preview with summary text if provided
+    local _confirm_summary_file=""
+    if [[ -n "$summary" ]]; then
+        _confirm_summary_file=$(mktemp /tmp/ui-confirm-summary-XXXXXX)
+        # Write summary text to temp file (ANSI codes preserved)
+        echo -e "$summary" > "$_confirm_summary_file"
+        # Build preview: summary + optional recent log
+        local custom_preview="cat '${_confirm_summary_file}'"
+        if [[ -n "$_UI_LOG_FILE" ]] && [[ -f "$_UI_LOG_FILE" ]]; then
+            custom_preview+="; echo ''"
+            custom_preview+="; echo -e '\033[1;90m  ─── Recent Log ───\033[0m'"
+            custom_preview+="; tail -5 '${_UI_LOG_FILE}' 2>/dev/null | while IFS= read -r line; do echo -e \"  \033[2m\${line}\033[0m\"; done"
+        fi
+        # fzf uses the last --preview specified, so this overrides _ui_fzf_common_args
+        fzf_args+=(--preview="${custom_preview}")
+        fzf_args+=(--preview-window="right:45%:wrap:border-left")
+    fi
+
     local height_arg
     height_arg=$(_ui_fzf_height_arg 2)
     [[ -n "$height_arg" ]] && fzf_args+=("$height_arg")
 
     local selected
     selected=$(printf "%s\n" "${items[@]}" | fzf "${fzf_args[@]}" 2>/dev/null) || {
+        # Cleanup temp file on abort
+        [[ -n "$_confirm_summary_file" ]] && rm -f "$_confirm_summary_file"
         # Esc/abort — return based on default
         case "$default" in
             [Yy]*) return 0 ;;
@@ -820,6 +847,7 @@ ui::confirm() {
         esac
     }
 
+    [[ -n "$_confirm_summary_file" ]] && rm -f "$_confirm_summary_file"
     [[ "$selected" == *"Yes"* ]] && return 0
     return 1
 }

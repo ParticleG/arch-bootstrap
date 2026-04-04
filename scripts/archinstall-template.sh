@@ -222,17 +222,44 @@ fi
 # §8. Configuration Summary
 # ═══════════════════════════════════════════════════════════════════════════════
 
+# Build summary for both terminal output and confirm preview panel
+MULTILIB_STATUS=$([ -n "$OPTIONAL_REPOS" ] && echo '已启用' || echo '未启用')
+ROOT_PW_STATUS=$([ -n "$ROOT_ENC_PASSWORD" ] && echo '已设置' || echo '未设置')
+KMSCON_STATUS=$([ "$NEED_KMSCON" = true ] && echo '已添加' || echo '不需要')
+
+# Print dashboard to scrollback (visible after fzf exits)
 ui::dashboard \
     "系统语言|${SYS_LANG}" \
     "目标磁盘|${TARGET_DEV} (${DISK_SIZE_HUMAN})" \
     "网络后端|${NET_TYPE}" \
-    "Multilib|$([ -n "$OPTIONAL_REPOS" ] && echo '已启用' || echo '未启用')" \
+    "Multilib|${MULTILIB_STATUS}" \
     "用户名|${USERNAME}" \
-    "Root 密码|$([ -n "$ROOT_ENC_PASSWORD" ] && echo '已设置' || echo '未设置')" \
-    "kmscon|$([ "$NEED_KMSCON" = true ] && echo '已添加' || echo '不需要')" \
+    "Root 密码|${ROOT_PW_STATUS}" \
+    "kmscon|${KMSCON_STATUS}" \
     "版本|archinstall 4.1"
 
-if ! ui::confirm "以上配置正确？生成 JSON 文件?" "Y"; then
+# Build ANSI-formatted summary for the confirm preview panel
+_summary=""
+_summary+="\033[1;36m  ╔══════════════════════════════════════╗\033[0m\n"
+_summary+="\033[1;36m  ║  \033[1;35mCONFIGURATION SUMMARY\033[0m\n"
+_summary+="\033[1;36m  ╚══════════════════════════════════════╝\033[0m\n"
+_summary+="\n"
+_summary+="  \033[1;32m✔\033[0m \033[1m系统语言\033[0m    ${SYS_LANG}\n"
+_summary+="  \033[1;32m✔\033[0m \033[1m目标磁盘\033[0m    ${TARGET_DEV} (${DISK_SIZE_HUMAN})\n"
+_summary+="  \033[1;32m✔\033[0m \033[1m网络后端\033[0m    ${NET_TYPE}\n"
+_summary+="  \033[1;32m✔\033[0m \033[1mMultilib\033[0m    ${MULTILIB_STATUS}\n"
+_summary+="  \033[1;32m✔\033[0m \033[1m用户名\033[0m      ${USERNAME}\n"
+_summary+="  \033[1;32m✔\033[0m \033[1mRoot 密码\033[0m   ${ROOT_PW_STATUS}\n"
+_summary+="  \033[1;32m✔\033[0m \033[1mkmscon\033[0m      ${KMSCON_STATUS}\n"
+_summary+="  \033[1;32m✔\033[0m \033[1m版本\033[0m        archinstall 4.1\n"
+_summary+="\n"
+_summary+="  \033[2m─────────────────────────────────────────\033[0m\n"
+_summary+="  \033[1;34mBoot\033[0m    EFISTUB (UKI)\n"
+_summary+="  \033[1;34mFS\033[0m      Btrfs + zstd + Snapper\n"
+_summary+="  \033[1;34mAudio\033[0m   PipeWire\n"
+_summary+="  \033[1;34mBT\033[0m      Enabled\n"
+
+if ! ui::confirm "以上配置正确？生成 JSON 文件?" "Y" "" "$_summary"; then
     ui::warn "已取消"
     exit 0
 fi

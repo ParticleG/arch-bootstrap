@@ -50,8 +50,15 @@ _BANNER="${_BANNER//\{B\}/$'\033[1;34m'}"
 _BANNER="${_BANNER//\{M\}/$'\033[1;35m'}"
 _BANNER="${_BANNER//\{D\}/$'\033[2m'}"
 _BANNER="${_BANNER//\{0\}/$'\033[0m'}"
-printf '%s\n' "$_BANNER"
-unset _BANNER
+
+# Banner function for ui::set_banner — prints the pre-rendered banner text
+_show_banner() { printf '%s\n' "$_BANNER"; }
+
+# Register the persistent banner (17 lines: 15 art + 1 blank + 1 subtitle)
+ui::set_banner _show_banner 17
+
+# Show banner once at startup
+_show_banner
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # §0. Privilege Check

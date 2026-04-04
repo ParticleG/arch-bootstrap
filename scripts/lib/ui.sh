@@ -299,9 +299,21 @@ _ui_fzf_common_args() {
     printf '%s\n' "${args[@]}"
 }
 
-# Build --height arg (only used when NOT fullscreen)
+# Build --height arg
+# When banner is active: always returns a height that leaves room for the banner
+# When no banner + fullscreen: returns empty (fzf uses full terminal)
+# When no banner + not fullscreen: returns adaptive height
 _ui_fzf_height_arg() {
     local count="$1"
+
+    # Banner takes priority — if active, compute height to leave room for it
+    local banner_height
+    banner_height=$(_ui_fzf_height_with_banner "$count")
+    if [[ -n "$banner_height" ]]; then
+        echo "$banner_height"
+        return
+    fi
+
     if [[ "$_UI_FULLSCREEN" == "1" ]]; then
         echo ""
     else
@@ -313,6 +325,77 @@ _ui_fzf_height_arg() {
 ui::progress_cleanup() {
     [[ -n "$_UI_PROGRESS_FILE" ]] && rm -f "$_UI_PROGRESS_FILE"
     [[ -n "$_UI_PREVIEW_SCRIPT" ]] && rm -f "$_UI_PREVIEW_SCRIPT"
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# §4c. Persistent Banner — Stays visible above fzf menus
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# The banner system works by:
+#   1. Registering a callback function that prints the banner to stdout
+#   2. Before every fzf invocation, clearing the screen and re-printing the banner
+#   3. Using --height to limit fzf to the remaining terminal rows below the banner
+#
+# Usage:
+#   my_banner() { printf '%s\n' "$MY_BANNER_TEXT"; }
+#   ui::set_banner my_banner 16   # function name, line count
+#
+# The banner is only shown when the terminal has enough vertical space
+# (at least banner_height + 10 rows for fzf content).
+
+_UI_BANNER_FN=""
+_UI_BANNER_HEIGHT=0
+
+# Register a banner function
+# Usage: ui::set_banner <function_name> <line_count>
+#   function_name: a bash function that prints the banner to stdout (with ANSI codes)
+#   line_count:    number of terminal lines the banner occupies
+ui::set_banner() {
+    _UI_BANNER_FN="$1"
+    _UI_BANNER_HEIGHT="${2:-0}"
+}
+
+# Internal: clear screen and print the banner before each fzf call
+# Only prints when banner is registered and terminal is tall enough
+# Writes to /dev/tty so it works even inside command substitution subshells
+_ui_show_banner() {
+    [[ -z "$_UI_BANNER_FN" ]] && return 0
+    [[ "$_UI_BANNER_HEIGHT" -le 0 ]] && return 0
+
+    local term_lines
+    term_lines=$(tput lines 2>/dev/null) || term_lines=24
+
+    local min_required=$(( _UI_BANNER_HEIGHT + 10 ))
+    if (( term_lines < min_required )); then
+        # Terminal too short — skip banner, let fzf use full height
+        return 1
+    fi
+
+    # Clear screen and print banner to the real terminal
+    clear > /dev/tty
+    "$_UI_BANNER_FN" > /dev/tty
+    return 0
+}
+
+# Internal: compute fzf height accounting for banner
+# When banner is active and visible, fzf gets the remaining rows.
+# When banner is absent or terminal too short, uses existing logic.
+_ui_fzf_height_with_banner() {
+    local count="$1"
+    [[ -z "$_UI_BANNER_FN" ]] && return 0
+    [[ "$_UI_BANNER_HEIGHT" -le 0 ]] && return 0
+
+    local term_lines
+    term_lines=$(tput lines 2>/dev/null) || term_lines=24
+
+    local min_required=$(( _UI_BANNER_HEIGHT + 10 ))
+    if (( term_lines < min_required )); then
+        return 0  # banner won't show, no height override
+    fi
+
+    # fzf gets remaining rows after banner (+ 1 for blank line after banner)
+    local fzf_height=$(( term_lines - _UI_BANNER_HEIGHT - 1 ))
+    echo "--height=${fzf_height}"
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -836,6 +919,7 @@ ui::confirm() {
     height_arg=$(_ui_fzf_height_arg 2)
     [[ -n "$height_arg" ]] && fzf_args+=("$height_arg")
 
+    _ui_show_banner
     local selected
     selected=$(printf "%s\n" "${items[@]}" | fzf "${fzf_args[@]}" 2>/dev/null) || {
         # Cleanup temp file on abort
@@ -895,6 +979,7 @@ ui::input() {
     height_arg=$(_ui_fzf_height_arg 2)
     [[ -n "$height_arg" ]] && fzf_args+=("$height_arg")
 
+    _ui_show_banner
     local result
     result=$(echo "" | fzf "${fzf_args[@]}" 2>/dev/null) || true
 
@@ -1034,6 +1119,7 @@ MASK_EOF
     height_arg=$(_ui_fzf_height_arg 2)
     [[ -n "$height_arg" ]] && fzf_args+=("$height_arg")
 
+    _ui_show_banner
     local result
     result=$(echo "" | fzf "${fzf_args[@]}" 2>/dev/null) || true
 
@@ -1104,6 +1190,7 @@ ui::select() {
     height_arg=$(_ui_fzf_height_arg "${#items[@]}")
     [[ -n "$height_arg" ]] && fzf_args+=("$height_arg")
 
+    _ui_show_banner
     local selected
     selected=$(printf "%b\n" "${fzf_lines[@]}" | fzf "${fzf_args[@]}" 2>/dev/null) || return 1
 
@@ -1166,6 +1253,7 @@ ui::select_with_preview() {
     height_arg=$(_ui_fzf_height_arg "${#items[@]}")
     [[ -n "$height_arg" ]] && fzf_args+=("$height_arg")
 
+    _ui_show_banner
     local selected
     selected=$(printf "%b\n" "${fzf_lines[@]}" | fzf "${fzf_args[@]}" 2>/dev/null) || return 1
 
@@ -1210,6 +1298,7 @@ ui::multiselect() {
     height_arg=$(_ui_fzf_height_arg "${#items[@]}")
     [[ -n "$height_arg" ]] && fzf_args+=("$height_arg")
 
+    _ui_show_banner
     local selected
     selected=$(printf "%b\n" "${fzf_lines[@]}" | fzf "${fzf_args[@]}" 2>/dev/null) || return 1
 
@@ -1273,6 +1362,7 @@ ui::checklist() {
     height_arg=$(_ui_fzf_height_arg "${#items[@]}")
     [[ -n "$height_arg" ]] && fzf_args+=("$height_arg")
 
+    _ui_show_banner
     local selected
     selected=$(printf "%b\n" "${fzf_lines[@]}" | fzf "${fzf_args[@]}" 2>/dev/null) || return 1
 

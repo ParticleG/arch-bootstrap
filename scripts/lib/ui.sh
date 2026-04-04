@@ -901,15 +901,50 @@ ui::input_validate() {
     done
 }
 
-# Password input (silent) — writes prompt to /dev/tty to avoid subshell capture
+# Password input — fzf-based in fullscreen mode to maintain split-pane layout
+# Uses --color to hide query text + transform-prompt to show asterisks
 # Usage: password=$(ui::password "Enter password")
 ui::password() {
     local prompt="$1"
-    local answer=""
-    echo -ne "   ${UI_CYAN}${prompt}: ${UI_NC}" > /dev/tty
-    read -rs answer < /dev/tty
-    echo "" > /dev/tty  # newline after silent input
-    echo "$answer"
+
+    # Fallback: read -s to /dev/tty when not in fullscreen
+    if ! command -v fzf &>/dev/null || [[ "$_UI_FULLSCREEN" != "1" ]]; then
+        local answer=""
+        echo -ne "   ${UI_CYAN}${prompt}: ${UI_NC}" > /dev/tty
+        read -rs answer < /dev/tty
+        echo "" > /dev/tty
+        echo "$answer"
+        return 0
+    fi
+
+    # fzf-based password: query text hidden, asterisks shown in prompt
+    _ui_ensure_fzf || return 1
+
+    local -a fzf_args=()
+    readarray -t fzf_args < <(_ui_fzf_common_args)
+    fzf_args+=(--print-query)
+    fzf_args+=(--disabled)
+    fzf_args+=(--info=hidden)
+    fzf_args+=(--border=rounded)
+    fzf_args+=(--border-label="  ${prompt}  ")
+    fzf_args+=(--border-label-pos=5)
+    fzf_args+=(--prompt="  🔒 ")
+    fzf_args+=(--header=" Type password (masked), press Enter to confirm")
+    # Hide actual typed text: set query fg to black (invisible on dark bg)
+    fzf_args+=(--color="query:black")
+    # Show asterisks in the prompt area as user types
+    fzf_args+=(--bind 'change:transform-prompt:printf "  🔒 %s " "$(printf "%s" {q} | sed "s/./*/g")"')
+
+    local height_arg
+    height_arg=$(_ui_fzf_height_arg 2)
+    [[ -n "$height_arg" ]] && fzf_args+=("$height_arg")
+
+    local result
+    result=$(echo "" | fzf "${fzf_args[@]}" 2>/dev/null) || true
+
+    local query
+    query=$(head -1 <<< "$result")
+    echo "$query"
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════

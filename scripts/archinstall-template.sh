@@ -98,19 +98,39 @@ BTRFS_SIZE_BYTES=$((DISK_SIZE_BYTES - BTRFS_START_BYTES))
 
 # 7. 设置用户凭据
 echo ""
-read -rp "请输入用户名 [默认 particleg]: " USERNAME
-USERNAME="${USERNAME:-particleg}"
+# 默认用户名: 若通过 sudo 执行则取原始用户名，直接 root 则无默认值
+if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
+    DEFAULT_USER="$SUDO_USER"
+elif [ "$EUID" -ne 0 ] && [ -n "${USER:-}" ]; then
+    DEFAULT_USER="$USER"
+else
+    DEFAULT_USER=""
+fi
+
+if [ -n "$DEFAULT_USER" ]; then
+    read -rp "请输入用户名 [默认 ${DEFAULT_USER}]: " USERNAME
+    USERNAME="${USERNAME:-$DEFAULT_USER}"
+else
+    while true; do
+        read -rp "请输入用户名: " USERNAME
+        [ -n "$USERNAME" ] && break
+        echo "错误: 用户名不能为空"
+    done
+fi
 
 echo ""
 read -srp "请输入用户密码: " USER_PASSWORD
 echo ""
-read -srp "请输入 root 密码 (留空则与用户密码相同): " ROOT_PASSWORD
+read -srp "请输入 root 密码 (留空则不设置 root 密码): " ROOT_PASSWORD
 echo ""
-ROOT_PASSWORD="${ROOT_PASSWORD:-$USER_PASSWORD}"
 
 # 生成加密密码
 USER_ENC_PASSWORD=$(openssl passwd -6 -stdin <<< "$USER_PASSWORD" 2>/dev/null || python3 -c "import crypt; print(crypt.crypt('$USER_PASSWORD', crypt.mksalt(crypt.METHOD_SHA512)))")
-ROOT_ENC_PASSWORD=$(openssl passwd -6 -stdin <<< "$ROOT_PASSWORD" 2>/dev/null || python3 -c "import crypt; print(crypt.crypt('$ROOT_PASSWORD', crypt.mksalt(crypt.METHOD_SHA512)))")
+if [ -n "$ROOT_PASSWORD" ]; then
+    ROOT_ENC_PASSWORD=$(openssl passwd -6 -stdin <<< "$ROOT_PASSWORD" 2>/dev/null || python3 -c "import crypt; print(crypt.crypt('$ROOT_PASSWORD', crypt.mksalt(crypt.METHOD_SHA512)))")
+else
+    ROOT_ENC_PASSWORD=""
+fi
 
 # 8. 生成 user_configuration.json (archinstall 4.1 格式)
 cat > user_configuration.json << JSONEOF
@@ -262,9 +282,16 @@ cat > user_configuration.json << JSONEOF
 JSONEOF
 
 # 9. 生成 user_credentials.json (archinstall 4.1 独立凭据文件)
+# root_enc_password: 有值则写入，留空则不包含该字段（不设置 root 密码）
+if [ -n "$ROOT_ENC_PASSWORD" ]; then
+    ROOT_CRED_LINE="    \"root_enc_password\": \"${ROOT_ENC_PASSWORD}\","
+else
+    ROOT_CRED_LINE=""
+fi
+
 cat > user_credentials.json << JSONEOF
 {
-    "root_enc_password": "${ROOT_ENC_PASSWORD}",
+${ROOT_CRED_LINE}
     "users": [
         {
             "enc_password": "${USER_ENC_PASSWORD}",
@@ -275,6 +302,11 @@ cat > user_credentials.json << JSONEOF
     ]
 }
 JSONEOF
+
+# 清理: 若无 root 密码，删除空行（root_enc_password 行为空时 cat 会产生空行）
+if [ -z "$ROOT_ENC_PASSWORD" ]; then
+    sed -i '/^$/d' user_credentials.json
+fi
 
 echo ""
 echo "=== 配置已生成 ==="
@@ -294,4 +326,52 @@ echo ""
 if [ "$SYS_LANG" != "en_US.UTF-8" ]; then
     echo "提示: 安装完成首次启动后，请启用 kmscon 替代默认 TTY:"
     echo "  sudo systemctl enable --now kmscon@tty1"
+fi
+
+# 10. 检测 ISO 安装环境并提示自动安装
+NEED_KMSCON=false
+if [ "$SYS_LANG" != "en_US.UTF-8" ]; then
+    NEED_KMSCON=true
+fi
+
+if [ -d /run/archiso ]; then
+    echo ""
+    echo "检测到 Arch Linux ISO 安装环境"
+    read -rp "是否立刻执行 archinstall 安装? [y/N]: " DO_INSTALL
+    if [[ "$DO_INSTALL" =~ ^[Yy] ]]; then
+        echo ""
+        echo "开始执行 archinstall..."
+        INSTALL_EXIT=0
+        archinstall --config user_configuration.json --creds user_credentials.json || INSTALL_EXIT=$?
+
+        if [ $INSTALL_EXIT -ne 0 ]; then
+            echo "错误: archinstall 退出码 $INSTALL_EXIT"
+            exit $INSTALL_EXIT
+        fi
+
+        # Fix 4: 安装后 chroot 启用 kmscon（仅在非英文语言时）
+        if [ "$NEED_KMSCON" = true ]; then
+            echo ""
+            echo "安装完成，正在 chroot 启用 kmscon@tty1..."
+
+            # archinstall 默认挂载点为 /mnt/archinstall
+            CHROOT_DIR="/mnt/archinstall"
+            if [ ! -d "$CHROOT_DIR/etc" ]; then
+                # 回退到 /mnt
+                CHROOT_DIR="/mnt"
+            fi
+
+            if [ -d "$CHROOT_DIR/etc" ]; then
+                arch-chroot "$CHROOT_DIR" systemctl enable kmscon@tty1
+                echo "已在新系统中启用 kmscon@tty1"
+            else
+                echo "警告: 未找到已安装系统的挂载点，请手动启用 kmscon:"
+                echo "  arch-chroot /mnt systemctl enable kmscon@tty1"
+            fi
+        fi
+
+        echo ""
+        echo "=== 安装完成 ==="
+        echo "可以重启进入新系统: reboot"
+    fi
 fi

@@ -173,6 +173,16 @@ _fetch_mirrors() {
 
     ACTIVE_MIRRORS=("${fetched[@]}")
     ui::success "$(ui::t 'mirror.found' "${#fetched[@]}")"
+
+    # Apply detected mirrors to live ISO pacman so subsequent installs (fzf,
+    # archinstall upgrade, etc.) use the fast mirrors instead of ISO defaults.
+    if [[ -d /run/archiso ]] && (( ${#ACTIVE_MIRRORS[@]} > 0 )); then
+        local ml=""
+        for m in "${ACTIVE_MIRRORS[@]}"; do
+            ml+="Server = ${m}"$'\n'
+        done
+        printf '%s' "$ml" > /etc/pacman.d/mirrorlist
+    fi
 }
 
 # Run initial detection (before wizard starts)

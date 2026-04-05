@@ -35,6 +35,7 @@ wizard::step_count() {
 wizard::run() {
     local step=0
     local max=$(( ${#_WIZARD_FUNCS[@]} - 1 ))
+    local _log_file=""
 
     if (( max < 0 )); then
         ui::error "No wizard steps registered"
@@ -62,14 +63,15 @@ wizard::run() {
                  local _step_name _log_hint=""
                  _step_name="$(ui::t "${_WIZARD_NAMES[$step]}")"
                  # Point user to the log file for fzf/TUI diagnostics
-                 if [[ -n "$(ui::log_path 2>/dev/null)" ]] && [[ -f "$(ui::log_path)" ]]; then
-                     _log_hint=" (see $(ui::log_path))"
+                 _log_file="$(ui::log_path 2>/dev/null)"
+                 if [[ -n "$_log_file" ]] && [[ -f "$_log_file" ]]; then
+                     _log_hint=" (see $_log_file)"
                  fi
                  ui::error "$(ui::t 'wizard.step_failed' "$_step_name" "$rc")${_log_hint}"
                  # Dump last few log lines to stderr for immediate visibility
                  if [[ -n "$_log_hint" ]]; then
                      echo "--- Last 10 log lines ---" >&2
-                     tail -10 "$(ui::log_path)" >&2 2>/dev/null || true
+                     tail -10 "$_log_file" 2>/dev/null >&2 || true
                      echo "---" >&2
                  fi
                  exit "$rc"

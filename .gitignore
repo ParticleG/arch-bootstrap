@@ -1,0 +1,6 @@
+# Runtime generated files
+user_configuration.json
+user_credentials.json
+
+# Log files
+*.log

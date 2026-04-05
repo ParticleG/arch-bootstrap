@@ -13,12 +13,6 @@ source "${SCRIPT_DIR}/lib/config.sh"
 source "${SCRIPT_DIR}/lib/wizard.sh"
 source "${SCRIPT_DIR}/lib/generate.sh"
 
-# ─── Native TTY: switch to English-only option labels ───
-if (( _UI_NATIVE_TTY )); then
-    LANG_OPTIONS=("${LANG_OPTIONS_TTY[@]}")
-    NET_OPTIONS=("${NET_OPTIONS_TTY[@]}")
-fi
-
 # ─── Initialize ───
 ui::log_init "/tmp/archinstall-template-$(date '+%Y%m%d-%H%M%S').log"
 ui::fullscreen "Archinstall 4.1 Config"
@@ -158,8 +152,22 @@ GPU_VENDORS=""
 # ═══════════════════════════════════════════════════════════════════════════════
 
 _step_language() {
-    SYS_LANG=$(ui::select "$(ui::t '系统语言 System Language' 'System Language')" "${LANG_OPTIONS[@]}")
+    # Native TTY: use ASCII-only labels; non-TTY: use native-script labels
+    local -a opts=()
+    if (( _UI_NATIVE_TTY )); then
+        opts=("${LANG_OPTIONS_TTY[@]}")
+    else
+        opts=("${LANG_OPTIONS[@]}")
+    fi
+
+    SYS_LANG=$(ui::select "$(ui::t '系统语言 System Language' 'System Language')" "${opts[@]}")
     local rc=$?; (( rc != 0 )) && return $rc
+
+    # Switch display language for all subsequent steps
+    case "$SYS_LANG" in
+        zh_CN*) ui::set_lang "zh" ;;
+        *)      ui::set_lang "en" ;;
+    esac
 
     ui::success "$(ui::t "语言: ${SYS_LANG}" "Language: ${SYS_LANG}")"
     ui::progress_set "$(ui::t '语言 Language' 'Language')" "${SYS_LANG}"
@@ -204,7 +212,13 @@ _step_disk() {
 }
 
 _step_network() {
-    NET_TYPE=$(ui::select "$(ui::t '网络后端 Network Backend' 'Network Backend')" "${NET_OPTIONS[@]}")
+    local -a opts=()
+    if [[ "$_UI_LANG" == "en" ]]; then
+        opts=("${NET_OPTIONS_TTY[@]}")
+    else
+        opts=("${NET_OPTIONS[@]}")
+    fi
+    NET_TYPE=$(ui::select "$(ui::t '网络后端 Network Backend' 'Network Backend')" "${opts[@]}")
     local rc=$?; (( rc != 0 )) && return $rc
 
     ui::success "$(ui::t "网络: ${NET_TYPE}" "Network: ${NET_TYPE}")"
@@ -249,9 +263,11 @@ _step_gpu_drivers() {
     done
 
     local -a selected_vendors=()
-    readarray -t selected_vendors < <(ui::checklist "$(ui::t '显卡驱动 GPU Drivers' 'GPU Drivers')" "$preselect" \
+    local checklist_out=""
+    checklist_out=$(ui::checklist "$(ui::t '显卡驱动 GPU Drivers' 'GPU Drivers')" "$preselect" \
         "${checklist_items[@]}")
     local rc=$?; (( rc != 0 )) && return $rc
+    readarray -t selected_vendors <<< "$checklist_out"
 
     # Reset on re-entry, always include common packages
     GPU_DRIVER_PACKAGES=()

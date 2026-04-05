@@ -15,17 +15,31 @@ _UI_LOADED=1
 
 # Detect native TTY (Linux framebuffer console without CJK-capable renderer).
 # /dev/tty[0-9]* = native VT; /dev/pts/* = terminal emulator / SSH / kmscon.
-# On native TTY, non-ASCII text (CJK, etc.) cannot render — use English only.
+# On native TTY, non-ASCII text (CJK, etc.) cannot render — force English.
 _UI_NATIVE_TTY=0
 if [[ "$(tty 2>/dev/null)" == /dev/tty[0-9]* ]]; then
     _UI_NATIVE_TTY=1
 fi
 
-# Choose text by environment: CJK-capable terminal gets $1, native TTY gets $2.
+# Display language: "zh" or "en".
+# - Native TTY: locked to "en" (CJK cannot render).
+# - Non-TTY: defaults to "zh", then follows user locale choice via ui::set_lang.
+_UI_LANG="zh"
+(( _UI_NATIVE_TTY )) && _UI_LANG="en"
+
+# Switch display language at runtime (e.g. after user selects locale).
+# No-op on native TTY (always English — CJK rendering is impossible).
+# Usage: ui::set_lang "en"
+ui::set_lang() {
+    (( _UI_NATIVE_TTY )) && return 0
+    _UI_LANG="$1"
+}
+
+# Choose text by display language: $1 = Chinese, $2 = English.
 # Usage: ui::t "中文文本" "English text"
 # Inline: ui::warn "$(ui::t '获取失败' 'Fetch failed')"
 ui::t() {
-    if (( _UI_NATIVE_TTY )); then
+    if [[ "$_UI_LANG" == "en" ]]; then
         printf '%s' "$2"
     else
         printf '%s' "$1"

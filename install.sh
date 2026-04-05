@@ -593,19 +593,20 @@ if [[ -d /run/archiso ]]; then
 
         ui::success "archinstall completed successfully"
 
+        # Post-install: set keyboard layout (skipped in archinstall to avoid
+        # systemd-nspawn Boot session hang on minimal pacstrap environments)
+        CHROOT_DIR="/mnt/archinstall"
+        [[ ! -d "$CHROOT_DIR/etc" ]] && CHROOT_DIR="/mnt"
+
+        if [[ -d "$CHROOT_DIR/etc" ]]; then
+            ui::log "Setting keyboard layout to 'us'..."
+            echo "KEYMAP=us" > "$CHROOT_DIR/etc/vconsole.conf"
+        fi
+
         # Post-install: enable kmscon in the new system via chroot
-        if [[ "$NEED_KMSCON" == true ]]; then
+        if [[ "$NEED_KMSCON" == true && -d "$CHROOT_DIR/etc" ]]; then
             ui::step 1 1 "Enabling kmscon@tty1 in new system..."
-
-            CHROOT_DIR="/mnt/archinstall"
-            [[ ! -d "$CHROOT_DIR/etc" ]] && CHROOT_DIR="/mnt"
-
-            if [[ -d "$CHROOT_DIR/etc" ]]; then
-                ui::exe arch-chroot "$CHROOT_DIR" systemctl enable kmscon@tty1
-            else
-                ui::warn "$(ui::t 'iso.mount_not_found')"
-                echo -e "      ${UI_BOLD}arch-chroot /mnt systemctl enable kmscon@tty1${UI_NC}"
-            fi
+            ui::exe arch-chroot "$CHROOT_DIR" systemctl enable kmscon@tty1
         fi
 
         echo ""

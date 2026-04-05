@@ -250,7 +250,7 @@ CREPO
     "hostname": "archlinux",
     "kernels": ["linux"],
     "locale_config": {
-        "kb_layout": "us",
+        "kb_layout": "",
         "sys_enc": "UTF-8",
         "sys_lang": "${SYS_LANG}"
     },

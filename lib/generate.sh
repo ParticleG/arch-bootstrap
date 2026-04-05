@@ -116,7 +116,7 @@ generate::build_confirm_preview() {
 # ─── JSON File Generation ───
 
 # Generate user_configuration.json from collected wizard state.
-# Expects these globals: TARGET_DEV, BTRFS_SIZE_BYTES, BTRFS_START_BYTES,
+# Expects these globals: TARGET_DEV, BTRFS_SIZE_MIB, BTRFS_START_MIB,
 #   SYS_LANG, NET_TYPE, OPTIONAL_REPOS[], LANG_PACKAGES[], GPU_DRIVER_PACKAGES[]
 # Uses config.sh data: BASE_PACKAGES[], ACTIVE_MIRRORS[], MIRROR_COUNTRY,
 #   ARCHLINUXCN_URL, COUNTRY_REFLECTOR_NAME[], COUNTRY_TIMEZONE[]
@@ -204,12 +204,12 @@ CREPO
                         "mountpoint": "/boot",
                         "obj_id": "efi-part",
                         "size": {
-                            "sector_size": {"unit": "B", "value": 512},
+                            "sector_size": null,
                             "unit": "GiB",
                             "value": 1
                         },
                         "start": {
-                            "sector_size": {"unit": "B", "value": 512},
+                            "sector_size": null,
                             "unit": "MiB",
                             "value": 1
                         },
@@ -230,14 +230,14 @@ CREPO
                         "mountpoint": null,
                         "obj_id": "btrfs-part",
                         "size": {
-                            "sector_size": {"unit": "B", "value": 512},
-                            "unit": "B",
-                            "value": ${BTRFS_SIZE_BYTES}
+                            "sector_size": null,
+                            "unit": "MiB",
+                            "value": ${BTRFS_SIZE_MIB}
                         },
                         "start": {
-                            "sector_size": {"unit": "B", "value": 512},
-                            "unit": "B",
-                            "value": ${BTRFS_START_BYTES}
+                            "sector_size": null,
+                            "unit": "MiB",
+                            "value": ${BTRFS_START_MIB}
                         },
                         "status": "create",
                         "type": "primary"

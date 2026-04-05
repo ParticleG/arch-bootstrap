@@ -300,14 +300,14 @@ _step_disk() {
     ui::success "$(ui::t 'step.disk.success' "$TARGET_DEV")"
     ui::progress_set "$(ui::t 'nav.disk')" "${TARGET_DEV}"
 
-    # Partition layout
+    # Partition layout (all values aligned to 1 MiB for archinstall 4.1)
     DISK_SIZE_BYTES=$($SUDO blockdev --getsize64 "$TARGET_DEV")
-    EFI_START_BYTES=1048576
+    EFI_START_MIB=1
     EFI_SIZE_GIB=1
-    BTRFS_START_BYTES=$((EFI_START_BYTES + EFI_SIZE_GIB * 1073741824))
-    BTRFS_SIZE_BYTES=$((DISK_SIZE_BYTES - BTRFS_START_BYTES))
+    BTRFS_START_MIB=$((EFI_START_MIB + EFI_SIZE_GIB * 1024))  # 1 + 1024 = 1025 MiB
+    BTRFS_SIZE_MIB=$(((DISK_SIZE_BYTES / 1048576) - BTRFS_START_MIB))  # floor to MiB boundary
     DISK_SIZE_HUMAN=$(numfmt --to=iec-i --suffix=B "$DISK_SIZE_BYTES" 2>/dev/null || echo "${DISK_SIZE_BYTES} bytes")
-    BTRFS_SIZE_HUMAN=$(numfmt --to=iec-i --suffix=B "$BTRFS_SIZE_BYTES" 2>/dev/null || echo "${BTRFS_SIZE_BYTES} bytes")
+    BTRFS_SIZE_HUMAN=$(numfmt --to=iec-i --suffix=B "$((BTRFS_SIZE_MIB * 1048576))" 2>/dev/null || echo "${BTRFS_SIZE_MIB} MiB")
 
     ui::info_kv "EFI" "1 GiB" "(FAT32, /boot)"
     ui::info_kv "Btrfs" "${BTRFS_SIZE_HUMAN}" "(compress=zstd, subvols: @ @home @log @pkg)"
@@ -562,6 +562,14 @@ if [[ -d /run/archiso ]]; then
 
     if ui::confirm "$(ui::t 'iso.run_now')" "N"; then
         ui::divider "archinstall"
+
+        # Upgrade archinstall to latest version (ISO ships outdated 3.x)
+        ui::log "Upgrading archinstall to latest version..."
+        pacman -Sy --noconfirm archinstall || {
+            ui::error "Failed to upgrade archinstall"
+            exit 1
+        }
+
         ui::log "Starting archinstall..."
         echo ""
 

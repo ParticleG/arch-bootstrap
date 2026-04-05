@@ -163,8 +163,9 @@ _step_language() {
         opts+=("$(ui::t "$key")|${val}")
     done
 
-    SYS_LANG=$(ui::select "$(ui::t 'step.lang.title')" "${opts[@]}")
-    local rc=$?; (( rc != 0 )) && return $rc
+    local rc=0
+    SYS_LANG=$(ui::select "$(ui::t 'step.lang.title')" "${opts[@]}") || rc=$?
+    (( rc != 0 )) && return $rc
 
     # Switch display language for all subsequent steps
     case "$SYS_LANG" in
@@ -188,10 +189,11 @@ _step_language() {
 }
 
 _step_disk() {
+    local rc=0
     TARGET_DISK=$(ui::select_with_preview "$(ui::t 'step.disk.title')" \
         "lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT,LABEL /dev/{}" \
-        "${DISK_ITEMS[@]}")
-    local rc=$?; (( rc != 0 )) && return $rc
+        "${DISK_ITEMS[@]}") || rc=$?
+    (( rc != 0 )) && return $rc
 
     TARGET_DEV="/dev/${TARGET_DISK}"
     if [[ ! -b "$TARGET_DEV" ]]; then
@@ -222,8 +224,9 @@ _step_network() {
         opts+=("$(ui::t "opt.net.${val}")|${val}")
     done
 
-    NET_TYPE=$(ui::select "$(ui::t 'step.net.title')" "${opts[@]}")
-    local rc=$?; (( rc != 0 )) && return $rc
+    local rc=0
+    NET_TYPE=$(ui::select "$(ui::t 'step.net.title')" "${opts[@]}") || rc=$?
+    (( rc != 0 )) && return $rc
 
     ui::success "$(ui::t 'step.net.success' "$NET_TYPE")"
     ui::progress_set "$(ui::t 'nav.net')" "${NET_TYPE}"
@@ -268,9 +271,10 @@ _step_gpu_drivers() {
 
     local -a selected_vendors=()
     local checklist_out=""
+    local rc=0
     checklist_out=$(ui::checklist "$(ui::t 'step.gpu.title')" "$preselect" \
-        "${checklist_items[@]}")
-    local rc=$?; (( rc != 0 )) && return $rc
+        "${checklist_items[@]}") || rc=$?
+    (( rc != 0 )) && return $rc
     readarray -t selected_vendors <<< "$checklist_out"
 
     # Reset on re-entry, always include common packages
@@ -304,12 +308,13 @@ _step_gpu_drivers() {
 }
 
 _step_username() {
+    local rc=0
     if [[ -n "$DEFAULT_USER" ]]; then
-        USERNAME=$(ui::input "$(ui::t 'step.user.title')" "$DEFAULT_USER")
+        USERNAME=$(ui::input "$(ui::t 'step.user.title')" "$DEFAULT_USER") || rc=$?
     else
-        USERNAME=$(ui::input_validate "$(ui::t 'step.user.title')" _validate_username)
+        USERNAME=$(ui::input_validate "$(ui::t 'step.user.title')" _validate_username) || rc=$?
     fi
-    local rc=$?; (( rc != 0 )) && return $rc
+    (( rc != 0 )) && return $rc
 
     ui::success "$(ui::t 'step.user.success' "$USERNAME")"
     ui::progress_set "$(ui::t 'nav.user')" "${USERNAME}"
@@ -317,13 +322,15 @@ _step_username() {
 }
 
 _step_user_password() {
-    USER_PASSWORD=$(ui::password "$(ui::t 'step.passwd.title')")
-    local rc=$?; (( rc != 0 )) && return $rc
+    local rc=0
+    USER_PASSWORD=$(ui::password "$(ui::t 'step.passwd.title')") || rc=$?
+    (( rc != 0 )) && return $rc
 
     while [[ -z "$USER_PASSWORD" ]]; do
         ui::warn "$(ui::t 'step.passwd.empty')" > /dev/tty
-        USER_PASSWORD=$(ui::password "$(ui::t 'step.passwd.title')")
-        rc=$?; (( rc != 0 )) && return $rc
+        rc=0
+        USER_PASSWORD=$(ui::password "$(ui::t 'step.passwd.title')") || rc=$?
+        (( rc != 0 )) && return $rc
     done
 
     ui::progress_set "$(ui::t 'nav.passwd')" "$(ui::t 'status.set')"
@@ -331,8 +338,9 @@ _step_user_password() {
 }
 
 _step_root_password() {
-    ROOT_PASSWORD=$(ui::password "$(ui::t 'step.root.title')")
-    local rc=$?; (( rc != 0 )) && return $rc
+    local rc=0
+    ROOT_PASSWORD=$(ui::password "$(ui::t 'step.root.title')") || rc=$?
+    (( rc != 0 )) && return $rc
 
     if [[ -n "$ROOT_PASSWORD" ]]; then
         ui::success "$(ui::t 'step.root.set')"

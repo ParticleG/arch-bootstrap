@@ -10,28 +10,57 @@ source "$(dirname "${BASH_SOURCE[0]}")/config.sh"
 
 # ─── JSON Helpers ───
 
+# Escape a string for safe embedding in a JSON string value.
+# Handles: backslash, double-quote, and all control characters (0x00–0x1F).
+# Usage: safe=$(_json_escape "$raw_value")
+_json_escape() {
+    local s="$1" out="" i c o
+    for (( i=0; i<${#s}; i++ )); do
+        c="${s:$i:1}"
+        case "$c" in
+            \\) out+='\\'  ;;
+            '"') out+='\"' ;;
+            $'\n') out+='\n'  ;;
+            $'\r') out+='\r'  ;;
+            $'\t') out+='\t'  ;;
+            *)
+                o=$(printf '%d' "'$c")
+                if (( o >= 0 && o < 32 )); then
+                    printf -v c '\\u%04x' "$o"
+                    out+="$c"
+                else
+                    out+="$c"
+                fi
+                ;;
+        esac
+    done
+    printf '%s' "$out"
+}
+
 # Convert a bash array to a JSON-style quoted comma-separated string.
+# All values are JSON-escaped to prevent control character injection.
 # Usage: _json_string_array "neovim" "git" "zsh"
 # Output: "neovim", "git", "zsh"
 _json_string_array() {
     local first=true
     for item in "$@"; do
         $first || printf ', '
-        printf '"%s"' "$item"
+        printf '"%s"' "$(_json_escape "$item")"
         first=false
     done
 }
 
 # Build JSON array lines for mirror URLs with indentation.
-# URLs contain literal $repo/$arch which pass through safely because
-# variable expansion results are not re-scanned in unquoted heredocs.
+# All URLs are JSON-escaped. URLs contain literal $repo/$arch which pass
+# through safely because variable expansion results are not re-scanned
+# in unquoted heredocs.
 # Usage: _json_mirror_lines "                " "${ACTIVE_MIRRORS[@]}"
 _json_mirror_lines() {
     local indent="$1"; shift
     local first=true
     for url in "$@"; do
         $first || printf ',\n'
-        printf '%s"%s"' "$indent" "$url"
+        printf '%s"%s"' "$indent" "$(_json_escape "$url")"
         first=false
     done
 }
@@ -126,6 +155,7 @@ generate::user_configuration() {
     [[ ${#LANG_PACKAGES[@]} -gt 0 ]] && all_packages+=("${LANG_PACKAGES[@]}")
     [[ ${#GPU_DRIVER_PACKAGES[@]} -gt 0 ]] && all_packages+=("${GPU_DRIVER_PACKAGES[@]}")
 
+    # _json_string_array and _json_mirror_lines already apply _json_escape
     local packages_json
     packages_json=$(_json_string_array "${all_packages[@]}")
 
@@ -137,25 +167,30 @@ generate::user_configuration() {
     local mirror_lines
     mirror_lines=$(_json_mirror_lines "                " "${ACTIVE_MIRRORS[@]}")
 
-    # Resolve country display name for JSON key (reflector name or ISO code)
-    local country_key="${COUNTRY_REFLECTOR_NAME[$MIRROR_COUNTRY]:-Worldwide}"
-    local timezone="${COUNTRY_TIMEZONE[$MIRROR_COUNTRY]:-UTC}"
+    # Pre-escape all string values embedded directly in the heredoc
+    local j_target_dev j_sys_lang j_country_key j_timezone j_net_type
+    j_target_dev=$(_json_escape "$TARGET_DEV")
+    j_sys_lang=$(_json_escape "$SYS_LANG")
+    j_country_key=$(_json_escape "${COUNTRY_REFLECTOR_NAME[$MIRROR_COUNTRY]:-Worldwide}")
+    j_timezone=$(_json_escape "${COUNTRY_TIMEZONE[$MIRROR_COUNTRY]:-UTC}")
+    j_net_type=$(_json_escape "$NET_TYPE")
 
     # Conditionally build custom_repositories JSON (archlinuxcn only for CN)
     local custom_repos_json=""
     if [[ "$MIRROR_COUNTRY" == "CN" ]]; then
-        custom_repos_json=$(cat << 'CREPO'
+        local j_cn_url
+        j_cn_url=$(_json_escape "$ARCHLINUXCN_URL")
+        custom_repos_json=$(cat << CREPO
         "custom_repositories": [
             {
                 "name": "archlinuxcn",
                 "sign_check": "Optional",
                 "sign_option": "TrustAll",
-                "url": "ARCHLINUXCN_PLACEHOLDER"
+                "url": "${j_cn_url}"
             }
         ],
 CREPO
 )
-        custom_repos_json="${custom_repos_json//ARCHLINUXCN_PLACEHOLDER/${ARCHLINUXCN_URL}}"
     else
         custom_repos_json='        "custom_repositories": [],'
     fi
@@ -193,7 +228,7 @@ CREPO
         "config_type": "default_layout",
         "device_modifications": [
             {
-                "device": "${TARGET_DEV}",
+                "device": "${j_target_dev}",
                 "partitions": [
                     {
                         "btrfs": [],
@@ -252,20 +287,20 @@ CREPO
     "locale_config": {
         "kb_layout": "",
         "sys_enc": "UTF-8",
-        "sys_lang": "${SYS_LANG}"
+        "sys_lang": "${j_sys_lang}"
     },
     "mirror_config": {
 ${custom_repos_json}
         "custom_servers": [],
         "mirror_regions": {
-            "${country_key}": [
+            "${j_country_key}": [
 ${mirror_lines}
             ]
         },
         "optional_repositories": [${repos_json}]
     },
     "network_config": {
-        "type": "${NET_TYPE}"
+        "type": "${j_net_type}"
     },
     "ntp": true,
     "packages": [${packages_json}],
@@ -285,7 +320,7 @@ ${mirror_lines}
         "algorithm": "lzo-rle",
         "enabled": true
     },
-    "timezone": "${timezone}",
+    "timezone": "${j_timezone}",
     "version": "4.1"
 }
 JSONEOF
@@ -297,21 +332,27 @@ generate::user_credentials() {
     local user_enc
     user_enc=$(generate::encrypt_password "$USER_PASSWORD")
 
+    # Pre-escape all string values
+    local j_user_enc j_username
+    j_user_enc=$(_json_escape "$user_enc")
+    j_username=$(_json_escape "$USERNAME")
+
     local root_line=""
     if [[ -n "${ROOT_PASSWORD:-}" ]]; then
-        local root_enc
+        local root_enc j_root_enc
         root_enc=$(generate::encrypt_password "$ROOT_PASSWORD")
-        root_line=$'\n    '"\"root_enc_password\": \"${root_enc}\","
+        j_root_enc=$(_json_escape "$root_enc")
+        root_line=$'\n    '"\"root_enc_password\": \"${j_root_enc}\","
     fi
 
     ( umask 077; cat > user_credentials.json << JSONEOF
 {${root_line}
     "users": [
         {
-            "enc_password": "${user_enc}",
+            "enc_password": "${j_user_enc}",
             "groups": [],
             "sudo": true,
-            "username": "${USERNAME}"
+            "username": "${j_username}"
         }
     ]
 }

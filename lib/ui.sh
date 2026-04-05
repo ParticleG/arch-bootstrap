@@ -16,10 +16,22 @@ _UI_LOADED=1
 # Detect native TTY (Linux framebuffer console without CJK-capable renderer).
 # /dev/tty[0-9]* = native VT; /dev/pts/* = terminal emulator / SSH / kmscon.
 # On native TTY, non-ASCII text (CJK, etc.) cannot render — force English.
+#
+# NOTE: We inspect stderr (fd 2) instead of stdin (fd 0) because bootstrap
+# scripts are invoked via `curl ... | bash`, which replaces stdin with a pipe.
+# stderr remains connected to the real terminal device in that scenario.
+# Fallback: TERM=linux is set by the kernel fbcon driver on native VTs.
 _UI_NATIVE_TTY=0
-if [[ "$(tty 2>/dev/null)" == /dev/tty[0-9]* ]]; then
+_ui_tty_dev=""
+if [[ -e /proc/self/fd/2 ]]; then
+    _ui_tty_dev=$(readlink -f /proc/self/fd/2 2>/dev/null) || true
+fi
+if [[ "${_ui_tty_dev}" == /dev/tty[0-9]* ]]; then
+    _UI_NATIVE_TTY=1
+elif [[ -z "${_ui_tty_dev}" && "${TERM:-}" == "linux" ]]; then
     _UI_NATIVE_TTY=1
 fi
+unset _ui_tty_dev
 
 # Display language code: "zh", "en", "ja", etc.
 # Must match the suffix of a loaded _I18N_XX associative array (uppercased).

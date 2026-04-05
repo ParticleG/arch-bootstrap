@@ -20,13 +20,20 @@ declare -gA _I18N_ZH=(
 
     # ── 镜像源 ──
     [mirror.no_reflector]="reflector 未安装，使用内置镜像列表"
-    [mirror.fetching]="正在通过 reflector 获取中国镜像并测速排序..."
+    [mirror.fetching_country]="正在通过 reflector 获取 %s 镜像并测速排序..."
+    [mirror.fetching_worldwide]="正在通过 reflector 获取全球镜像并测速排序..."
     [mirror.fetch_failed]="reflector 获取失败，使用内置镜像列表"
     [mirror.no_results]="reflector 未返回任何镜像，使用内置列表"
     [mirror.found]="获取到 %s 个镜像 (按速度排序)"
 
+    # ── 地区 / 国家 ──
+    [region.detecting]="正在通过 IP 地理位置检测所在国家..."
+    [region.detected]="检测到国家: %s"
+    [region.auto_detected]="自动检测"
+
     # ── 导航 (向导步骤名 & 进度标签) ──
     [nav.lang]="语言"
+    [nav.region]="地区"
     [nav.disk]="磁盘"
     [nav.net]="网络"
     [nav.repos]="仓库"
@@ -38,6 +45,7 @@ declare -gA _I18N_ZH=(
 
     # ── 步骤标题 (fzf / 输入提示) ──
     [step.lang.title]="系统语言"
+    [step.region.title]="镜像地区"
     [step.disk.title]="安装目标磁盘"
     [step.net.title]="网络后端"
     [step.gpu.title]="显卡驱动"
@@ -48,6 +56,7 @@ declare -gA _I18N_ZH=(
     # ── 步骤消息 ──
     [step.lang.success]="语言: %s"
     [step.lang.kmscon]="已自动添加 %s 用于非英文 TTY 显示支持"
+    [step.region.success]="地区: %s"
     [step.disk.success]="目标磁盘: %s"
     [step.net.success]="网络: %s"
     [step.repos.confirm]="启用 multilib 仓库? (32 位兼容，如 Steam)"
@@ -63,6 +72,8 @@ declare -gA _I18N_ZH=(
 
     # ── 确认步骤 ──
     [confirm.lang]="系统语言"
+    [confirm.region]="镜像地区"
+    [confirm.timezone]="时区"
     [confirm.disk]="目标磁盘"
     [confirm.net]="网络后端"
     [confirm.gpu]="显卡驱动"

@@ -24,7 +24,7 @@ _json_string_array() {
 
 # Build JSON array lines for mirror URLs with indentation.
 # The URLs should contain \$ for heredoc-safe output.
-# Usage: _json_mirror_lines "                " "${CHINA_MIRRORS[@]}"
+# Usage: _json_mirror_lines "                " "${ACTIVE_MIRRORS[@]}"
 _json_mirror_lines() {
     local indent="$1"; shift
     local first=true
@@ -117,7 +117,8 @@ generate::build_confirm_preview() {
 # Generate user_configuration.json from collected wizard state.
 # Expects these globals: TARGET_DEV, BTRFS_SIZE_BYTES, BTRFS_START_BYTES,
 #   SYS_LANG, NET_TYPE, OPTIONAL_REPOS[], LANG_PACKAGES[], GPU_DRIVER_PACKAGES[]
-# Uses config.sh data: BASE_PACKAGES[], CHINA_MIRRORS[], ARCHLINUXCN_URL
+# Uses config.sh data: BASE_PACKAGES[], ACTIVE_MIRRORS[], MIRROR_COUNTRY,
+#   ARCHLINUXCN_URL, COUNTRY_REFLECTOR_NAME[], COUNTRY_TIMEZONE[]
 generate::user_configuration() {
     # Merge all package arrays into final list
     local -a all_packages=("${BASE_PACKAGES[@]}")
@@ -133,7 +134,30 @@ generate::user_configuration() {
     fi
 
     local mirror_lines
-    mirror_lines=$(_json_mirror_lines "                " "${CHINA_MIRRORS[@]}")
+    mirror_lines=$(_json_mirror_lines "                " "${ACTIVE_MIRRORS[@]}")
+
+    # Resolve country display name for JSON key (reflector name or ISO code)
+    local country_key="${COUNTRY_REFLECTOR_NAME[$MIRROR_COUNTRY]:-Worldwide}"
+    local timezone="${COUNTRY_TIMEZONE[$MIRROR_COUNTRY]:-UTC}"
+
+    # Conditionally build custom_repositories JSON (archlinuxcn only for CN)
+    local custom_repos_json=""
+    if [[ "$MIRROR_COUNTRY" == "CN" ]]; then
+        custom_repos_json=$(cat << 'CREPO'
+        "custom_repositories": [
+            {
+                "name": "archlinuxcn",
+                "sign_check": "Optional",
+                "sign_option": "TrustAll",
+                "url": "ARCHLINUXCN_PLACEHOLDER"
+            }
+        ],
+CREPO
+)
+        custom_repos_json="${custom_repos_json//ARCHLINUXCN_PLACEHOLDER/${ARCHLINUXCN_URL}}"
+    else
+        custom_repos_json='        "custom_repositories": [],'
+    fi
 
     cat > user_configuration.json << JSONEOF
 {
@@ -230,17 +254,10 @@ generate::user_configuration() {
         "sys_lang": "${SYS_LANG}"
     },
     "mirror_config": {
-        "custom_repositories": [
-            {
-                "name": "archlinuxcn",
-                "sign_check": "Optional",
-                "sign_option": "TrustAll",
-                "url": "${ARCHLINUXCN_URL}"
-            }
-        ],
+${custom_repos_json}
         "custom_servers": [],
         "mirror_regions": {
-            "China": [
+            "${country_key}": [
 ${mirror_lines}
             ]
         },
@@ -267,7 +284,7 @@ ${mirror_lines}
         "algorithm": "lzo-rle",
         "enabled": true
     },
-    "timezone": "Asia/Shanghai",
+    "timezone": "${timezone}",
     "version": "4.1"
 }
 JSONEOF

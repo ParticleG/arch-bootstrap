@@ -91,17 +91,69 @@ _validate_username() {
     return 0
 }
 
-# Fetch China mirrors via reflector (fallback to hardcoded CHINA_MIRRORS in config.sh)
+# ─── Country / Region Detection & Mirror Fetching ───
+
+# Resolve fallback mirror array for a given ISO country code.
+# Falls back to MIRRORS_WORLDWIDE if no country-specific pool exists.
+_get_fallback_mirrors() {
+    local iso="$1"
+    local arr_name="MIRRORS_${iso}"
+
+    # Check if the country-specific array exists and has elements
+    if [[ -n "$iso" ]] && declare -p "$arr_name" &>/dev/null; then
+        local -n ref="${arr_name}"
+        if (( ${#ref[@]} > 0 )); then
+            ACTIVE_MIRRORS=("${ref[@]}")
+            return 0
+        fi
+    fi
+    ACTIVE_MIRRORS=("${MIRRORS_WORLDWIDE[@]}")
+}
+
+# Detect country via IP geolocation (lightweight, works on Arch ISO with network).
+# Sets MIRROR_COUNTRY to ISO 3166-1 alpha-2 code (e.g. "CN", "US") or "" on failure.
+_detect_country() {
+    MIRROR_COUNTRY=""
+    local iso=""
+
+    # Try multiple geolocation services (2s timeout each)
+    for url in "https://ifconfig.co/country-iso" \
+               "https://ipinfo.io/country" \
+               "https://icanhazip.com/country"; do
+        iso=$(curl -sf --max-time 2 "$url" 2>/dev/null) && break
+        iso=""
+    done
+
+    # Validate: must be exactly 2 uppercase letters
+    if [[ "$iso" =~ ^[A-Z]{2}$ ]]; then
+        MIRROR_COUNTRY="$iso"
+    fi
+}
+
+# Fetch mirrors via reflector for the configured MIRROR_COUNTRY.
+# On failure or unavailability, falls back to hardcoded per-country pools.
 _fetch_mirrors() {
+    local country_name="${COUNTRY_REFLECTOR_NAME[$MIRROR_COUNTRY]:-}"
+
+    # Load fallback mirrors first (overridden if reflector succeeds)
+    _get_fallback_mirrors "$MIRROR_COUNTRY"
+
     if ! command -v reflector &>/dev/null; then
         ui::warn "$(ui::t 'mirror.no_reflector')"
         return 0
     fi
 
-    ui::log "$(ui::t 'mirror.fetching')"
+    if [[ -z "$country_name" ]]; then
+        # Unknown country — use Worldwide reflector query
+        ui::log "$(ui::t 'mirror.fetching_worldwide')"
+        local reflector_args=(--protocol https --sort rate --age 24 --number 20 --download-timeout 3)
+    else
+        ui::log "$(ui::t 'mirror.fetching_country' "$country_name")"
+        local reflector_args=(--country "$country_name" --protocol https --sort rate --age 24 --number 20 --download-timeout 3)
+    fi
+
     local output
-    output=$(reflector --country China --protocol https \
-        --sort rate --age 24 --number 20 --download-timeout 3 2>/dev/null) || {
+    output=$(reflector "${reflector_args[@]}" 2>/dev/null) || {
         ui::warn "$(ui::t 'mirror.fetch_failed')"
         return 0
     }
@@ -122,9 +174,16 @@ _fetch_mirrors() {
         return 0
     fi
 
-    CHINA_MIRRORS=("${fetched[@]}")
+    ACTIVE_MIRRORS=("${fetched[@]}")
     ui::success "$(ui::t 'mirror.found' "${#fetched[@]}")"
 }
+
+# Run initial detection (before wizard starts)
+ui::log "$(ui::t 'region.detecting')"
+_detect_country
+if [[ -n "$MIRROR_COUNTRY" ]]; then
+    ui::success "$(ui::t 'region.detected' "$MIRROR_COUNTRY")"
+fi
 _fetch_mirrors
 
 # Build disk list once
@@ -185,6 +244,47 @@ _step_language() {
         NEED_KMSCON=true
         ui::log "$(ui::t 'step.lang.kmscon' "${UI_BOLD}kmscon${UI_NC}")"
     fi
+    return 0
+}
+
+_step_region() {
+    # Build region menu: show detected country as default, plus common options
+    local -a opts=()
+    local detected_label=""
+
+    for iso in "${REGION_MENU_COUNTRIES[@]}"; do
+        local label="${COUNTRY_REFLECTOR_NAME[$iso]:-$iso}"
+        if [[ "$iso" == "$MIRROR_COUNTRY" ]]; then
+            # Mark the auto-detected country
+            detected_label="$label"
+            opts+=("${label} ($(ui::t 'region.auto_detected'))|${iso}")
+        else
+            opts+=("${label}|${iso}")
+        fi
+    done
+
+    # If detected country is not in menu, prepend it
+    if [[ -n "$MIRROR_COUNTRY" ]] && [[ -z "$detected_label" ]]; then
+        local label="${COUNTRY_REFLECTOR_NAME[$MIRROR_COUNTRY]:-$MIRROR_COUNTRY}"
+        # Insert at the beginning
+        opts=("${label} ($(ui::t 'region.auto_detected'))|${MIRROR_COUNTRY}" "${opts[@]}")
+    fi
+
+    local rc=0
+    local selected
+    selected=$(ui::select "$(ui::t 'step.region.title')" "${opts[@]}") || rc=$?
+    (( rc != 0 )) && return $rc
+
+    # Update country and re-fetch mirrors if changed
+    if [[ "$selected" != "$MIRROR_COUNTRY" ]]; then
+        MIRROR_COUNTRY="$selected"
+        _fetch_mirrors
+    fi
+
+    local display_name="${COUNTRY_REFLECTOR_NAME[$MIRROR_COUNTRY]:-$MIRROR_COUNTRY}"
+    local tz="${COUNTRY_TIMEZONE[$MIRROR_COUNTRY]:-UTC}"
+    ui::success "$(ui::t 'step.region.success' "$display_name")"
+    ui::progress_set "$(ui::t 'nav.region')" "${display_name}"
     return 0
 }
 
@@ -375,9 +475,14 @@ _step_confirm() {
     kmscon_status=$([[ "${NEED_KMSCON:-false}" == true ]] && echo "$(ui::t 'status.added')" || echo "$(ui::t 'status.not_needed')")
     gpu_status="${GPU_VENDORS:-$(ui::t 'step.gpu.mesa_generic')}"
 
+    local region_display="${COUNTRY_REFLECTOR_NAME[$MIRROR_COUNTRY]:-$MIRROR_COUNTRY}"
+    local tz_display="${COUNTRY_TIMEZONE[$MIRROR_COUNTRY]:-UTC}"
+
     # Build summary items (single source for dashboard + preview)
     local -a summary_items=(
         "$(ui::t 'confirm.lang')|${SYS_LANG}"
+        "$(ui::t 'confirm.region')|${region_display}"
+        "$(ui::t 'confirm.timezone')|${tz_display}"
         "$(ui::t 'confirm.disk')|${TARGET_DEV} (${DISK_SIZE_HUMAN})"
         "$(ui::t 'confirm.net')|${NET_TYPE}"
         "Multilib|${multilib_status}"
@@ -409,6 +514,7 @@ _step_confirm() {
 # ═══════════════════════════════════════════════════════════════════════════════
 
 wizard::register "nav.lang"    _step_language
+wizard::register "nav.region"  _step_region
 wizard::register "nav.disk"    _step_disk
 wizard::register "nav.net"     _step_network
 wizard::register "nav.repos"   _step_repos

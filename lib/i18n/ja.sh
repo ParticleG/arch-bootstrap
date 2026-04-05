@@ -20,13 +20,20 @@ declare -gA _I18N_JA=(
 
     # ── ミラー ──
     [mirror.no_reflector]="reflector 未インストール、内蔵ミラーリストを使用"
-    [mirror.fetching]="reflector で中国ミラーを取得中 (速度順)..."
+    [mirror.fetching_country]="reflector で %s ミラーを取得中 (速度順)..."
+    [mirror.fetching_worldwide]="reflector でワールドワイドミラーを取得中 (速度順)..."
     [mirror.fetch_failed]="reflector 取得失敗、内蔵ミラーリストを使用"
     [mirror.no_results]="reflector がミラーを返さず、内蔵リストを使用"
     [mirror.found]="%s 個のミラーを取得 (速度順)"
 
+    # ── 地域 / 国 ──
+    [region.detecting]="IPジオロケーションで国を検出中..."
+    [region.detected]="検出された国: %s"
+    [region.auto_detected]="自動検出"
+
     # ── ナビゲーション (ウィザードステップ名 & 進捗ラベル) ──
     [nav.lang]="言語"
+    [nav.region]="地域"
     [nav.disk]="ディスク"
     [nav.net]="ネットワーク"
     [nav.repos]="リポジトリ"
@@ -38,6 +45,7 @@ declare -gA _I18N_JA=(
 
     # ── ステップタイトル (fzf / 入力プロンプト) ──
     [step.lang.title]="システム言語"
+    [step.region.title]="ミラー地域"
     [step.disk.title]="インストール先ディスク"
     [step.net.title]="ネットワークバックエンド"
     [step.gpu.title]="GPUドライバー"
@@ -48,6 +56,7 @@ declare -gA _I18N_JA=(
     # ── ステップメッセージ ──
     [step.lang.success]="言語: %s"
     [step.lang.kmscon]="非英語 TTY 表示のため %s を自動追加"
+    [step.region.success]="地域: %s"
     [step.disk.success]="インストール先: %s"
     [step.net.success]="ネットワーク: %s"
     [step.repos.confirm]="multilib リポジトリを有効にしますか？ (32ビット互換、Steam等)"
@@ -63,6 +72,8 @@ declare -gA _I18N_JA=(
 
     # ── 確認ステップ ──
     [confirm.lang]="システム言語"
+    [confirm.region]="ミラー地域"
+    [confirm.timezone]="タイムゾーン"
     [confirm.disk]="ディスク"
     [confirm.net]="ネットワーク"
     [confirm.gpu]="GPUドライバー"

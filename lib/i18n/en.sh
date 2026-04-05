@@ -20,13 +20,20 @@ declare -gA _I18N_EN=(
 
     # ── Mirror ──
     [mirror.no_reflector]="reflector not found, using built-in mirror list"
-    [mirror.fetching]="Fetching China mirrors via reflector (sorted by speed)..."
+    [mirror.fetching_country]="Fetching %s mirrors via reflector (sorted by speed)..."
+    [mirror.fetching_worldwide]="Fetching worldwide mirrors via reflector (sorted by speed)..."
     [mirror.fetch_failed]="reflector failed, using built-in mirror list"
     [mirror.no_results]="reflector returned no mirrors, using built-in list"
     [mirror.found]="Found %s mirrors (sorted by speed)"
 
+    # ── Region / Country ──
+    [region.detecting]="Detecting country via IP geolocation..."
+    [region.detected]="Detected country: %s"
+    [region.auto_detected]="auto-detected"
+
     # ── Navigation (wizard step names & progress labels) ──
     [nav.lang]="Language"
+    [nav.region]="Region"
     [nav.disk]="Disk"
     [nav.net]="Network"
     [nav.repos]="Repos"
@@ -38,6 +45,7 @@ declare -gA _I18N_EN=(
 
     # ── Step titles (fzf / input prompts) ──
     [step.lang.title]="System Language"
+    [step.region.title]="Mirror Region"
     [step.disk.title]="Target Disk"
     [step.net.title]="Network Backend"
     [step.gpu.title]="GPU Drivers"
@@ -48,6 +56,7 @@ declare -gA _I18N_EN=(
     # ── Step messages ──
     [step.lang.success]="Language: %s"
     [step.lang.kmscon]="Auto-added %s for non-English TTY rendering"
+    [step.region.success]="Region: %s"
     [step.disk.success]="Target disk: %s"
     [step.net.success]="Network: %s"
     [step.repos.confirm]="Enable multilib repo? (32-bit compat, e.g. Steam)"
@@ -63,6 +72,8 @@ declare -gA _I18N_EN=(
 
     # ── Confirm step ──
     [confirm.lang]="Language"
+    [confirm.region]="Region"
+    [confirm.timezone]="Timezone"
     [confirm.disk]="Disk"
     [confirm.net]="Network"
     [confirm.gpu]="GPU Drivers"

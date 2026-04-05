@@ -13,25 +13,24 @@ _UI_LOADED=1
 # §0. Native TTY Detection & Locale-Aware Text Helper
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# Detect native TTY (Linux framebuffer console without CJK-capable renderer).
-# /dev/tty[0-9]* = native VT; /dev/pts/* = terminal emulator / SSH / kmscon.
-# On native TTY, non-ASCII text (CJK, etc.) cannot render — force English.
+# Detect native Linux VT (framebuffer console without CJK-capable renderer).
+# On native VT, non-ASCII text (CJK, etc.) cannot render — force English.
 #
-# NOTE: We inspect stderr (fd 2) instead of stdin (fd 0) because bootstrap
-# scripts are invoked via `curl ... | bash`, which replaces stdin with a pipe.
-# stderr remains connected to the real terminal device in that scenario.
-# Fallback: TERM=linux is set by the kernel fbcon driver on native VTs.
+# Primary: TERM=linux is set by the kernel fbcon driver and is inherited
+#   across all process layers (curl|bash → exec → makeself → eval)
+#   regardless of fd redirections.  kmscon and terminal emulators always
+#   set a different TERM value (xterm-256color, etc.).
+# Fallback: resolve the terminal device attached to stderr (fd 2).
+#   stdin (fd 0) may be a pipe when invoked via `curl … | bash`.
+#   /dev/tty[0-9]* = native VT; /dev/pts/* = pty (emulator/SSH/kmscon).
 _UI_NATIVE_TTY=0
-_ui_tty_dev=""
-if [[ -e /proc/self/fd/2 ]]; then
+if [[ "${TERM:-}" == "linux" ]]; then
+    _UI_NATIVE_TTY=1
+elif [[ -e /proc/self/fd/2 ]]; then
     _ui_tty_dev=$(readlink -f /proc/self/fd/2 2>/dev/null) || true
+    [[ "${_ui_tty_dev:-}" == /dev/tty[0-9]* ]] && _UI_NATIVE_TTY=1
+    unset _ui_tty_dev
 fi
-if [[ "${_ui_tty_dev}" == /dev/tty[0-9]* ]]; then
-    _UI_NATIVE_TTY=1
-elif [[ -z "${_ui_tty_dev}" && "${TERM:-}" == "linux" ]]; then
-    _UI_NATIVE_TTY=1
-fi
-unset _ui_tty_dev
 
 # Display language code: "zh", "en", "ja", etc.
 # Must match the suffix of a loaded _I18N_XX associative array (uppercased).

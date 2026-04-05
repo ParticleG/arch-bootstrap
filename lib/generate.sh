@@ -23,7 +23,8 @@ _json_string_array() {
 }
 
 # Build JSON array lines for mirror URLs with indentation.
-# The URLs should contain \$ for heredoc-safe output.
+# URLs contain literal $repo/$arch which pass through safely because
+# variable expansion results are not re-scanned in unquoted heredocs.
 # Usage: _json_mirror_lines "                " "${ACTIVE_MIRRORS[@]}"
 _json_mirror_lines() {
     local indent="$1"; shift

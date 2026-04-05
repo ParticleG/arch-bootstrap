@@ -162,10 +162,7 @@ _fetch_mirrors() {
     local line
     while IFS= read -r line; do
         if [[ "$line" =~ ^Server\ =\ (.+)$ ]]; then
-            # Escape $ → \$ so the unquoted heredoc in generate.sh outputs literal $
-            local url="${BASH_REMATCH[1]}"
-            url="${url//\$/\\\$}"
-            fetched+=("$url")
+            fetched+=("${BASH_REMATCH[1]}")
         fi
     done <<< "$output"
 

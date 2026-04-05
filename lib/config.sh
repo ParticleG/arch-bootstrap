@@ -48,46 +48,46 @@ declare -a NET_VALUES=("nm_iwd" "nm")
 
 # ─── Mirror Configuration ───
 # Fallback mirrors per country (used when reflector is unavailable).
-# Note: \$ keeps literal $ in unquoted heredocs.
+# URLs contain literal $repo/$arch — safe because they are always expanded
 # MIRROR_COUNTRY is set at runtime by _detect_country() / _step_region().
 MIRROR_COUNTRY=""
 
 declare -a MIRRORS_CN=(
-    'https://mirrors.ustc.edu.cn/archlinux/\$repo/os/\$arch'
-    'https://mirrors.tuna.tsinghua.edu.cn/archlinux/\$repo/os/\$arch'
-    'https://mirrors.bfsu.edu.cn/archlinux/\$repo/os/\$arch'
-    'https://mirrors.aliyun.com/archlinux/\$repo/os/\$arch'
-    'https://mirrors.hit.edu.cn/archlinux/\$repo/os/\$arch'
-    'https://mirrors.nju.edu.cn/archlinux/\$repo/os/\$arch'
-    'https://mirrors.hust.edu.cn/archlinux/\$repo/os/\$arch'
-    'https://mirrors.cqu.edu.cn/archlinux/\$repo/os/\$arch'
-    'https://mirrors.xjtu.edu.cn/archlinux/\$repo/os/\$arch'
-    'https://mirrors.jlu.edu.cn/archlinux/\$repo/os/\$arch'
-    'https://mirrors.jcut.edu.cn/archlinux/\$repo/os/\$arch'
-    'https://mirrors.qlu.edu.cn/archlinux/\$repo/os/\$arch'
+    'https://mirrors.ustc.edu.cn/archlinux/$repo/os/$arch'
+    'https://mirrors.tuna.tsinghua.edu.cn/archlinux/$repo/os/$arch'
+    'https://mirrors.bfsu.edu.cn/archlinux/$repo/os/$arch'
+    'https://mirrors.aliyun.com/archlinux/$repo/os/$arch'
+    'https://mirrors.hit.edu.cn/archlinux/$repo/os/$arch'
+    'https://mirrors.nju.edu.cn/archlinux/$repo/os/$arch'
+    'https://mirrors.hust.edu.cn/archlinux/$repo/os/$arch'
+    'https://mirrors.cqu.edu.cn/archlinux/$repo/os/$arch'
+    'https://mirrors.xjtu.edu.cn/archlinux/$repo/os/$arch'
+    'https://mirrors.jlu.edu.cn/archlinux/$repo/os/$arch'
+    'https://mirrors.jcut.edu.cn/archlinux/$repo/os/$arch'
+    'https://mirrors.qlu.edu.cn/archlinux/$repo/os/$arch'
 )
 declare -a MIRRORS_US=(
-    'https://mirrors.kernel.org/archlinux/\$repo/os/\$arch'
-    'https://mirror.rackspace.com/archlinux/\$repo/os/\$arch'
-    'https://mirrors.rit.edu/archlinux/\$repo/os/\$arch'
-    'https://mirrors.lug.mtu.edu/archlinux/\$repo/os/\$arch'
-    'https://mirrors.mit.edu/archlinux/\$repo/os/\$arch'
+    'https://mirrors.kernel.org/archlinux/$repo/os/$arch'
+    'https://mirror.rackspace.com/archlinux/$repo/os/$arch'
+    'https://mirrors.rit.edu/archlinux/$repo/os/$arch'
+    'https://mirrors.lug.mtu.edu/archlinux/$repo/os/$arch'
+    'https://mirrors.mit.edu/archlinux/$repo/os/$arch'
 )
 declare -a MIRRORS_JP=(
-    'https://ftp.jaist.ac.jp/pub/Linux/ArchLinux/\$repo/os/\$arch'
-    'https://mirrors.cat.net/archlinux/\$repo/os/\$arch'
-    'https://ftp.tsukuba.wide.ad.jp/Linux/archlinux/\$repo/os/\$arch'
+    'https://ftp.jaist.ac.jp/pub/Linux/ArchLinux/$repo/os/$arch'
+    'https://mirrors.cat.net/archlinux/$repo/os/$arch'
+    'https://ftp.tsukuba.wide.ad.jp/Linux/archlinux/$repo/os/$arch'
 )
 declare -a MIRRORS_DE=(
-    'https://mirror.f4st.host/archlinux/\$repo/os/\$arch'
-    'https://ftp.fau.de/archlinux/\$repo/os/\$arch'
-    'https://mirror.netcologne.de/archlinux/\$repo/os/\$arch'
+    'https://mirror.f4st.host/archlinux/$repo/os/$arch'
+    'https://ftp.fau.de/archlinux/$repo/os/$arch'
+    'https://mirror.netcologne.de/archlinux/$repo/os/$arch'
 )
 # Worldwide fallback (used when country has no dedicated pool)
 declare -a MIRRORS_WORLDWIDE=(
-    'https://geo.mirror.pkgbuild.com/\$repo/os/\$arch'
-    'https://mirror.rackspace.com/archlinux/\$repo/os/\$arch'
-    'https://mirrors.kernel.org/archlinux/\$repo/os/\$arch'
+    'https://geo.mirror.pkgbuild.com/$repo/os/$arch'
+    'https://mirror.rackspace.com/archlinux/$repo/os/$arch'
+    'https://mirrors.kernel.org/archlinux/$repo/os/$arch'
 )
 
 # Active mirrors array — populated at runtime by _fetch_mirrors()
@@ -118,7 +118,7 @@ declare -A COUNTRY_TIMEZONE=(
 declare -a REGION_MENU_COUNTRIES=(CN US JP DE GB FR KR AU CA SG TW HK)
 
 # archlinuxcn repository URL (only added for CN users)
-ARCHLINUXCN_URL='https://repo.archlinuxcn.org/\$arch'
+ARCHLINUXCN_URL='https://repo.archlinuxcn.org/$arch'
 
 # ─── Fixed Summary Keys (non-configurable, shown in confirm) ───
 # Labels come from i18n keys fixed.*, values are constant technical terms.

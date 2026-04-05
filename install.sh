@@ -559,7 +559,8 @@ ui::box "$(ui::t 'post.title')" \
 if [[ "$NEED_KMSCON" == true ]] && [[ ! -d /run/archiso ]]; then
     echo ""
     ui::log "$(ui::t 'post.kmscon_hint')"
-    echo -e "      ${UI_BOLD}sudo systemctl enable --now kmscon@tty1${UI_NC}"
+    echo -e "      ${UI_BOLD}sudo systemctl disable getty@tty1${UI_NC}"
+    echo -e "      ${UI_BOLD}sudo systemctl enable --now kmsconvt@tty1${UI_NC}"
 fi
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -622,10 +623,13 @@ if [[ -d /run/archiso ]]; then
             echo "KEYMAP=us" > "$CHROOT_DIR/etc/vconsole.conf"
         fi
 
-        # Post-install: enable kmscon in the new system via chroot
+        # Post-install: enable kmscon in the new system via chroot.
+        # tty1 has getty@tty1.service enabled by default — must disable it
+        # first, otherwise kmsconvt@tty1 conflicts. (Arch Wiki: KMSCON)
         if [[ "$NEED_KMSCON" == true && -d "$CHROOT_DIR/etc" ]]; then
-            ui::step 1 1 "Enabling kmscon@tty1 in new system..."
-            ui::exe arch-chroot "$CHROOT_DIR" systemctl enable kmscon@tty1
+            ui::step 1 1 "Enabling kmsconvt@tty1 in new system..."
+            ui::exe arch-chroot "$CHROOT_DIR" systemctl disable getty@tty1
+            ui::exe arch-chroot "$CHROOT_DIR" systemctl enable kmsconvt@tty1
         fi
 
         echo ""

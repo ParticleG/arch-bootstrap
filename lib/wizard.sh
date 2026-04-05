@@ -41,10 +41,10 @@ wizard::run() {
         "${_WIZARD_FUNCS[$step]}"
         local rc=$?
         case $rc in
-            0)   (( step++ )) ;;
+            0)   step=$(( step + 1 )) ;;
             2)   # Back — go to previous step (min 0)
                  if (( step > 0 )); then
-                     (( step-- ))
+                     step=$(( step - 1 ))
                  else
                      ui::warn "已经是第一步"
                  fi

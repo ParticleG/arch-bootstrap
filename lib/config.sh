@@ -13,20 +13,22 @@ declare -a BASE_PACKAGES=(neovim git 7zip base-devel zsh)
 
 # ─── GPU Driver Configuration ───
 # Vendor order determines checklist display order
-declare -a GPU_VENDOR_ORDER=(amd intel nvidia)
+declare -a GPU_VENDOR_ORDER=(amd intel nvidia_open nouveau)
 
 # lspci detection patterns per vendor
 declare -A GPU_DETECT=(
     [amd]='VGA.*AMD|VGA.*ATI|Display.*AMD'
     [intel]='VGA.*Intel|Display.*Intel'
-    [nvidia]='VGA.*NVIDIA|3D.*NVIDIA|Display.*NVIDIA'
+    [nvidia_open]='VGA.*NVIDIA|3D.*NVIDIA|Display.*NVIDIA'
+    [nouveau]='VGA.*NVIDIA|3D.*NVIDIA|Display.*NVIDIA'
 )
 
 # Human-readable labels for the checklist
 declare -A GPU_LABELS=(
     [amd]="AMD (Radeon)"
     [intel]="Intel (HD/UHD/Arc)"
-    [nvidia]="NVIDIA (GeForce/Quadro)"
+    [nvidia_open]="NVIDIA Proprietary (Turing+)"
+    [nouveau]="NVIDIA Nouveau (Open Source)"
 )
 
 # Packages per vendor (space-separated); "common" always included
@@ -34,7 +36,8 @@ declare -A GPU_PACKAGES=(
     [common]="mesa"
     [amd]="vulkan-radeon xf86-video-amdgpu xf86-video-ati"
     [intel]="intel-media-driver libva-intel-driver vulkan-intel"
-    [nvidia]="dkms libva-nvidia-driver nvidia-open-dkms vulkan-nouveau xf86-video-nouveau"
+    [nvidia_open]="nvidia-open-dkms dkms libva-nvidia-driver"
+    [nouveau]="xf86-video-nouveau vulkan-nouveau"
 )
 
 # ─── Language Option Values (labels come from i18n keys opt.lang.*) ───
@@ -70,4 +73,5 @@ declare -A FIXED_SUMMARY_VALS=(
     [boot]="EFISTUB (UKI)"
     [fs]="Btrfs + zstd + Snapper"
     [audio]="PipeWire"
+    [bt]="Enabled"
 )

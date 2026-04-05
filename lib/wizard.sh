@@ -41,8 +41,9 @@ wizard::run() {
         return 1
     fi
 
+    local rc=0
     while (( step <= max )); do
-        local rc=0
+        rc=0
         "${_WIZARD_FUNCS[$step]}" || rc=$?
         case $rc in
             0)   step=$(( step + 1 )) ;;

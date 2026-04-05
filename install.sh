@@ -197,7 +197,7 @@ _step_disk() {
 
     TARGET_DEV="/dev/${TARGET_DISK}"
     if [[ ! -b "$TARGET_DEV" ]]; then
-        ui::error "${TARGET_DEV} does not exist"; exit 1
+        ui::error "${TARGET_DEV} does not exist"; return 1
     fi
 
     ui::success "$(ui::t 'step.disk.success' "$TARGET_DEV")"
@@ -309,11 +309,7 @@ _step_gpu_drivers() {
 
 _step_username() {
     local rc=0
-    if [[ -n "$DEFAULT_USER" ]]; then
-        USERNAME=$(ui::input "$(ui::t 'step.user.title')" "$DEFAULT_USER") || rc=$?
-    else
-        USERNAME=$(ui::input_validate "$(ui::t 'step.user.title')" _validate_username) || rc=$?
-    fi
+    USERNAME=$(ui::input_validate "$(ui::t 'step.user.title')" _validate_username "$DEFAULT_USER") || rc=$?
     (( rc != 0 )) && return $rc
 
     ui::success "$(ui::t 'step.user.success' "$USERNAME")"

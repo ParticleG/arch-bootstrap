@@ -131,7 +131,7 @@ _UI_BAR_EMPTY='░'
 # Strip ANSI escape sequences from a string
 _ui_strip_ansi() {
     local text="$1"
-    echo -e "$text" | sed 's/\x1b\[[0-9;]*m//g'
+    printf '%s\n' "$text" | sed 's/\x1b\[[0-9;]*m//g'
 }
 
 # Visible string length (excluding ANSI codes)
@@ -187,7 +187,7 @@ ui::log_init() {
     fi
     _UI_LOG_FILE="$path"
     : > "$_UI_LOG_FILE"
-    chmod 666 "$_UI_LOG_FILE" 2>/dev/null || true
+    chmod 644 "$_UI_LOG_FILE" 2>/dev/null || true
 }
 
 # Get log file path
@@ -273,6 +273,9 @@ ui::fullscreen() {
 # Initialize progress tracking. Creates temp files for progress state + preview script.
 # Usage: ui::progress_init
 ui::progress_init() {
+    # Clean up any existing temp files from a previous call
+    [[ -n "$_UI_PROGRESS_FILE" ]] && rm -f "$_UI_PROGRESS_FILE"
+    [[ -n "$_UI_PREVIEW_SCRIPT" ]] && rm -f "$_UI_PREVIEW_SCRIPT"
     _UI_PROGRESS_FILE=$(mktemp /tmp/ui-progress-XXXXXX)
     _UI_PREVIEW_SCRIPT=$(mktemp /tmp/ui-preview-XXXXXX.sh)
     chmod +x "$_UI_PREVIEW_SCRIPT"
@@ -884,6 +887,7 @@ ui::spinner() {
 #   Overwrites current line with \r (call repeatedly in a loop)
 ui::progress() {
     local current="$1" total="$2" label="${3:-}"
+    if (( total <= 0 )); then return 0; fi
     local cols
     cols=$(_ui_cols)
     local pct=$(( current * 100 / total ))
@@ -1139,6 +1143,9 @@ ui::input_validate() {
     local prompt="$1"
     local validator="$2"
     local default="${3:-}"
+    local err_file
+    err_file=$(mktemp /tmp/ui-validate-err-XXXXXX)
+    trap "rm -f '$err_file'" RETURN
 
     while true; do
         local answer
@@ -1149,12 +1156,12 @@ ui::input_validate() {
             return $rc
         fi
 
-        if $validator "$answer" 2>/tmp/_ui_validate_err; then
+        if $validator "$answer" 2>"$err_file"; then
             echo "$answer"
             return 0
         else
             local err_msg
-            err_msg=$(cat /tmp/_ui_validate_err 2>/dev/null)
+            err_msg=$(cat "$err_file" 2>/dev/null)
             ui::warn "${err_msg:-Invalid input}" > /dev/tty
         fi
     done
@@ -1190,20 +1197,19 @@ ui::password() {
     _ui_ensure_fzf || return 1
 
     # Temp files for password state
-    local pw_file pw_helper pw_mask
+    local pw_file pw_helper
     pw_file=$(mktemp /tmp/ui-pw-XXXXXX)
     pw_helper=$(mktemp /tmp/ui-pw-helper-XXXXXX.sh)
-    pw_mask=$(mktemp /tmp/ui-pw-mask-XXXXXX.sh)
     : > "$pw_file"
     chmod 600 "$pw_file"
 
-    # Helper: reconstruct real password from asterisk-corrupted query
-    # Called as: pw_helper.sh <pw_file> <new_query>
+    # Helper: reconstruct real password from asterisk-corrupted query.
+    # Called via fzf transform action — receives query via $FZF_QUERY env var
+    # (safe from shell injection, unlike {q} which is interpolated literally).
     cat > "$pw_helper" << 'HELPER_EOF'
 #!/usr/bin/env bash
 pw_file="$1"
-shift
-new_q="$*"
+new_q="${FZF_QUERY:-}"
 old_pw=""
 [[ -f "$pw_file" ]] && old_pw=$(cat "$pw_file")
 old_len=${#old_pw}
@@ -1216,25 +1222,11 @@ elif (( new_len < old_len )); then
     # Backspace — truncate stored password
     printf '%s' "${old_pw:0:$new_len}" > "$pw_file"
 fi
-# If same length, do nothing (modifier key, etc.)
+# Output asterisks (becomes new query via transform)
+pw=$(cat "$pw_file")
+printf '%*s' "${#pw}" '' | tr ' ' '*'
 HELPER_EOF
     chmod +x "$pw_helper"
-
-    # Mask: output asterisks matching stored password length
-    # Called as: pw_mask.sh <pw_file>
-    cat > "$pw_mask" << 'MASK_EOF'
-#!/usr/bin/env bash
-pw_file="$1"
-pw=""
-[[ -f "$pw_file" ]] && pw=$(cat "$pw_file")
-len=${#pw}
-if (( len == 0 )); then
-    echo ""
-else
-    printf '%*s' "$len" '' | tr ' ' '*'
-fi
-MASK_EOF
-    chmod +x "$pw_mask"
 
     # Build fzf args — NOT using _ui_fzf_common_args because j/k must be typeable
     local -a fzf_args=()
@@ -1256,8 +1248,8 @@ MASK_EOF
     fzf_args+=(--border-label-pos=5)
     fzf_args+=(--prompt="  🔒 ")
     fzf_args+=(--header=" Type password (masked), press Enter to confirm  $(_ui_nav_header_hint)")
-    # On each keystroke: save real password, then replace query with asterisks
-    fzf_args+=(--bind "change:execute-silent(${pw_helper} ${pw_file} {q})+transform-query(${pw_mask} ${pw_file})")
+    # On each keystroke: reconstruct password + replace query with asterisks (via transform)
+    fzf_args+=(--bind "change:transform(${pw_helper} ${pw_file})")
     # On Enter: output the real password from the temp file
     fzf_args+=(--bind "enter:become(cat ${pw_file})")
 
@@ -1278,7 +1270,7 @@ MASK_EOF
         result=$(echo "" | fzf "${fzf_args[@]}" 2>/dev/null) || {
             local _pw_rc=0
             _ui_nav_check; _pw_rc=$?
-            rm -f "$pw_file" "$pw_helper" "$pw_mask"
+            rm -f "$pw_file" "$pw_helper"
             return $_pw_rc
         }
     else
@@ -1286,7 +1278,7 @@ MASK_EOF
     fi
 
     # Clean up temp files
-    rm -f "$pw_file" "$pw_helper" "$pw_mask"
+    rm -f "$pw_file" "$pw_helper"
 
     echo "$result"
 }
@@ -1301,7 +1293,7 @@ _ui_ensure_fzf() {
 
     echo -e "   ${UI_DIM}fzf not found, attempting to install...${UI_NC}"
     if command -v pacman &>/dev/null; then
-        pacman -Sy --noconfirm --needed fzf >/dev/null 2>&1
+        pacman -S --noconfirm --needed fzf >/dev/null 2>&1
     elif command -v apt-get &>/dev/null; then
         apt-get install -y fzf >/dev/null 2>&1
     elif command -v dnf &>/dev/null; then
@@ -1355,7 +1347,7 @@ ui::select() {
     _ui_nav_clear
     _ui_show_banner
     local selected
-    selected=$(printf "%b\n" "${fzf_lines[@]}" | fzf "${fzf_args[@]}" 2>/dev/null) || {
+    selected=$(printf "%s\n" "${fzf_lines[@]}" | fzf "${fzf_args[@]}" 2>/dev/null) || {
         _ui_nav_check; return $?
     }
 
@@ -1428,7 +1420,7 @@ ui::select_with_preview() {
     _ui_nav_clear
     _ui_show_banner
     local selected
-    selected=$(printf "%b\n" "${fzf_lines[@]}" | fzf "${fzf_args[@]}" 2>/dev/null) || {
+    selected=$(printf "%s\n" "${fzf_lines[@]}" | fzf "${fzf_args[@]}" 2>/dev/null) || {
         _ui_nav_check; return $?
     }
 
@@ -1476,7 +1468,7 @@ ui::multiselect() {
     _ui_nav_clear
     _ui_show_banner
     local selected
-    selected=$(printf "%b\n" "${fzf_lines[@]}" | fzf "${fzf_args[@]}" 2>/dev/null) || {
+    selected=$(printf "%s\n" "${fzf_lines[@]}" | fzf "${fzf_args[@]}" 2>/dev/null) || {
         _ui_nav_check; return $?
     }
 
@@ -1514,12 +1506,14 @@ ui::checklist() {
         (( idx++ ))
     done
 
-    # Build initial selection bind
-    local select_bind="start:"
-    for si in "${bind_select[@]}"; do
-        select_bind+="pos($si)+toggle+"
-    done
-    select_bind="${select_bind%+}"  # Remove trailing +
+    # Build initial selection bind (only if there are pre-selected items)
+    if (( ${#bind_select[@]} > 0 )); then
+        local select_bind="start:"
+        for si in "${bind_select[@]}"; do
+            select_bind+="pos($si)+toggle+"
+        done
+        select_bind="${select_bind%+}"  # Remove trailing +
+    fi
 
     # Build fzf args
     local -a fzf_args=()
@@ -1533,7 +1527,7 @@ ui::checklist() {
     fzf_args+=(--border-label-pos=5)
     fzf_args+=(--header=" [TAB] Toggle  [Ctrl-A] All  [Ctrl-D] None  [Enter] Confirm  $(_ui_nav_header_hint)")
     fzf_args+=(--marker="✔ ")
-    fzf_args+=(--bind "${select_bind}")
+    [[ -n "${select_bind:-}" ]] && fzf_args+=(--bind "${select_bind}")
     fzf_args+=(--bind 'ctrl-a:select-all,ctrl-d:deselect-all')
 
     local height_arg
@@ -1543,7 +1537,7 @@ ui::checklist() {
     _ui_nav_clear
     _ui_show_banner
     local selected
-    selected=$(printf "%b\n" "${fzf_lines[@]}" | fzf "${fzf_args[@]}" 2>/dev/null) || {
+    selected=$(printf "%s\n" "${fzf_lines[@]}" | fzf "${fzf_args[@]}" 2>/dev/null) || {
         _ui_nav_check; return $?
     }
 
@@ -1578,7 +1572,7 @@ ui::menu() {
     for (( i=0; i<${#display_items[@]}; i++ )); do
         local label="${display_items[$i]%%|*}"
         if [[ "$label" == "$selected" ]]; then
-            eval "${actions[$i]}"
+            ${actions[$i]}
             return $?
         fi
     done
@@ -1785,5 +1779,17 @@ ui::pairs() {
 # §12. Initialization
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# Set up cleanup trap
-trap ui::cleanup EXIT INT TERM
+# Set up cleanup trap (appends to existing traps instead of overwriting)
+_ui_append_trap() {
+    local new_cmd="$1"; shift
+    for sig in "$@"; do
+        local existing
+        existing=$(trap -p "$sig" 2>/dev/null | sed "s/^trap -- '//;s/' ${sig}\$//") || true
+        if [[ -n "$existing" ]]; then
+            trap "${existing}; ${new_cmd}" "$sig"
+        else
+            trap "$new_cmd" "$sig"
+        fi
+    done
+}
+_ui_append_trap 'ui::cleanup' EXIT INT TERM

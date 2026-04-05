@@ -57,19 +57,21 @@ _display_width() {
 # ─── Password Encryption ───
 
 # Encrypt a plaintext password using SHA-512.
-# Tries openssl first, falls back to python3 crypt module.
+# Requires openssl (available on all Arch installations).
 # Usage: enc=$(generate::encrypt_password "mypassword")
 generate::encrypt_password() {
     local password="$1"
-    openssl passwd -6 -stdin <<< "$password" 2>/dev/null \
-        || python3 -c "import crypt; print(crypt.crypt('$password', crypt.mksalt(crypt.METHOD_SHA512)))"
+    if ! openssl passwd -6 -stdin <<< "$password" 2>/dev/null; then
+        ui::error "Password encryption failed: openssl is required"
+        return 1
+    fi
 }
 
 # ─── Confirm Preview Builder ───
 
 # Build an ANSI-formatted summary string for the confirm dialog preview panel.
 # Takes "label|value" pairs (same format as ui::dashboard).
-# Uses FIXED_SUMMARY_ITEMS from config.sh for the non-configurable section.
+# Uses FIXED_SUMMARY_KEYS / FIXED_SUMMARY_VALS from config.sh for the non-configurable section.
 # Usage: preview=$(generate::build_confirm_preview "语言|zh_CN.UTF-8" "磁盘|/dev/sda" ...)
 generate::build_confirm_preview() {
     local s=""
@@ -99,11 +101,7 @@ generate::build_confirm_preview() {
     for key in "${FIXED_SUMMARY_KEYS[@]}"; do
         local label value
         label=$(ui::t "fixed.${key}")
-        if [[ "$key" == "bt" ]]; then
-            value=$(ui::t 'status.enabled')
-        else
-            value="${FIXED_SUMMARY_VALS[$key]:-}"
-        fi
+        value="${FIXED_SUMMARY_VALS[$key]:-}"
         local w
         w=$(_display_width "$label")
         local pad=$(( 8 - w ))
@@ -281,16 +279,16 @@ generate::user_credentials() {
     local user_enc
     user_enc=$(generate::encrypt_password "$USER_PASSWORD")
 
-    local root_block=""
+    local root_line=""
     if [[ -n "${ROOT_PASSWORD:-}" ]]; then
         local root_enc
         root_enc=$(generate::encrypt_password "$ROOT_PASSWORD")
-        root_block="    \"root_enc_password\": \"${root_enc}\","$'\n'
+        root_line=$'\n    '"\"root_enc_password\": \"${root_enc}\","
     fi
 
-    cat > user_credentials.json << JSONEOF
-{
-${root_block}    "users": [
+    ( umask 077; cat > user_credentials.json << JSONEOF
+{${root_line}
+    "users": [
         {
             "enc_password": "${user_enc}",
             "groups": [],
@@ -300,9 +298,5 @@ ${root_block}    "users": [
     ]
 }
 JSONEOF
-
-    # Clean up empty lines when no root password
-    if [[ -z "${ROOT_PASSWORD:-}" ]]; then
-        sed -i '/^$/d' user_credentials.json
-    fi
+    )
 }

@@ -1,0 +1,51 @@
+name: Package
+
+on:
+  push:
+    branches: ["*"]
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install makeself
+        run: sudo apt-get update && sudo apt-get install -y makeself
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            VERSION="0.0.0-${GITHUB_SHA::7}"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Version: ${VERSION}"
+
+      - name: Build self-extracting archive
+        run: |
+          makeself --nox11 --sha256 \
+            . \
+            arch-bootstrap.sh \
+            "Arch Bootstrap v${{ steps.version.outputs.version }}" \
+            ./install.sh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: arch-bootstrap-${{ steps.version.outputs.version }}
+          path: arch-bootstrap.sh
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v') && contains(github.ref_name, '.')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: arch-bootstrap.sh
+          generate_release_notes: true

@@ -35,10 +35,15 @@ _resolve_ghproxy() {
 # ─── Verify a proxy can actually reach GitHub releases ───
 _test_proxy() {
   local proxy="$1"
-  # HEAD request to a known GitHub URL through the proxy
-  curl -sfI --connect-timeout 5 --max-time 10 \
-    "${proxy}/https://github.com/${REPO}/releases" \
-    -o /dev/null 2>/dev/null
+  # HEAD request to the actual download URL; a 302 redirect means the proxy works.
+  # Note: proxy services often block browsing pages (/releases) with 403,
+  # so we must test the real download path instead.
+  local http_code
+  http_code=$(curl -sI --connect-timeout 5 --max-time 10 \
+    "${proxy}/${GITHUB_URL}" \
+    -o /dev/null -w "%{http_code}" 2>/dev/null) || return 1
+  # 2xx or 3xx means the proxy is functional
+  [[ "$http_code" =~ ^[23] ]]
 }
 
 # ─── Resolve proxy with fallback chain ───

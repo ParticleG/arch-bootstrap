@@ -204,12 +204,12 @@ CREPO
                         "mountpoint": "/boot",
                         "obj_id": "efi-part",
                         "size": {
-                            "sector_size": null,
+                            "sector_size": {"unit": "B", "value": 512},
                             "unit": "GiB",
                             "value": 1
                         },
                         "start": {
-                            "sector_size": null,
+                            "sector_size": {"unit": "B", "value": 512},
                             "unit": "MiB",
                             "value": 1
                         },
@@ -230,12 +230,12 @@ CREPO
                         "mountpoint": null,
                         "obj_id": "btrfs-part",
                         "size": {
-                            "sector_size": null,
+                            "sector_size": {"unit": "B", "value": 512},
                             "unit": "MiB",
                             "value": ${BTRFS_SIZE_MIB}
                         },
                         "start": {
-                            "sector_size": null,
+                            "sector_size": {"unit": "B", "value": 512},
                             "unit": "MiB",
                             "value": ${BTRFS_START_MIB}
                         },

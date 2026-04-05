@@ -87,6 +87,42 @@ _validate_username() {
     return 0
 }
 
+# Fetch China mirrors via reflector (fallback to hardcoded CHINA_MIRRORS in config.sh)
+_fetch_mirrors() {
+    if ! command -v reflector &>/dev/null; then
+        ui::warn "reflector 未安装，使用内置镜像列表"
+        return 0
+    fi
+
+    ui::log "正在通过 reflector 获取中国镜像并测速排序..."
+    local output
+    output=$(reflector --country China --protocol https \
+        --sort rate --age 24 --number 20 --download-timeout 3 2>/dev/null) || {
+        ui::warn "reflector 获取失败，使用内置镜像列表"
+        return 0
+    }
+
+    local -a fetched=()
+    local line
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^Server\ =\ (.+)$ ]]; then
+            # Escape $ → \$ so the unquoted heredoc in generate.sh outputs literal $
+            local url="${BASH_REMATCH[1]}"
+            url="${url//\$/\\\$}"
+            fetched+=("$url")
+        fi
+    done <<< "$output"
+
+    if (( ${#fetched[@]} == 0 )); then
+        ui::warn "reflector 未返回任何镜像，使用内置列表"
+        return 0
+    fi
+
+    CHINA_MIRRORS=("${fetched[@]}")
+    ui::success "获取到 ${#fetched[@]} 个镜像 (按速度排序)"
+}
+_fetch_mirrors
+
 # Build disk list once
 declare -a DISK_ITEMS=()
 while IFS= read -r line; do
@@ -171,8 +207,8 @@ _step_network() {
 }
 
 _step_repos() {
-    ui::confirm "启用 multilib 仓库? (32 位兼容，如 Steam)" "Y"
-    local rc=$?
+    local rc=0
+    ui::confirm "启用 multilib 仓库? (32 位兼容，如 Steam)" "Y" || rc=$?
     if (( rc == 2 || rc == 130 )); then return $rc; fi
 
     if (( rc == 0 )); then
@@ -307,8 +343,8 @@ _step_confirm() {
     local _summary
     _summary=$(generate::build_confirm_preview "${summary_items[@]}")
 
-    ui::confirm "以上配置正确？生成 JSON 文件?" "Y" "" "$_summary"
-    local rc=$?
+    local rc=0
+    ui::confirm "以上配置正确？生成 JSON 文件?" "Y" "" "$_summary" || rc=$?
     case $rc in
         0)   return 0 ;;
         1)   ui::warn "已取消"; exit 0 ;;

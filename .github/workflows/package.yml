@@ -47,5 +47,8 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v') && contains(github.ref_name, '.')
         uses: softprops/action-gh-release@v2
         with:
-          files: arch-bootstrap.sh
+          files: |
+            arch-bootstrap.sh
+            scripts/bootstrap.sh
+            scripts/bootstrap_cn.sh
           generate_release_notes: true

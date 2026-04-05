@@ -399,6 +399,25 @@ ui::progress_cleanup() {
 # §4c. Persistent Banner — Stays visible above fzf menus
 # ═══════════════════════════════════════════════════════════════════════════════
 
+# Reliably query terminal height.  Inside command substitution ($(...)) stdout
+# is a pipe, so `tput lines` cannot ioctl(TIOCGWINSZ) on it and falls back to
+# the terminfo default (24).  We try `stty size < /dev/tty` first — it always
+# queries the real terminal regardless of fd state.
+_ui_term_lines() {
+    local lines
+    lines=$(stty size < /dev/tty 2>/dev/null | awk '{print $1}')
+    if [[ -n "$lines" ]] && (( lines > 0 )); then
+        echo "$lines"
+        return
+    fi
+    lines=$(tput lines 2>/dev/null)
+    if [[ -n "$lines" ]] && (( lines > 0 )); then
+        echo "$lines"
+        return
+    fi
+    echo 24
+}
+
 # The banner system works by:
 #   1. Registering a callback function that prints the banner to stdout
 #   2. Before every fzf invocation, clearing the screen and re-printing the banner
@@ -431,7 +450,7 @@ _ui_show_banner() {
     [[ "$_UI_BANNER_HEIGHT" -le 0 ]] && return 0
 
     local term_lines
-    term_lines=$(tput lines 2>/dev/null) || term_lines=24
+    term_lines=$(_ui_term_lines)
 
     local min_required=$(( _UI_BANNER_HEIGHT + 10 ))
     if (( term_lines < min_required )); then
@@ -458,7 +477,7 @@ _ui_fzf_height_with_banner() {
     [[ "$_UI_BANNER_HEIGHT" -le 0 ]] && return 0
 
     local term_lines
-    term_lines=$(tput lines 2>/dev/null) || term_lines=24
+    term_lines=$(_ui_term_lines)
 
     local min_required=$(( _UI_BANNER_HEIGHT + 10 ))
     if (( term_lines < min_required )); then
@@ -1263,8 +1282,8 @@ HELPER_EOF
     fzf_args+=(--border-label-pos=5)
     fzf_args+=(--prompt="  🔒 ")
     fzf_args+=(--header=" Type password (masked), press Enter to confirm  $(_ui_nav_header_hint)")
-    # On each keystroke: reconstruct password + replace query with asterisks (via transform)
-    fzf_args+=(--bind "change:transform(${pw_helper} ${pw_file})")
+    # On each keystroke: reconstruct password + replace query with asterisks
+    fzf_args+=(--bind "change:transform-query(${pw_helper} ${pw_file})")
     # On Enter: output the real password from the temp file
     fzf_args+=(--bind "enter:become(cat ${pw_file})")
 

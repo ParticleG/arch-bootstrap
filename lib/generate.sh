@@ -5,6 +5,7 @@
 # ╚═══════════════════════════════════════════════════════════════════════════════╝
 
 # ─── Dependencies ───
+source "$(dirname "${BASH_SOURCE[0]}")/ui.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/config.sh"
 
 # ─── JSON Helpers ───
@@ -74,8 +75,10 @@ generate::build_confirm_preview() {
     local s=""
 
     # Header
+    local preview_title
+    preview_title=$(ui::t 'confirm.preview_title')
     s+="\033[1;36m  ╔══════════════════════════════════════╗\033[0m\n"
-    s+="\033[1;36m  ║  \033[1;35mCONFIGURATION SUMMARY\033[0m\n"
+    s+="\033[1;36m  ║  \033[1;35m${preview_title}\033[0m\n"
     s+="\033[1;36m  ╚══════════════════════════════════════╝\033[0m\n"
     s+="\n"
 
@@ -90,12 +93,17 @@ generate::build_confirm_preview() {
         s+="  \033[1;32m✔\033[0m \033[1m${label}\033[0m$(printf '%*s' "$pad" '')${value}\n"
     done
 
-    # Separator + fixed config items
+    # Separator + fixed config items (non-configurable)
     s+="\n"
     s+="  \033[2m─────────────────────────────────────────\033[0m\n"
-    for item in "${FIXED_SUMMARY_ITEMS[@]}"; do
-        local label="${item%%|*}"
-        local value="${item#*|}"
+    for key in "${FIXED_SUMMARY_KEYS[@]}"; do
+        local label value
+        label=$(ui::t "fixed.${key}")
+        if [[ "$key" == "bt" ]]; then
+            value=$(ui::t 'status.enabled')
+        else
+            value="${FIXED_SUMMARY_VALS[$key]:-}"
+        fi
         local w
         w=$(_display_width "$label")
         local pad=$(( 8 - w ))

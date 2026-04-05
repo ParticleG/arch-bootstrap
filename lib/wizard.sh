@@ -12,12 +12,13 @@ source "$(dirname "${BASH_SOURCE[0]}")/ui.sh"
 declare -r _WIZARD_LOADED=1
 
 # ─── Step Registry ───
-declare -a _WIZARD_NAMES=()    # step display names (for error messages)
+declare -a _WIZARD_NAMES=()    # step i18n keys (resolved at display time via ui::t)
 declare -a _WIZARD_FUNCS=()    # step function names
 
 # Register a wizard step.
-# Each step function must return: 0=ok, 2=back, 130=abort
-# Usage: wizard::register "语言" _step_language
+# $1 = i18n key for the step name (resolved via ui::t when displayed)
+# $2 = step function name (must return: 0=ok, 2=back, 130=abort)
+# Usage: wizard::register "nav.lang" _step_language
 wizard::register() {
     local name="$1" func="$2"
     _WIZARD_NAMES+=("$name")
@@ -49,15 +50,15 @@ wizard::run() {
                  if (( step > 0 )); then
                      step=$(( step - 1 ))
                  else
-                     ui::warn "$(ui::t '已经是第一步' 'Already at first step')"
+                     ui::warn "$(ui::t 'wizard.first_step')"
                  fi
                  ;;
             130) # Abort (Ctrl-C)
-                 ui::warn "$(ui::t '已中止' 'Aborted')"
+                 ui::warn "$(ui::t 'wizard.aborted')"
                  exit 1
                  ;;
             *)   # Unexpected error
-                 ui::error "$(ui::t "步骤 '${_WIZARD_NAMES[$step]}' 失败 (exit ${rc})" "Step '${_WIZARD_NAMES[$step]}' failed (exit ${rc})")"
+                 ui::error "$(ui::t 'wizard.step_failed' "$(ui::t "${_WIZARD_NAMES[$step]}")" "$rc")"
                  exit "$rc"
                  ;;
         esac

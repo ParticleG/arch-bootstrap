@@ -21,28 +21,38 @@ if [[ "$(tty 2>/dev/null)" == /dev/tty[0-9]* ]]; then
     _UI_NATIVE_TTY=1
 fi
 
-# Display language: "zh" or "en".
-# - Native TTY: locked to "en" (CJK cannot render).
+# Display language code: "zh", "en", "ja", etc.
+# Must match the suffix of a loaded _I18N_XX associative array (uppercased).
+# - Native TTY: locked to "en" (CJK cannot render on framebuffer console).
 # - Non-TTY: defaults to "zh", then follows user locale choice via ui::set_lang.
 _UI_LANG="zh"
 (( _UI_NATIVE_TTY )) && _UI_LANG="en"
 
 # Switch display language at runtime (e.g. after user selects locale).
 # No-op on native TTY (always English — CJK rendering is impossible).
-# Usage: ui::set_lang "en"
+# Accepts any code with a corresponding _I18N_XX array: "zh", "en", "ja", ...
+# Usage: ui::set_lang "ja"
 ui::set_lang() {
     (( _UI_NATIVE_TTY )) && return 0
     _UI_LANG="$1"
 }
 
-# Choose text by display language: $1 = Chinese, $2 = English.
-# Usage: ui::t "中文文本" "English text"
-# Inline: ui::warn "$(ui::t '获取失败' 'Fetch failed')"
+# Look up a translated string by key, with optional printf substitution.
+# Requires _I18N_XX associative arrays to be loaded (lib/i18n/*.sh).
+# Fallback chain: current language → English (_I18N_EN) → raw key.
+# Usage: ui::t "step.lang.title"
+#        ui::t "mirror.found" "$count"        # printf %s substitution
 ui::t() {
-    if [[ "$_UI_LANG" == "en" ]]; then
-        printf '%s' "$2"
+    local key="$1"; shift
+    local -n _i18n_map="_I18N_${_UI_LANG^^}"
+    local tpl="${_i18n_map[$key]:-}"
+    # Fallback: English → raw key
+    [[ -z "$tpl" ]] && tpl="${_I18N_EN[$key]:-$key}"
+    if (( $# > 0 )); then
+        # shellcheck disable=SC2059
+        printf "$tpl" "$@"
     else
-        printf '%s' "$1"
+        printf '%s' "$tpl"
     fi
 }
 

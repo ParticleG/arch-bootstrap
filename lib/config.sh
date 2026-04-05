@@ -37,27 +37,11 @@ declare -A GPU_PACKAGES=(
     [nvidia]="dkms libva-nvidia-driver nvidia-open-dkms vulkan-nouveau xf86-video-nouveau"
 )
 
-# ─── Language Options (display|value) ───
-declare -a LANG_OPTIONS=(
-    "简体中文  zh_CN.UTF-8|zh_CN.UTF-8"
-    "English   en_US.UTF-8|en_US.UTF-8"
-    "日本語    ja_JP.UTF-8|ja_JP.UTF-8"
-)
-declare -a LANG_OPTIONS_TTY=(
-    "Chinese   zh_CN.UTF-8|zh_CN.UTF-8"
-    "English   en_US.UTF-8|en_US.UTF-8"
-    "Japanese  ja_JP.UTF-8|ja_JP.UTF-8"
-)
+# ─── Language Option Values (labels come from i18n keys opt.lang.*) ───
+declare -a LANG_VALUES=("zh_CN.UTF-8" "en_US.UTF-8" "ja_JP.UTF-8")
 
-# ─── Network Backend Options (display|value) ───
-declare -a NET_OPTIONS=(
-    "NetworkManager + iwd  (推荐，更省电)|nm_iwd"
-    "NetworkManager + wpa_supplicant  (传统)|nm"
-)
-declare -a NET_OPTIONS_TTY=(
-    "NetworkManager + iwd  (recommended)|nm_iwd"
-    "NetworkManager + wpa_supplicant  (legacy)|nm"
-)
+# ─── Network Backend Option Values (labels come from i18n keys opt.net.*) ───
+declare -a NET_VALUES=("nm_iwd" "nm")
 
 # ─── China Mirror URLs ───
 # Note: \$ keeps literal $ in unquoted heredocs
@@ -79,10 +63,11 @@ declare -a CHINA_MIRRORS=(
 # archlinuxcn repository URL
 ARCHLINUXCN_URL='https://repo.archlinuxcn.org/\$arch'
 
-# ─── Fixed Summary Items (non-configurable, shown in confirm) ───
-declare -a FIXED_SUMMARY_ITEMS=(
-    "Boot|EFISTUB (UKI)"
-    "FS|Btrfs + zstd + Snapper"
-    "Audio|PipeWire"
-    "BT|Enabled"
+# ─── Fixed Summary Keys (non-configurable, shown in confirm) ───
+# Labels come from i18n keys fixed.*, values are constant technical terms.
+declare -a FIXED_SUMMARY_KEYS=(boot fs audio bt)
+declare -A FIXED_SUMMARY_VALS=(
+    [boot]="EFISTUB (UKI)"
+    [fs]="Btrfs + zstd + Snapper"
+    [audio]="PipeWire"
 )

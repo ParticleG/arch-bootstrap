@@ -4,6 +4,10 @@
 # ║  No logic, no side effects — only arrays and associative arrays              ║
 # ╚═══════════════════════════════════════════════════════════════════════════════╝
 
+# Guard against double-sourcing (arrays would be reset, losing runtime overrides)
+[[ -n "${_CONFIG_LOADED:-}" ]] && return 0
+declare -r _CONFIG_LOADED=1
+
 # ─── Base Packages (always installed) ───
 declare -a BASE_PACKAGES=(neovim git 7zip base-devel zsh)
 
@@ -39,11 +43,20 @@ declare -a LANG_OPTIONS=(
     "English   en_US.UTF-8|en_US.UTF-8"
     "日本語    ja_JP.UTF-8|ja_JP.UTF-8"
 )
+declare -a LANG_OPTIONS_TTY=(
+    "Chinese   zh_CN.UTF-8|zh_CN.UTF-8"
+    "English   en_US.UTF-8|en_US.UTF-8"
+    "Japanese  ja_JP.UTF-8|ja_JP.UTF-8"
+)
 
 # ─── Network Backend Options (display|value) ───
 declare -a NET_OPTIONS=(
     "NetworkManager + iwd  (推荐，更省电)|nm_iwd"
     "NetworkManager + wpa_supplicant  (传统)|nm"
+)
+declare -a NET_OPTIONS_TTY=(
+    "NetworkManager + iwd  (recommended)|nm_iwd"
+    "NetworkManager + wpa_supplicant  (legacy)|nm"
 )
 
 # ─── China Mirror URLs ───

@@ -10,6 +10,29 @@
 _UI_LOADED=1
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# §0. Native TTY Detection & Locale-Aware Text Helper
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Detect native TTY (Linux framebuffer console without CJK-capable renderer).
+# /dev/tty[0-9]* = native VT; /dev/pts/* = terminal emulator / SSH / kmscon.
+# On native TTY, non-ASCII text (CJK, etc.) cannot render — use English only.
+_UI_NATIVE_TTY=0
+if [[ "$(tty 2>/dev/null)" == /dev/tty[0-9]* ]]; then
+    _UI_NATIVE_TTY=1
+fi
+
+# Choose text by environment: CJK-capable terminal gets $1, native TTY gets $2.
+# Usage: ui::t "中文文本" "English text"
+# Inline: ui::warn "$(ui::t '获取失败' 'Fetch failed')"
+ui::t() {
+    if (( _UI_NATIVE_TTY )); then
+        printf '%s' "$2"
+    else
+        printf '%s' "$1"
+    fi
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # §1. ANSI Colors & Styles
 # ═══════════════════════════════════════════════════════════════════════════════
 

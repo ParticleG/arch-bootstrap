@@ -4,6 +4,9 @@
 # ║  Requires config.sh (data) and ui.sh (display helpers) to be sourced first   ║
 # ╚═══════════════════════════════════════════════════════════════════════════════╝
 
+# ─── Dependencies ───
+source "$(dirname "${BASH_SOURCE[0]}")/config.sh"
+
 # ─── JSON Helpers ───
 
 # Convert a bash array to a JSON-style quoted comma-separated string.

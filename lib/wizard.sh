@@ -4,6 +4,9 @@
 # ║  Requires ui.sh to be sourced first (for ui::warn, ui::error, ui::enable_nav)║
 # ╚═══════════════════════════════════════════════════════════════════════════════╝
 
+# ─── Dependencies ───
+source "$(dirname "${BASH_SOURCE[0]}")/ui.sh"
+
 # Guard against double-sourcing (arrays would be reset)
 [[ -n "${_WIZARD_LOADED:-}" ]] && return 0
 declare -r _WIZARD_LOADED=1
@@ -46,15 +49,15 @@ wizard::run() {
                  if (( step > 0 )); then
                      step=$(( step - 1 ))
                  else
-                     ui::warn "已经是第一步"
+                     ui::warn "$(ui::t '已经是第一步' 'Already at first step')"
                  fi
                  ;;
             130) # Abort (Ctrl-C)
-                 ui::warn "已中止"
+                 ui::warn "$(ui::t '已中止' 'Aborted')"
                  exit 1
                  ;;
             *)   # Unexpected error
-                 ui::error "步骤 '${_WIZARD_NAMES[$step]}' 失败 (exit ${rc})"
+                 ui::error "$(ui::t "步骤 '${_WIZARD_NAMES[$step]}' 失败 (exit ${rc})" "Step '${_WIZARD_NAMES[$step]}' failed (exit ${rc})")"
                  exit "$rc"
                  ;;
         esac

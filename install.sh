@@ -574,7 +574,7 @@ if [[ -d /run/archiso ]]; then
         echo ""
 
         INSTALL_EXIT=0
-        archinstall --config user_configuration.json --creds user_credentials.json || INSTALL_EXIT=$?
+        archinstall --config user_configuration.json --creds user_credentials.json --silent || INSTALL_EXIT=$?
 
         if [[ $INSTALL_EXIT -ne 0 ]]; then
             ui::error "archinstall exited with code ${INSTALL_EXIT}"

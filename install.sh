@@ -583,6 +583,25 @@ if [[ -d /run/archiso ]]; then
         ui::log "Starting archinstall..."
         echo ""
 
+        # Pre-install: release all holds on target disk so archinstall's
+        # wipefs/partition operations don't hit "Device or resource busy".
+        # archinstall's own umount_all_existing() lacks swapoff/LVM handling.
+        ui::log "Releasing target disk ${TARGET_DEV}..."
+        swapoff --all 2>/dev/null || true
+        for mp in $(lsblk -nrpo MOUNTPOINT "$TARGET_DEV" 2>/dev/null | tac); do
+            umount -l "$mp" 2>/dev/null || true
+        done
+        # Deactivate LVM volume groups on the target disk (if any)
+        if command -v vgchange &>/dev/null; then
+            for vg in $(pvs --noheadings -o vg_name "$TARGET_DEV"* 2>/dev/null | tr -d ' '); do
+                [[ -n "$vg" ]] && vgchange -an "$vg" 2>/dev/null || true
+            done
+        fi
+        # Close any LUKS containers backed by target disk partitions
+        for dm in $(lsblk -nrpo NAME,TYPE "$TARGET_DEV" 2>/dev/null | awk '$2=="crypt"{print $1}'); do
+            cryptsetup close "$dm" 2>/dev/null || true
+        done
+
         INSTALL_EXIT=0
         archinstall --config user_configuration.json --creds user_credentials.json --silent || INSTALL_EXIT=$?
 

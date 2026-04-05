@@ -1493,7 +1493,7 @@ ui::checklist() {
     # Build fzf input with pre-selection markers
     local -a fzf_lines=()
     local -a bind_select=()
-    local idx=0
+    local idx=1  # fzf pos() is 1-indexed
     for item in "${items[@]}"; do
         local value="${item%%|*}"
         local label="${item#*|}"
@@ -1507,12 +1507,13 @@ ui::checklist() {
     done
 
     # Build initial selection bind (only if there are pre-selected items)
+    local select_bind=""
     if (( ${#bind_select[@]} > 0 )); then
-        local select_bind="start:"
+        select_bind="start:"
         for si in "${bind_select[@]}"; do
-            select_bind+="pos($si)+toggle+"
+            select_bind+="pos($si)+select+"
         done
-        select_bind="${select_bind%+}"  # Remove trailing +
+        select_bind+="first"  # Return cursor to the first item after selecting
     fi
 
     # Build fzf args

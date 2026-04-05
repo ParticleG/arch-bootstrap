@@ -252,15 +252,35 @@ _step_repos() {
 
 _step_gpu_drivers() {
     # Auto-detect GPU vendors via lspci
-    local preselect="" lspci_out=""
+    local preselect="" lspci_out="" lspci_nn=""
     if command -v lspci &>/dev/null; then
         lspci_out=$(lspci 2>/dev/null || true)
+        lspci_nn=$(lspci -nn 2>/dev/null || true)
     fi
+
+    # Detect non-NVIDIA vendors (AMD, Intel)
     for vendor in "${GPU_VENDOR_ORDER[@]}"; do
-        if echo "$lspci_out" | grep -qiE "${GPU_DETECT[$vendor]}"; then
+        [[ "$vendor" == nvidia_open || "$vendor" == nouveau ]] && continue
+        if printf '%s' "$lspci_out" | grep -qiE "${GPU_DETECT[$vendor]}"; then
             preselect+="${vendor},"
         fi
     done
+
+    # NVIDIA: decide between nvidia_open (Turing+) and nouveau (older)
+    if printf '%s' "$lspci_out" | grep -qiE "${GPU_DETECT[nvidia_open]}"; then
+        local nvidia_driver="nouveau"  # default to nouveau for older cards
+        # Extract NVIDIA PCI Device IDs (vendor 10de) and check architecture
+        # Turing (TU1xx) starts at Device ID 0x1e00; anything >= is Turing+
+        local dev_id
+        while IFS= read -r dev_id; do
+            if (( 16#${dev_id} >= 16#1e00 )); then
+                nvidia_driver="nvidia_open"
+                break
+            fi
+        done < <(printf '%s\n' "$lspci_nn" | grep -ioE '\[10de:[0-9a-f]{4}\]' \
+                   | grep -ioE '[0-9a-f]{4}\]' | tr -d ']')
+        preselect+="${nvidia_driver},"
+    fi
     preselect="${preselect%,}"
 
     # Build checklist items from config data

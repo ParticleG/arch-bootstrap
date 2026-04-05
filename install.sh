@@ -305,7 +305,7 @@ _step_disk() {
     EFI_START_MIB=1
     EFI_SIZE_GIB=1
     BTRFS_START_MIB=$((EFI_START_MIB + EFI_SIZE_GIB * 1024))  # 1 + 1024 = 1025 MiB
-    BTRFS_SIZE_MIB=$(((DISK_SIZE_BYTES / 1048576) - BTRFS_START_MIB))  # floor to MiB boundary
+    BTRFS_SIZE_MIB=$(((DISK_SIZE_BYTES / 1048576) - BTRFS_START_MIB - 1))  # floor to MiB, -1 MiB for GPT backup header
     DISK_SIZE_HUMAN=$(numfmt --to=iec-i --suffix=B "$DISK_SIZE_BYTES" 2>/dev/null || echo "${DISK_SIZE_BYTES} bytes")
     BTRFS_SIZE_HUMAN=$(numfmt --to=iec-i --suffix=B "$((BTRFS_SIZE_MIB * 1048576))" 2>/dev/null || echo "${BTRFS_SIZE_MIB} MiB")
 

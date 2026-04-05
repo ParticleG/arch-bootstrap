@@ -1,7 +1,7 @@
 #!/bin/bash
 # ╔═══════════════════════════════════════════════════════════════════════════════╗
 # ║  generate.sh — Archinstall 4.1 JSON generation & confirm preview builder     ║
-# ║  Requires config.sh (data) and ui.sh (display helpers) to be sourced first   ║
+# ║  Requires config.sh (data) to be sourced first                               ║
 # ╚═══════════════════════════════════════════════════════════════════════════════╝
 
 # ─── Dependencies ───

@@ -439,9 +439,13 @@ _ui_show_banner() {
         return 1
     fi
 
-    # Clear screen and print banner to the real terminal
-    clear > /dev/tty
-    "$_UI_BANNER_FN" > /dev/tty
+    # Clear screen and print banner to the real terminal.
+    # Guard /dev/tty access — it may not be available in certain
+    # execution chains (curl|bash → makeself → eval).
+    if [[ -w /dev/tty ]]; then
+        clear > /dev/tty 2>/dev/null || true
+        "$_UI_BANNER_FN" > /dev/tty 2>/dev/null || true
+    fi
     return 0
 }
 
@@ -1065,7 +1069,7 @@ ui::confirm() {
     _ui_nav_clear
     _ui_show_banner
     local selected
-    selected=$(printf "%s\n" "${items[@]}" | fzf "${fzf_args[@]}" 2>/dev/null) || {
+    selected=$(printf "%s\n" "${items[@]}" | fzf "${fzf_args[@]}" 2>>"$(_ui_fzf_stderr)") || {
         # Cleanup temp file on abort
         [[ -n "$_confirm_summary_file" ]] && rm -f "$_confirm_summary_file"
         if [[ "$_UI_NAV_ENABLED" == "1" ]]; then
@@ -1132,11 +1136,11 @@ ui::input() {
     _ui_show_banner
     local result
     if [[ "$_UI_NAV_ENABLED" == "1" ]]; then
-        result=$(echo "" | fzf "${fzf_args[@]}" 2>/dev/null) || {
+        result=$(echo "" | fzf "${fzf_args[@]}" 2>>"$(_ui_fzf_stderr)") || {
             _ui_nav_check; return $?
         }
     else
-        result=$(echo "" | fzf "${fzf_args[@]}" 2>/dev/null) || true
+        result=$(echo "" | fzf "${fzf_args[@]}" 2>>"$(_ui_fzf_stderr)") || true
     fi
 
     # --print-query outputs: line1=query, line2=selected item
@@ -1278,14 +1282,14 @@ HELPER_EOF
     _ui_show_banner
     local result
     if [[ "$_UI_NAV_ENABLED" == "1" ]]; then
-        result=$(echo "" | fzf "${fzf_args[@]}" 2>/dev/null) || {
+        result=$(echo "" | fzf "${fzf_args[@]}" 2>>"$(_ui_fzf_stderr)") || {
             local _pw_rc=0
             _ui_nav_check; _pw_rc=$?
             rm -f "$pw_file" "$pw_helper"
             return $_pw_rc
         }
     else
-        result=$(echo "" | fzf "${fzf_args[@]}" 2>/dev/null) || true
+        result=$(echo "" | fzf "${fzf_args[@]}" 2>>"$(_ui_fzf_stderr)") || true
     fi
 
     # Clean up temp files
@@ -1298,17 +1302,32 @@ HELPER_EOF
 # §9. FZF-Powered Selection
 # ═══════════════════════════════════════════════════════════════════════════════
 
+# Internal: return stderr redirect target for fzf.
+# Sends fzf's diagnostic output to the log file when available, /dev/null otherwise.
+# fzf renders its TUI via /dev/tty so redirecting stderr doesn't affect display.
+_ui_fzf_stderr() {
+    if [[ -n "$_UI_LOG_FILE" ]]; then
+        echo "$_UI_LOG_FILE"
+    else
+        echo "/dev/null"
+    fi
+}
+
 # Ensure fzf is available
 _ui_ensure_fzf() {
     command -v fzf &>/dev/null && return 0
 
-    echo -e "   ${UI_DIM}fzf not found, attempting to install...${UI_NC}"
+    echo -e "   ${UI_DIM}fzf not found, attempting to install...${UI_NC}" > /dev/tty 2>/dev/null || true
     if command -v pacman &>/dev/null; then
-        pacman -S --noconfirm --needed fzf >/dev/null 2>&1
+        # Sync package database first — on a fresh Arch ISO the db may be
+        # empty or stale, causing `pacman -S` to fail with "target not found".
+        pacman -Sy --noconfirm 2>/dev/null || true
+        pacman -S --noconfirm --needed fzf 2>/dev/null || true
     elif command -v apt-get &>/dev/null; then
-        apt-get install -y fzf >/dev/null 2>&1
+        apt-get update -qq 2>/dev/null || true
+        apt-get install -y fzf >/dev/null 2>&1 || true
     elif command -v dnf &>/dev/null; then
-        dnf install -y fzf >/dev/null 2>&1
+        dnf install -y fzf >/dev/null 2>&1 || true
     fi
 
     if ! command -v fzf &>/dev/null; then
@@ -1358,7 +1377,7 @@ ui::select() {
     _ui_nav_clear
     _ui_show_banner
     local selected
-    selected=$(printf "%s\n" "${fzf_lines[@]}" | fzf "${fzf_args[@]}" 2>/dev/null) || {
+    selected=$(printf "%s\n" "${fzf_lines[@]}" | fzf "${fzf_args[@]}" 2>>"$(_ui_fzf_stderr)") || {
         _ui_nav_check; return $?
     }
 
@@ -1431,7 +1450,7 @@ ui::select_with_preview() {
     _ui_nav_clear
     _ui_show_banner
     local selected
-    selected=$(printf "%s\n" "${fzf_lines[@]}" | fzf "${fzf_args[@]}" 2>/dev/null) || {
+    selected=$(printf "%s\n" "${fzf_lines[@]}" | fzf "${fzf_args[@]}" 2>>"$(_ui_fzf_stderr)") || {
         _ui_nav_check; return $?
     }
 
@@ -1479,7 +1498,7 @@ ui::multiselect() {
     _ui_nav_clear
     _ui_show_banner
     local selected
-    selected=$(printf "%s\n" "${fzf_lines[@]}" | fzf "${fzf_args[@]}" 2>/dev/null) || {
+    selected=$(printf "%s\n" "${fzf_lines[@]}" | fzf "${fzf_args[@]}" 2>>"$(_ui_fzf_stderr)") || {
         _ui_nav_check; return $?
     }
 
@@ -1549,7 +1568,7 @@ ui::checklist() {
     _ui_nav_clear
     _ui_show_banner
     local selected
-    selected=$(printf "%s\n" "${fzf_lines[@]}" | fzf "${fzf_args[@]}" 2>/dev/null) || {
+    selected=$(printf "%s\n" "${fzf_lines[@]}" | fzf "${fzf_args[@]}" 2>>"$(_ui_fzf_stderr)") || {
         _ui_nav_check; return $?
     }
 

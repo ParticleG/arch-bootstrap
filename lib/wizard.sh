@@ -59,7 +59,19 @@ wizard::run() {
                  exit 1
                  ;;
             *)   # Unexpected error
-                 ui::error "$(ui::t 'wizard.step_failed' "$(ui::t "${_WIZARD_NAMES[$step]}")" "$rc")"
+                 local _step_name _log_hint=""
+                 _step_name="$(ui::t "${_WIZARD_NAMES[$step]}")"
+                 # Point user to the log file for fzf/TUI diagnostics
+                 if [[ -n "$(ui::log_path 2>/dev/null)" ]] && [[ -f "$(ui::log_path)" ]]; then
+                     _log_hint=" (see $(ui::log_path))"
+                 fi
+                 ui::error "$(ui::t 'wizard.step_failed' "$_step_name" "$rc")${_log_hint}"
+                 # Dump last few log lines to stderr for immediate visibility
+                 if [[ -n "$_log_hint" ]]; then
+                     echo "--- Last 10 log lines ---" >&2
+                     tail -10 "$(ui::log_path)" >&2 2>/dev/null || true
+                     echo "---" >&2
+                 fi
                  exit "$rc"
                  ;;
         esac

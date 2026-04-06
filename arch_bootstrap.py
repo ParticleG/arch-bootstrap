@@ -164,6 +164,45 @@ REGION_MENU_COUNTRIES: list[str] = [
 
 ARCHLINUXCN_URL = 'https://repo.archlinuxcn.org/$arch'
 
+# Fallback mirror pools (used when MirrorListHandler has no data for a region)
+FALLBACK_MIRRORS: dict[str, list[str]] = {
+    'CN': [
+        'https://mirrors.ustc.edu.cn/archlinux/$repo/os/$arch',
+        'https://mirrors.tuna.tsinghua.edu.cn/archlinux/$repo/os/$arch',
+        'https://mirrors.bfsu.edu.cn/archlinux/$repo/os/$arch',
+        'https://mirrors.aliyun.com/archlinux/$repo/os/$arch',
+        'https://mirrors.hit.edu.cn/archlinux/$repo/os/$arch',
+        'https://mirror.nju.edu.cn/archlinux/$repo/os/$arch',
+        'https://mirrors.hust.edu.cn/archlinux/$repo/os/$arch',
+        'https://mirrors.cqu.edu.cn/archlinux/$repo/os/$arch',
+        'https://mirrors.xjtu.edu.cn/archlinux/$repo/os/$arch',
+        'https://mirrors.jlu.edu.cn/archlinux/$repo/os/$arch',
+        'https://mirrors.jcut.edu.cn/archlinux/$repo/os/$arch',
+        'https://mirrors.qlu.edu.cn/archlinux/$repo/os/$arch',
+    ],
+    'US': [
+        'https://mirrors.kernel.org/archlinux/$repo/os/$arch',
+        'https://mirror.rackspace.com/archlinux/$repo/os/$arch',
+        'https://mirrors.rit.edu/archlinux/$repo/os/$arch',
+        'https://mirror.mtu.edu/archlinux/$repo/os/$arch',
+        'https://mirrors.mit.edu/archlinux/$repo/os/$arch',
+    ],
+    'JP': [
+        'https://ftp.jaist.ac.jp/pub/Linux/ArchLinux/$repo/os/$arch',
+        'https://mirrors.cat.net/archlinux/$repo/os/$arch',
+        'https://ftp.tsukuba.wide.ad.jp/Linux/archlinux/$repo/os/$arch',
+    ],
+    'DE': [
+        'https://mirror.f4st.host/archlinux/$repo/os/$arch',
+        'https://ftp.fau.de/archlinux/$repo/os/$arch',
+        'https://mirror.netcologne.de/archlinux/$repo/os/$arch',
+    ],
+    'Worldwide': [
+        'https://geo.mirror.pkgbuild.com/$repo/os/$arch',
+        'https://mirror.rackspace.com/archlinux/$repo/os/$arch',
+    ],
+}
+
 # Network backend options
 NETWORK_BACKENDS: dict[str, str] = {
     'nm_iwd': 'NetworkManager (iwd backend)',
@@ -276,8 +315,85 @@ def needs_kmscon(locale: str) -> bool:
 
 
 def is_iso_environment() -> bool:
-    """Check if running in the Arch ISO environment."""
+    """Check if running on the Arch ISO."""
     return Path('/run/archiso').exists()
+
+
+def is_raw_tty() -> bool:
+    """Check if running on a raw Linux TTY (no X/Wayland).
+
+    Raw TTY cannot render CJK characters properly without kmscon.
+    Returns True if TERM is 'linux' or stdin is /dev/tty[0-9]+.
+    """
+    if os.environ.get('TERM') == 'linux':
+        return True
+    try:
+        tty_name = os.ttyname(0)
+        if re.match(r'/dev/tty\d+', tty_name):
+            return True
+    except (OSError, AttributeError):
+        pass
+    return False
+
+
+def cleanup_disk_locks() -> None:
+    """Release disk locks: swap, LVM volume groups, LUKS containers.
+
+    Must be called before filesystem operations to avoid 'Device busy' errors.
+    """
+    # Deactivate swap on all devices
+    subprocess.run(['swapoff', '--all'], stderr=subprocess.DEVNULL, check=False)
+
+    # Deactivate LVM volume groups (if lvm2 is available)
+    try:
+        subprocess.run(
+            ['vgchange', '-an'], stderr=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL, check=False,
+        )
+    except FileNotFoundError:
+        pass
+
+    # Close LUKS containers
+    try:
+        dm_path = Path('/dev/mapper')
+        if dm_path.exists():
+            for dev in dm_path.iterdir():
+                if dev.name == 'control':
+                    continue
+                subprocess.run(
+                    ['cryptsetup', 'close', str(dev)],
+                    stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL, check=False,
+                )
+    except FileNotFoundError:
+        pass
+
+
+# =============================================================================
+# Mirror resolution helper
+# =============================================================================
+
+def resolve_mirror_regions(
+    country: str | None,
+    mirror_list_handler: MirrorListHandler,
+) -> list[MirrorRegion]:
+    """Resolve mirror regions for a country, with fallback to hardcoded pools.
+
+    1. Try MirrorListHandler's online data (reflector-backed).
+    2. Fall back to FALLBACK_MIRRORS for the country.
+    3. Fall back to FALLBACK_MIRRORS['Worldwide'].
+    """
+    if country and country in COUNTRY_NAMES:
+        region_name = COUNTRY_NAMES[country]
+        regions = mirror_list_handler.get_mirror_regions()
+        matching = [r for r in regions if r.name == region_name]
+        if matching:
+            return matching
+
+    # Fallback to hardcoded mirrors
+    country_key = country if country and country in FALLBACK_MIRRORS else 'Worldwide'
+    urls = FALLBACK_MIRRORS.get(country_key, FALLBACK_MIRRORS['Worldwide'])
+    region_name = COUNTRY_NAMES.get(country, 'Worldwide') if country else 'Worldwide'
+    return [MirrorRegion(name=region_name, urls=urls)]
 
 
 # =============================================================================
@@ -361,7 +477,7 @@ def build_default_config(
     config.bootloader_config = BootloaderConfiguration(
         bootloader=Bootloader.Efistub,
         uki=True,
-        removable=True,
+        removable=False,
     )
 
     # Applications: PipeWire + Bluetooth + tuned
@@ -388,20 +504,12 @@ def build_default_config(
     if country and country in COUNTRY_TIMEZONES:
         config.timezone = COUNTRY_TIMEZONES[country]
 
-    # Mirror configuration
-    if country and country in COUNTRY_NAMES:
-        region_name = COUNTRY_NAMES[country]
-        regions = mirror_list_handler.get_mirror_regions()
-        matching = [r for r in regions if r.name == region_name]
-        if matching:
-            config.mirror_config = MirrorConfiguration(
-                mirror_regions=[matching[0]],
-            )
+    # Mirror configuration (with fallback pools)
+    mirror_regions = resolve_mirror_regions(country, mirror_list_handler)
+    config.mirror_config = MirrorConfiguration(mirror_regions=mirror_regions)
 
     # archlinuxcn repository for CN users
     if country == 'CN':
-        if config.mirror_config is None:
-            config.mirror_config = MirrorConfiguration()
         config.mirror_config.custom_repositories.append(
             CustomRepository(
                 name='archlinuxcn',
@@ -411,11 +519,12 @@ def build_default_config(
             ),
         )
 
-    # Hostname, kernel, NTP, packages
+    # Hostname, kernel, NTP, packages, downloads
     config.hostname = 'archlinux'
     config.kernels = ['linux']
     config.ntp = True
     config.packages = list(BASE_PACKAGES)
+    config.parallel_downloads = 0  # 0 = pacman default (5), matches Bash version
 
     return config
 
@@ -447,17 +556,30 @@ class WizardState:
 
 async def step_language(state: WizardState) -> str:
     """Step 1: Select system language."""
+    raw_tty = is_raw_tty()
+
     items = [
         MenuItem(f'{label} ({code})', value=code)
         for code, label in LANGUAGES.items()
     ]
     group = MenuItemGroup(items)
+
+    # On raw TTY, default to English to avoid CJK rendering issues
+    if raw_tty and state.locale != 'en_US.UTF-8':
+        header = (
+            'Select system language\n'
+            'NOTE: Raw TTY detected — CJK languages will install kmscon\n'
+            'for proper console rendering after reboot.'
+        )
+    else:
+        header = 'Select system language / 选择系统语言 / システム言語を選択'
+
     group.set_default_by_value(state.locale)
     group.set_focus_by_value(state.locale)
 
     result = await Selection[str](
         group,
-        header='Select system language / 选择系统语言 / システム言語を選択',
+        header=header,
         allow_skip=True,
     ).show()
 
@@ -631,7 +753,10 @@ async def step_gpu_drivers(state: WizardState) -> str:
 
 async def step_username(state: WizardState) -> str:
     """Step 7: Enter username."""
-    default = state.username or os.environ.get('SUDO_USER', '')
+    default = state.username or os.environ.get('SUDO_USER', '') or os.environ.get('USER', '')
+    # Filter out 'root' — not a useful default
+    if default == 'root':
+        default = ''
 
     def validate(value: str) -> str | None:
         if not value:
@@ -713,6 +838,7 @@ async def step_confirm(
 ) -> str:
     """Confirmation panel: Install / Advanced Modify / Cancel."""
     # Build summary text
+    kmscon_needed = needs_kmscon(state.locale)
     lines = [
         f'Language:     {state.locale}',
         f'Region:       {COUNTRY_NAMES.get(state.country, "Unknown") if state.country else "Not set"}',
@@ -724,6 +850,7 @@ async def step_confirm(
         f'GPU Drivers:  {", ".join(GPU_LABELS.get(v, v) for v in state.gpu_vendors) or "None"}',
         f'Username:     {state.username}',
         f'Root login:   {"Enabled" if state.root_password else "Disabled"}',
+        f'kmscon:       {"Added (CJK console)" if kmscon_needed else "Not needed"}',
         '',
         '── Fixed defaults ──',
         'Bootloader:   EFISTUB (UKI)',
@@ -780,19 +907,13 @@ def apply_wizard_state_to_config(
     if state.country and state.country in COUNTRY_TIMEZONES:
         config.timezone = COUNTRY_TIMEZONES[state.country]
 
-    # Mirror regions
-    if state.country and state.country in COUNTRY_NAMES:
-        region_name = COUNTRY_NAMES[state.country]
-        regions = mirror_list_handler.get_mirror_regions()
-        matching = [r for r in regions if r.name == region_name]
-        if matching:
-            if config.mirror_config is None:
-                config.mirror_config = MirrorConfiguration()
-            config.mirror_config.mirror_regions = [matching[0]]
-
-    # archlinuxcn
+    # Mirror regions (with fallback pools)
+    mirror_regions = resolve_mirror_regions(state.country, mirror_list_handler)
     if config.mirror_config is None:
         config.mirror_config = MirrorConfiguration()
+    config.mirror_config.mirror_regions = mirror_regions
+
+    # archlinuxcn
     # Remove existing archlinuxcn if any
     config.mirror_config.custom_repositories = [
         r for r in config.mirror_config.custom_repositories
@@ -1085,6 +1206,17 @@ def main() -> None:
         print('Error: This script must be run as root.', file=sys.stderr)
         sys.exit(1)
 
+    # Upgrade archinstall to latest in ISO environment (ISO ships older version)
+    if is_iso_environment():
+        info('Updating archinstall on ISO...')
+        result = subprocess.run(
+            ['pacman', '-Sy', '--noconfirm', 'archinstall'],
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
+        )
+        if result.returncode != 0:
+            warn(f'Failed to upgrade archinstall: {result.stderr.strip()}')
+            warn('Continuing with existing version...')
+
     info('arch-bootstrap: Opinionated Arch Linux installer')
     info('Detecting environment...')
 
@@ -1140,6 +1272,10 @@ def main() -> None:
     # Phase 3: Disk formatting warning
     if config.disk_config:
         info('Preparing disk operations...')
+
+        # Release disk locks (swap, LVM, LUKS) to avoid 'Device busy'
+        cleanup_disk_locks()
+
         fs_handler = FilesystemHandler(config.disk_config)
 
         # Countdown warning before destructive operation

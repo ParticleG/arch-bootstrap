@@ -34,7 +34,69 @@
 
 ---
 
-A full-screen TUI wizard that walks you through Arch Linux installation options and generates `user_configuration.json` + `user_credentials.json` for **archinstall 4.1**. No manual JSON editing required.
+A full-screen TUI wizard that walks you through Arch Linux installation options for **archinstall 4.1**. No manual JSON editing required.
+
+> **Two interfaces:** a Bash-based config generator (`install.sh`) and a Python-based
+> direct installer (`arch_bootstrap.py`). The Python version uses archinstall's native
+> TUI and API — no JSON files needed; installation runs directly.
+
+## Python Installer (`arch_bootstrap.py`)
+
+### Usage on Arch ISO
+
+Boot the [Arch Linux ISO](https://archlinux.org/download/), connect to the network, then:
+
+```bash
+# Download and run (must be root — which you are on the ISO)
+curl -LO https://raw.githubusercontent.com/ParticleG/arch-bootstrap/main/arch_bootstrap.py
+python arch_bootstrap.py
+```
+
+Or clone and run:
+
+```bash
+git clone https://github.com/ParticleG/arch-bootstrap.git
+cd arch-bootstrap
+python arch_bootstrap.py
+```
+
+The script will:
+
+1. Auto-upgrade `archinstall` to the latest version (the ISO ships an older version)
+2. Detect your country (IP geolocation), GPU (`lspci`), and preferred disk
+3. Walk you through a **9-step wizard** with pre-selected defaults
+4. Show a confirmation panel: **Install** / **Advanced Modify** (archinstall GlobalMenu) / **Cancel**
+5. Clean up disk locks (swap, LVM, LUKS), format the disk, install Arch Linux
+6. Present post-install options: exit, reboot, or arch-chroot
+
+### Wizard Navigation
+
+| Key | Action |
+|-----|--------|
+| Enter | Confirm / proceed |
+| Esc / Skip | Go back to previous step |
+| Arrow keys | Navigate menu items |
+| Type to filter | Available in region selection |
+
+### Differences from the Bash version
+
+| | Bash (`install.sh`) | Python (`arch_bootstrap.py`) |
+|-|---------------------|------------------------------|
+| Output | JSON files + `archinstall --config` | Direct archinstall Python API |
+| TUI | fzf with preview panels | archinstall's textual TUI |
+| Advanced editing | N/A | GlobalMenu escape hatch |
+| Disk cleanup | Manual umount/swapoff | Automatic (swap, LVM, LUKS) |
+| Post-install | 30s auto-reboot countdown | Choose: exit / reboot / chroot |
+
+### Requirements (ISO environment)
+
+| Dependency | Notes |
+|------------|-------|
+| Python 3.11+ | Pre-installed on Arch ISO |
+| archinstall 4.1+ | Auto-upgraded at script startup |
+| pciutils (`lspci`) | Pre-installed on Arch ISO |
+| Root privileges | Required |
+| Network connection | Required for mirrors and packages |
 
 ## Features
 
@@ -46,9 +108,9 @@ A full-screen TUI wizard that walks you through Arch Linux installation options 
 - **Wizard navigation** — `Esc` to go back, `Ctrl-C` to abort, with full step history
 - **Self-extracting archive** — CI builds a single `.sh` file via `makeself` for easy distribution
 
-## Quick Start
+## Bash Config Generator (`install.sh`)
 
-### One-liner (recommended)
+### One-liner
 
 ```bash
 curl -sL https://github.com/ParticleG/arch-bootstrap/releases/latest/download/bootstrap.sh | bash
@@ -62,7 +124,7 @@ cd arch-bootstrap
 sudo bash install.sh
 ```
 
-After the wizard completes, run:
+After the wizard completes, run archinstall with the generated files:
 
 ```bash
 archinstall --config user_configuration.json --creds user_credentials.json
@@ -101,7 +163,8 @@ These are baked into every generated configuration and are not configurable thro
 
 ```
 arch-bootstrap/
-├── install.sh              # Entry point — wizard orchestration
+├── arch_bootstrap.py       # Python installer (direct archinstall API)
+├── install.sh              # Bash entry point — wizard + JSON generation
 ├── lib/
 │   ├── ui.sh               # TUI engine (fzf integration, ANSI, logging)
 │   ├── config.sh            # Pure data (packages, GPU maps, mirrors)
@@ -118,7 +181,7 @@ arch-bootstrap/
         └── package.yml      # CI: makeself packaging + GitHub Releases
 ```
 
-## Requirements
+## Requirements (Bash version)
 
 | Dependency | Purpose |
 |------------|---------|

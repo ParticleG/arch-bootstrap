@@ -41,7 +41,6 @@ jobs:
         run: |
           python3 -m zipapp arch_bootstrap \
             -o arch_bootstrap.pyz \
-            -m "arch_bootstrap.__main__:main" \
             -p "/usr/bin/env python3"
 
       - name: Upload artifact

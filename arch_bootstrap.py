@@ -63,7 +63,10 @@ def _upgrade_and_reexec() -> None:
     os.environ[_ARCHINSTALL_BOOTSTRAP_ENV] = '1'
     # Re-exec: replaces current process with a fresh Python interpreter that
     # will pick up the newly installed archinstall package.
-    os.execv(sys.executable, [sys.executable] + sys.argv)
+    # Use __file__ for the script path — sys.argv[0] is unreliable (may be
+    # empty, a directory, or a relative path that breaks after re-exec).
+    script = os.path.abspath(__file__)
+    os.execv(sys.executable, [sys.executable, script] + sys.argv[1:])
 
 
 # Perform bootstrap check before ANY archinstall import

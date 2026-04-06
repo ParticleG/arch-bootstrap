@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import os
 import sys
 from pathlib import Path
@@ -11,6 +10,7 @@ from archinstall.lib.disk.filesystem import FilesystemHandler
 from archinstall.lib.menu.util import delayed_warning
 from archinstall.lib.mirror.mirror_handler import MirrorListHandler
 from archinstall.lib.output import info
+from archinstall.tui.ui.components import tui
 
 from .config import build_default_config
 from .constants import COUNTRY_NAMES, GPU_LABELS
@@ -75,7 +75,7 @@ def main() -> None:
 
     # Phase 2: Interactive wizard (archinstall native UI)
     while True:
-        action = asyncio.run(run_wizard(state, config, mirror_list_handler))
+        action = tui.run(lambda: run_wizard(state, config, mirror_list_handler))
 
         if action == 'abort':
             info('Installation aborted.')

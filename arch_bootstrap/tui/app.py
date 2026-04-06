@@ -38,6 +38,15 @@ class WizardApp(App[str]):
         height: 100%;
         padding: 1 2;
     }
+
+    .step-header {
+        text-style: bold;
+        margin-bottom: 1;
+    }
+
+    #step-options {
+        height: 1fr;
+    }
     """
 
     def __init__(

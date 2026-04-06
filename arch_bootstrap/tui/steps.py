@@ -61,6 +61,10 @@ class DemoSelectStep(StepWidget):
             id='step-options',
         )
 
+    def on_mount(self) -> None:
+        """Focus the option list so it receives keyboard input immediately."""
+        self.query_one('#step-options', OptionList).focus()
+
     def on_option_list_option_selected(
         self, event: OptionList.OptionSelected,
     ) -> None:

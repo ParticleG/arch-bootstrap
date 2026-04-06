@@ -51,6 +51,8 @@ class WizardScreen(Screen[str]):
 
         left = self.query_one('#left-panel')
         left.mount(step)
+        # Ensure focus reaches the new step after Textual processes the mount
+        self.call_after_refresh(step.focus)
 
     def on_step_complete(self, message: StepComplete) -> None:
         """Handle step navigation based on StepComplete messages."""

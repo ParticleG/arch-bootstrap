@@ -10,7 +10,6 @@ from archinstall.lib.disk.filesystem import FilesystemHandler
 from archinstall.lib.menu.util import delayed_warning
 from archinstall.lib.mirror.mirror_handler import MirrorListHandler
 from archinstall.lib.output import info
-from archinstall.tui.ui.components import tui
 
 from .config import build_default_config
 from .constants import COUNTRY_NAMES, GPU_LABELS
@@ -22,7 +21,7 @@ from .detection import (
     is_iso_environment,
 )
 from .installation import perform_installation, run_global_menu
-from .wizard import WizardState, run_wizard
+from .wizard import WizardState, run_wizard_tui
 
 
 def main() -> None:
@@ -73,9 +72,9 @@ def main() -> None:
     state.gpu_vendors = list(detected_gpu)
     state.preferred_disk = preferred_disk
 
-    # Phase 2: Interactive wizard
+    # Phase 2: Interactive wizard (split-pane TUI)
     while True:
-        action = tui.run(lambda: run_wizard(state, config, mirror_list_handler))
+        action = run_wizard_tui(state, config, mirror_list_handler)
 
         if action == 'abort':
             info('Installation aborted.')

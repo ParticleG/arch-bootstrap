@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
 from pathlib import Path
@@ -21,7 +22,7 @@ from .detection import (
     is_iso_environment,
 )
 from .installation import perform_installation, run_global_menu
-from .wizard import WizardState, run_wizard_tui
+from .wizard import WizardState, run_wizard
 
 
 def main() -> None:
@@ -72,9 +73,9 @@ def main() -> None:
     state.gpu_vendors = list(detected_gpu)
     state.preferred_disk = preferred_disk
 
-    # Phase 2: Interactive wizard (split-pane TUI)
+    # Phase 2: Interactive wizard (archinstall native UI)
     while True:
-        action = run_wizard_tui(state, config, mirror_list_handler)
+        action = asyncio.run(run_wizard(state, config, mirror_list_handler))
 
         if action == 'abort':
             info('Installation aborted.')

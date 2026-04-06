@@ -31,7 +31,6 @@ GITHUB_URL = f'https://github.com/{REPO}/releases/latest/download/arch_bootstrap
 # Proxy resolution constants
 GHPROXY_CHUNK_URL = 'https://ghproxy.link/js/src_views_home_HomeView_vue.js'
 FALLBACK_PROXY = 'https://ghfast.top'
-LATENCY_THRESHOLD = 2.0  # seconds — trigger proxy if GitHub is slower than this
 
 # Geolocation endpoints (tried in order, 2s timeout each)
 _GEO_ENDPOINTS = [
@@ -110,32 +109,35 @@ def _detect_country() -> str | None:
     return None
 
 
-def _apply_fast_mirrors() -> None:
+def _apply_fast_mirrors() -> str | None:
     """Detect region and write fast mirrors to /etc/pacman.d/mirrorlist on ISO.
 
     Only runs when /run/archiso exists. Detects country via IP geolocation
     and replaces the mirror list with known-fast mirrors for that region.
     If detection fails or the country has no fallback pool, does nothing
     (the existing mirror list is left untouched).
+
+    Returns the detected country code (or None) so callers can reuse it
+    (e.g. to decide whether a GitHub proxy is needed for .pyz download).
     """
     if not Path('/run/archiso').exists():
-        return
+        return None
 
     mirrorlist = Path('/etc/pacman.d/mirrorlist')
     if not mirrorlist.exists():
-        return
+        return None
 
     print('arch-bootstrap: Detecting region for fast mirrors...')
     country = _detect_country()
 
     if not country:
         print('  Could not detect region, keeping default mirrors.')
-        return
+        return None
 
     mirrors = _FALLBACK_MIRRORS.get(country)
     if not mirrors:
         print(f'  Region {country} detected, no custom mirror pool — keeping defaults.')
-        return
+        return country
 
     print(f'  Region: {country} — applying {len(mirrors)} fast mirrors.')
 
@@ -153,6 +155,8 @@ def _apply_fast_mirrors() -> None:
         )
     except OSError as exc:
         print(f'  WARNING: Could not write mirrorlist: {exc}', file=sys.stderr)
+
+    return country
 
 
 # ---------------------------------------------------------------------------
@@ -217,16 +221,6 @@ def _head_request(url: str, timeout: float = 5.0) -> tuple[int, float]:
         return 0, timeout
 
 
-def _test_github_latency() -> float | None:
-    """Measure latency to GitHub. Returns seconds, or None if unreachable."""
-    # Use a lightweight endpoint — HEAD on the releases page
-    test_url = f'https://github.com/{REPO}/releases'
-    status, elapsed = _head_request(test_url, timeout=LATENCY_THRESHOLD + 2)
-    if status == 0:
-        return None
-    return elapsed
-
-
 def _resolve_ghproxy() -> str | None:
     """Fetch the latest available proxy domain from ghproxy.link.
 
@@ -253,29 +247,23 @@ def _test_proxy(proxy: str) -> bool:
     return 200 <= status < 400
 
 
-def _resolve_download_url() -> str:
-    """Determine the best download URL, using a proxy if GitHub is slow.
+def _resolve_download_url(country: str | None) -> str:
+    """Determine the best download URL for .pyz.
 
-    Resolution order:
-    1. Test direct GitHub latency — if fast enough, use direct URL.
-    2. Resolve proxy from ghproxy.link — test connectivity.
-    3. Try hardcoded fallback proxy.
-    4. Fall back to direct GitHub as last resort.
+    - Non-CN (or unknown): GitHub is directly accessible, use direct URL.
+    - CN: GitHub is blocked/slow, resolve a proxy.
+
+    Proxy resolution order for CN:
+    1. Resolve proxy from ghproxy.link — test connectivity.
+    2. Try hardcoded fallback proxy.
+    3. Give up with an actionable error message.
     """
-    # Step 1: direct GitHub
-    print('arch-bootstrap: Testing GitHub connectivity...')
-    latency = _test_github_latency()
-
-    if latency is not None and latency < LATENCY_THRESHOLD:
-        print(f'  Direct access OK ({latency:.1f}s)')
+    if country != 'CN':
         return GITHUB_URL
 
-    if latency is None:
-        print('  GitHub unreachable, resolving proxy...')
-    else:
-        print(f'  High latency ({latency:.1f}s), resolving proxy...')
+    print('arch-bootstrap: China detected, resolving GitHub proxy...')
 
-    # Step 2: ghproxy.link
+    # Step 1: ghproxy.link
     proxy = _resolve_ghproxy()
     if proxy:
         print(f'  Found proxy: {proxy}')
@@ -286,20 +274,14 @@ def _resolve_download_url() -> str:
     else:
         print('  Could not reach ghproxy.link, trying fallback...')
 
-    # Step 3: hardcoded fallback
+    # Step 2: hardcoded fallback
     print(f'  Trying fallback: {FALLBACK_PROXY}')
     if _test_proxy(FALLBACK_PROXY):
         print('  Fallback proxy is reachable.')
         return f'{FALLBACK_PROXY}/{GITHUB_URL}'
-    print('  Fallback proxy also unreachable.')
-
-    # Step 4: direct as last resort
-    if latency is not None:
-        print('  All proxies failed. Using direct GitHub access (may be slow).')
-        return GITHUB_URL
 
     print(
-        'ERROR: Cannot reach GitHub through any proxy or directly.\n'
+        'ERROR: Cannot reach GitHub through any proxy.\n'
         'Visit https://ghproxy.link/ for the latest proxy address,\n'
         f'or download manually: {GITHUB_URL}',
         file=sys.stderr,
@@ -311,12 +293,12 @@ def _resolve_download_url() -> str:
 # Self-bootstrap: download .pyz if the package isn't available locally.
 # ---------------------------------------------------------------------------
 
-def _download_pyz(dest: Path) -> bool:
-    """Download arch_bootstrap.pyz (with proxy auto-detection).
+def _download_pyz(dest: Path, country: str | None) -> bool:
+    """Download arch_bootstrap.pyz (with proxy for CN region).
 
     Returns True on success.
     """
-    url = _resolve_download_url()
+    url = _resolve_download_url(country)
     print(f'arch-bootstrap: Downloading...\n  {url}')
     try:
         urllib.request.urlretrieve(url, dest)
@@ -345,7 +327,7 @@ def _main() -> None:
     _reopen_stdin()
 
     # Apply fast mirrors BEFORE upgrading archinstall (speeds up pacman -Sy)
-    _apply_fast_mirrors()
+    country = _apply_fast_mirrors()
 
     # Upgrade archinstall on ISO if needed
     if _needs_archinstall_upgrade():
@@ -361,7 +343,7 @@ def _main() -> None:
 
     # Package not available — download .pyz and exec it
     pyz_path = Path(tempfile.gettempdir()) / 'arch_bootstrap.pyz'
-    if not _download_pyz(pyz_path):
+    if not _download_pyz(pyz_path, country):
         sys.exit(1)
 
     _exec_pyz(pyz_path)

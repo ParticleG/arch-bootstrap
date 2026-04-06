@@ -37,11 +37,20 @@ jobs:
             "Arch Bootstrap v${{ steps.version.outputs.version }}" \
             ./install.sh
 
+      - name: Build Python zipapp
+        run: |
+          python3 -m zipapp arch_bootstrap \
+            -o arch_bootstrap.pyz \
+            -m "arch_bootstrap.__main__:main" \
+            -p "/usr/bin/env python3"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
           name: arch-bootstrap-${{ steps.version.outputs.version }}
-          path: arch-bootstrap.sh
+          path: |
+            arch-bootstrap.sh
+            arch_bootstrap.pyz
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v') && contains(github.ref_name, '.')
@@ -49,6 +58,7 @@ jobs:
         with:
           files: |
             arch-bootstrap.sh
+            arch_bootstrap.pyz
             scripts/bootstrap.sh
             scripts/bootstrap_cn.sh
           generate_release_notes: true

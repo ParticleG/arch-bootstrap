@@ -33,6 +33,37 @@ GHPROXY_CHUNK_URL = 'https://ghproxy.link/js/src_views_home_HomeView_vue.js'
 FALLBACK_PROXY = 'https://ghfast.top'
 LATENCY_THRESHOLD = 2.0  # seconds — trigger proxy if GitHub is slower than this
 
+# Geolocation endpoints (tried in order, 2s timeout each)
+_GEO_ENDPOINTS = [
+    'https://ifconfig.co/country-iso',
+    'https://ipinfo.io/country',
+    'https://api.country.is/',
+]
+
+# Fallback mirror pools per country (subset inlined from constants.py)
+_FALLBACK_MIRRORS: dict[str, list[str]] = {
+    'CN': [
+        'https://mirrors.ustc.edu.cn/archlinux/$repo/os/$arch',
+        'https://mirrors.tuna.tsinghua.edu.cn/archlinux/$repo/os/$arch',
+        'https://mirrors.bfsu.edu.cn/archlinux/$repo/os/$arch',
+        'https://mirrors.aliyun.com/archlinux/$repo/os/$arch',
+        'https://mirrors.hit.edu.cn/archlinux/$repo/os/$arch',
+        'https://mirror.nju.edu.cn/archlinux/$repo/os/$arch',
+    ],
+    'JP': [
+        'https://ftp.jaist.ac.jp/pub/Linux/ArchLinux/$repo/os/$arch',
+        'https://mirrors.cat.net/archlinux/$repo/os/$arch',
+    ],
+    'US': [
+        'https://mirrors.kernel.org/archlinux/$repo/os/$arch',
+        'https://mirror.rackspace.com/archlinux/$repo/os/$arch',
+    ],
+    'DE': [
+        'https://mirror.f4st.host/archlinux/$repo/os/$arch',
+        'https://ftp.fau.de/archlinux/$repo/os/$arch',
+    ],
+}
+
 
 # ---------------------------------------------------------------------------
 # Stdin recovery for pipe invocation (curl ... | python3)
@@ -48,6 +79,80 @@ def _reopen_stdin() -> None:
             sys.stdin = open(0, closefd=False)
         except OSError:
             pass  # no controlling terminal (e.g. headless CI)
+
+
+# ---------------------------------------------------------------------------
+# Region detection + fast mirrors (applied BEFORE archinstall upgrade)
+# ---------------------------------------------------------------------------
+
+def _detect_country() -> str | None:
+    """Detect country via IP geolocation. Returns ISO 3166-1 alpha-2 or None.
+
+    Inlined from arch_bootstrap.detection — uses only stdlib so it works
+    before archinstall is available.
+    """
+    import json
+
+    for url in _GEO_ENDPOINTS:
+        try:
+            req = urllib.request.Request(url, headers={'User-Agent': 'curl/8.0'})
+            with urllib.request.urlopen(req, timeout=2) as resp:
+                body = resp.read().decode().strip()
+                try:
+                    data = json.loads(body)
+                    code = str(data.get('country', '')).strip().upper()
+                except (json.JSONDecodeError, AttributeError):
+                    code = body.upper()
+                if re.match(r'^[A-Z]{2}$', code):
+                    return code
+        except Exception:
+            continue
+    return None
+
+
+def _apply_fast_mirrors() -> None:
+    """Detect region and write fast mirrors to /etc/pacman.d/mirrorlist on ISO.
+
+    Only runs when /run/archiso exists. Detects country via IP geolocation
+    and replaces the mirror list with known-fast mirrors for that region.
+    If detection fails or the country has no fallback pool, does nothing
+    (the existing mirror list is left untouched).
+    """
+    if not Path('/run/archiso').exists():
+        return
+
+    mirrorlist = Path('/etc/pacman.d/mirrorlist')
+    if not mirrorlist.exists():
+        return
+
+    print('arch-bootstrap: Detecting region for fast mirrors...')
+    country = _detect_country()
+
+    if not country:
+        print('  Could not detect region, keeping default mirrors.')
+        return
+
+    mirrors = _FALLBACK_MIRRORS.get(country)
+    if not mirrors:
+        print(f'  Region {country} detected, no custom mirror pool — keeping defaults.')
+        return
+
+    print(f'  Region: {country} — applying {len(mirrors)} fast mirrors.')
+
+    # Build Server lines
+    lines = [f'Server = {url}\n' for url in mirrors]
+
+    # Prepend to existing mirrorlist (keep originals as fallback)
+    try:
+        original = mirrorlist.read_text()
+        mirrorlist.write_text(
+            '# Fast mirrors applied by arch-bootstrap\n'
+            + ''.join(lines)
+            + '\n# Original mirrors\n'
+            + original,
+        )
+    except OSError as exc:
+        print(f'  WARNING: Could not write mirrorlist: {exc}', file=sys.stderr)
 
 
 # ---------------------------------------------------------------------------
@@ -238,6 +343,9 @@ def _main() -> None:
         sys.exit(1)
 
     _reopen_stdin()
+
+    # Apply fast mirrors BEFORE upgrading archinstall (speeds up pacman -Sy)
+    _apply_fast_mirrors()
 
     # Upgrade archinstall on ISO if needed
     if _needs_archinstall_upgrade():

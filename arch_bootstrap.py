@@ -31,7 +31,7 @@ GITHUB_URL = f'https://github.com/{REPO}/releases/latest/download/arch_bootstrap
 # Proxy resolution constants
 GHPROXY_CHUNK_URL = 'https://ghproxy.link/js/src_views_home_HomeView_vue.js'
 FALLBACK_PROXY = 'https://ghfast.top'
-LATENCY_THRESHOLD = 3.0  # seconds — trigger proxy if GitHub is slower than this
+LATENCY_THRESHOLD = 2.0  # seconds — trigger proxy if GitHub is slower than this
 
 
 # ---------------------------------------------------------------------------

@@ -16,14 +16,22 @@ from __future__ import annotations
 
 import importlib
 import os
+import re
 import subprocess
 import sys
 import tempfile
+import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
 REPO = 'ParticleG/arch-bootstrap'
-PYZ_URL = f'https://github.com/{REPO}/releases/latest/download/arch_bootstrap.pyz'
+GITHUB_URL = f'https://github.com/{REPO}/releases/latest/download/arch_bootstrap.pyz'
+
+# Proxy resolution constants
+GHPROXY_CHUNK_URL = 'https://ghproxy.link/js/src_views_home_HomeView_vue.js'
+FALLBACK_PROXY = 'https://ghfast.top'
+LATENCY_THRESHOLD = 3.0  # seconds — trigger proxy if GitHub is slower than this
 
 
 # ---------------------------------------------------------------------------
@@ -82,19 +90,136 @@ def _upgrade_archinstall() -> None:
 
 
 # ---------------------------------------------------------------------------
+# GitHub proxy resolution
+# ---------------------------------------------------------------------------
+
+def _head_request(url: str, timeout: float = 5.0) -> tuple[int, float]:
+    """Send a HEAD request. Returns (http_status, elapsed_seconds).
+
+    Returns (0, timeout) on connection failure or timeout.
+    """
+    req = urllib.request.Request(url, method='HEAD')
+    start = time.monotonic()
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            elapsed = time.monotonic() - start
+            return resp.status, elapsed
+    except urllib.error.HTTPError as exc:
+        # 3xx/4xx are still valid responses (proxy may 302 redirect)
+        elapsed = time.monotonic() - start
+        return exc.code, elapsed
+    except Exception:
+        return 0, timeout
+
+
+def _test_github_latency() -> float | None:
+    """Measure latency to GitHub. Returns seconds, or None if unreachable."""
+    # Use a lightweight endpoint — HEAD on the releases page
+    test_url = f'https://github.com/{REPO}/releases'
+    status, elapsed = _head_request(test_url, timeout=LATENCY_THRESHOLD + 2)
+    if status == 0:
+        return None
+    return elapsed
+
+
+def _resolve_ghproxy() -> str | None:
+    """Fetch the latest available proxy domain from ghproxy.link.
+
+    The publish page is a Vue SPA; domain status is embedded in a webpack
+    JS chunk.  Available domains use ``href="URL"``, blocked ones use
+    ``<del>URL</del>``.
+    """
+    try:
+        req = urllib.request.Request(GHPROXY_CHUNK_URL)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            content = resp.read().decode('utf-8', errors='ignore')
+    except Exception:
+        return None
+
+    # Match href=...https://gh<word>.<tld> (escaped quotes in the bundle)
+    matches = re.findall(r'href=.{0,5}(https://gh[a-z0-9]+\.[a-z]+)', content)
+    return matches[0] if matches else None
+
+
+def _test_proxy(proxy: str) -> bool:
+    """Verify a proxy can reach the actual download URL (2xx or 3xx)."""
+    proxied_url = f'{proxy}/{GITHUB_URL}'
+    status, _ = _head_request(proxied_url, timeout=10)
+    return 200 <= status < 400
+
+
+def _resolve_download_url() -> str:
+    """Determine the best download URL, using a proxy if GitHub is slow.
+
+    Resolution order:
+    1. Test direct GitHub latency — if fast enough, use direct URL.
+    2. Resolve proxy from ghproxy.link — test connectivity.
+    3. Try hardcoded fallback proxy.
+    4. Fall back to direct GitHub as last resort.
+    """
+    # Step 1: direct GitHub
+    print('arch-bootstrap: Testing GitHub connectivity...')
+    latency = _test_github_latency()
+
+    if latency is not None and latency < LATENCY_THRESHOLD:
+        print(f'  Direct access OK ({latency:.1f}s)')
+        return GITHUB_URL
+
+    if latency is None:
+        print('  GitHub unreachable, resolving proxy...')
+    else:
+        print(f'  High latency ({latency:.1f}s), resolving proxy...')
+
+    # Step 2: ghproxy.link
+    proxy = _resolve_ghproxy()
+    if proxy:
+        print(f'  Found proxy: {proxy}')
+        if _test_proxy(proxy):
+            print('  Proxy is reachable.')
+            return f'{proxy}/{GITHUB_URL}'
+        print('  Proxy resolved but unreachable, trying fallback...')
+    else:
+        print('  Could not reach ghproxy.link, trying fallback...')
+
+    # Step 3: hardcoded fallback
+    print(f'  Trying fallback: {FALLBACK_PROXY}')
+    if _test_proxy(FALLBACK_PROXY):
+        print('  Fallback proxy is reachable.')
+        return f'{FALLBACK_PROXY}/{GITHUB_URL}'
+    print('  Fallback proxy also unreachable.')
+
+    # Step 4: direct as last resort
+    if latency is not None:
+        print('  All proxies failed. Using direct GitHub access (may be slow).')
+        return GITHUB_URL
+
+    print(
+        'ERROR: Cannot reach GitHub through any proxy or directly.\n'
+        'Visit https://ghproxy.link/ for the latest proxy address,\n'
+        f'or download manually: {GITHUB_URL}',
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
 # Self-bootstrap: download .pyz if the package isn't available locally.
 # ---------------------------------------------------------------------------
 
 def _download_pyz(dest: Path) -> bool:
-    """Download arch_bootstrap.pyz from GitHub releases. Returns True on success."""
-    print(f'arch-bootstrap: Downloading {PYZ_URL} ...')
+    """Download arch_bootstrap.pyz (with proxy auto-detection).
+
+    Returns True on success.
+    """
+    url = _resolve_download_url()
+    print(f'arch-bootstrap: Downloading...\n  {url}')
     try:
-        urllib.request.urlretrieve(PYZ_URL, dest)
+        urllib.request.urlretrieve(url, dest)
         print(f'arch-bootstrap: Saved to {dest}')
         return True
     except Exception as exc:
         print(f'ERROR: Failed to download .pyz: {exc}', file=sys.stderr)
-        print(f'Download manually: {PYZ_URL}', file=sys.stderr)
+        print(f'Download manually: {GITHUB_URL}', file=sys.stderr)
         return False
 
 

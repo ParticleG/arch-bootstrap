@@ -39,9 +39,15 @@ jobs:
 
       - name: Build Python zipapp
         run: |
-          python3 -m zipapp arch_bootstrap \
+          mkdir -p _zipapp_staging
+          cp -r arch_bootstrap _zipapp_staging/arch_bootstrap
+          find _zipapp_staging -type d -name __pycache__ -exec rm -rf {} +
+          printf 'from arch_bootstrap.__main__ import main\nmain()\n' \
+            > _zipapp_staging/__main__.py
+          python3 -m zipapp _zipapp_staging \
             -o arch_bootstrap.pyz \
             -p "/usr/bin/env python3"
+          rm -rf _zipapp_staging
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7

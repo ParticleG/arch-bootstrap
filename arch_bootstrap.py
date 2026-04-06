@@ -168,11 +168,11 @@ def _needs_archinstall_upgrade() -> bool:
     if not Path('/run/archiso').exists():
         return False
     try:
-        import archinstall
-        version = getattr(archinstall, '__version__', '0.0.0')
-        major = int(version.split('.')[0])
+        from importlib.metadata import version as pkg_version
+        ver = pkg_version('archinstall')
+        major = int(ver.split('.')[0])
         return major < 4
-    except (ImportError, ValueError, AttributeError):
+    except Exception:
         return True
 
 

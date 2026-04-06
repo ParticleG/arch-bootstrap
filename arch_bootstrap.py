@@ -1277,6 +1277,15 @@ def main() -> None:
         print('Error: This script must be run as root.', file=sys.stderr)
         sys.exit(1)
 
+    # When piped via stdin (e.g. curl ... | python), fd 0 is the exhausted
+    # pipe — not the terminal.  Reopen it from /dev/tty so the TUI can read
+    # keyboard input.
+    if not os.isatty(0):
+        tty_fd = os.open('/dev/tty', os.O_RDONLY)
+        os.dup2(tty_fd, 0)
+        os.close(tty_fd)
+        sys.stdin = open(0, closefd=False)
+
     info('arch-bootstrap: Opinionated Arch Linux installer')
     info('Detecting environment...')
 

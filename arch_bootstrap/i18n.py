@@ -309,10 +309,20 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
 
 
 def set_lang(lang: str) -> None:
-    """Set current language ('en', 'zh', 'ja')."""
+    """Set current language ('en', 'zh', 'ja').
+
+    On raw TTY (no kmscon), CJK characters cannot be rendered,
+    so the UI language is forced to English regardless of selection.
+    The system locale choice is unaffected — only UI display language.
+    """
     global _current_lang
-    if lang in TRANSLATIONS:
-        _current_lang = lang
+    if lang not in TRANSLATIONS:
+        return
+    if lang != 'en':
+        from .detection import is_raw_tty
+        if is_raw_tty():
+            return  # keep English — TTY cannot render CJK
+    _current_lang = lang
 
 
 def get_lang() -> str:

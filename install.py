@@ -2,7 +2,7 @@
 """arch-bootstrap: Opinionated Arch Linux installer powered by archinstall.
 
 Usage on Arch ISO (single command, pipe-friendly):
-    curl -sL https://raw.githubusercontent.com/ParticleG/arch-bootstrap/main/arch_bootstrap.py | python3
+    curl -sL https://raw.githubusercontent.com/ParticleG/arch-bootstrap/main/install.py | python3
 
 Or download and run:
     curl -LO https://github.com/ParticleG/arch-bootstrap/releases/latest/download/arch_bootstrap.pyz

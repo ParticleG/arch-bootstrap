@@ -44,7 +44,7 @@ jobs:
           name: arch-bootstrap-${{ steps.version.outputs.version }}
           path: |
             arch_bootstrap.pyz
-            arch_bootstrap.py
+            install.py
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v') && contains(github.ref_name, '.')
@@ -52,5 +52,5 @@ jobs:
         with:
           files: |
             arch_bootstrap.pyz
-            arch_bootstrap.py
+            install.py
           generate_release_notes: true

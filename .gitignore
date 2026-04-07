@@ -5,6 +5,9 @@ user_credentials.json
 # Log files
 *.log
 
+# Opencode folder
+opencode/
+
 # Python build artifacts
 *.pyz
 __pycache__/

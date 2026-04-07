@@ -37,10 +37,10 @@
 A full-screen TUI wizard that walks you through Arch Linux installation options for **archinstall 4.1**. No manual JSON editing required.
 
 > **Two interfaces:** a Bash-based config generator (`install.sh`) and a Python-based
-> direct installer (`arch_bootstrap.py`). The Python version uses archinstall's native
+> direct installer (`install.py`). The Python version uses archinstall's native
 > TUI and API — no JSON files needed; installation runs directly.
 
-## Python Installer (`arch_bootstrap.py`)
+## Python Installer (`install.py`)
 
 ### Usage on Arch ISO
 
@@ -48,8 +48,8 @@ Boot the [Arch Linux ISO](https://archlinux.org/download/), connect to the netwo
 
 ```bash
 # Download and run (must be root — which you are on the ISO)
-curl -LO https://raw.githubusercontent.com/ParticleG/arch-bootstrap/main/arch_bootstrap.py
-python arch_bootstrap.py
+curl -LO https://raw.githubusercontent.com/ParticleG/arch-bootstrap/main/install.py
+python install.py
 ```
 
 Or clone and run:
@@ -57,7 +57,7 @@ Or clone and run:
 ```bash
 git clone https://github.com/ParticleG/arch-bootstrap.git
 cd arch-bootstrap
-python arch_bootstrap.py
+python install.py
 ```
 
 The script will:
@@ -80,7 +80,7 @@ The script will:
 
 ### Differences from the Bash version
 
-| | Bash (`install.sh`) | Python (`arch_bootstrap.py`) |
+| | Bash (`install.sh`) | Python (`install.py`) |
 |-|---------------------|------------------------------|
 | Output | JSON files + `archinstall --config` | Direct archinstall Python API |
 | TUI | fzf with preview panels | archinstall's textual TUI |
@@ -163,7 +163,7 @@ These are baked into every generated configuration and are not configurable thro
 
 ```
 arch-bootstrap/
-├── arch_bootstrap.py       # Python installer (direct archinstall API)
+├── install.py              # Python installer (direct archinstall API)
 ├── install.sh              # Bash entry point — wizard + JSON generation
 ├── lib/
 │   ├── ui.sh               # TUI engine (fzf integration, ANSI, logging)

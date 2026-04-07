@@ -9,7 +9,7 @@ from archinstall.lib.disk.device_handler import device_handler
 from archinstall.lib.menu.helpers import Confirmation, Input, Selection
 from archinstall.lib.menu.util import get_password
 from archinstall.lib.mirror.mirror_handler import MirrorListHandler
-from archinstall.lib.models.device import BDevice
+from archinstall.lib.models.device import BDevice, Unit
 from archinstall.lib.models.network import NicType
 from archinstall.lib.models.users import Password
 from archinstall.tui.ui.menu_item import MenuItem, MenuItemGroup
@@ -25,6 +25,8 @@ from .constants import (
     REGION_MENU_COUNTRIES,
 )
 from .detection import is_raw_tty, needs_kmscon
+from .i18n import set_lang, t
+from .mirrors import apply_mirrors_to_live_iso
 
 
 # =============================================================================
@@ -50,6 +52,7 @@ class WizardState:
         self.detected_country: str | None = None
         self.detected_gpu: list[str] = []
         self.preferred_disk: Path | None = None
+        self.mirror_list_handler: MirrorListHandler | None = None
 
 
 async def step_language(state: WizardState) -> str:
@@ -86,6 +89,8 @@ async def step_language(state: WizardState) -> str:
             return 'back'
         case ResultType.Selection:
             state.locale = result.get_value()
+            lang_map = {'zh_CN.UTF-8': 'zh', 'ja_JP.UTF-8': 'ja'}
+            set_lang(lang_map.get(state.locale, 'en'))
             return 'next'
         case _:
             return 'back'
@@ -106,7 +111,7 @@ async def step_region(state: WizardState) -> str:
 
     result = await Selection[str](
         group,
-        header='Select your country/region',
+        header=t('step.region.title'),
         allow_skip=True,
         enable_filter=True,
     ).show()
@@ -116,6 +121,9 @@ async def step_region(state: WizardState) -> str:
             return 'back'
         case ResultType.Selection:
             state.country = result.get_value()
+            # Apply mirrors to live ISO for faster pacstrap
+            if state.mirror_list_handler:
+                apply_mirrors_to_live_iso(state.country, state.mirror_list_handler)
             return 'next'
         case _:
             return 'back'
@@ -161,7 +169,7 @@ async def step_disk(state: WizardState) -> str:
 
     result = await Selection[BDevice](
         group,
-        header='Select target disk (ALL DATA WILL BE ERASED)',
+        header=t('step.disk.title'),
         allow_skip=True,
     ).show()
 
@@ -169,8 +177,39 @@ async def step_disk(state: WizardState) -> str:
         case ResultType.Skip:
             return 'back'
         case ResultType.Selection:
-            state.disk_device = result.get_value()
-            return 'next'
+            selected = result.get_value()
+
+            # Calculate partition sizes (must match disk.py logic)
+            total_bytes = selected.device_info.total_size.convert(Unit.B, None).value
+            total_mib = total_bytes // (1024 * 1024)
+            root_mib = total_mib - 1025 - 1  # EFI start+size + GPT backup
+            root_gib = root_mib / 1024
+
+            total_display = selected.device_info.total_size.format_highest()
+            preview = (
+                f'Partition layout for {selected.device_info.path} ({total_display}):\n'
+                f'\n'
+                f'  EFI     1 GiB        FAT32    /boot\n'
+                f'  Btrfs   {root_gib:.0f} GiB      zstd     subvols: @ @home @log @pkg\n'
+                f'\n'
+                f'ALL DATA ON THIS DISK WILL BE ERASED.'
+            )
+
+            confirm_result = await Confirmation(
+                header=preview,
+                allow_skip=True,
+                preset=True,
+            ).show()
+
+            match confirm_result.type_:
+                case ResultType.Selection:
+                    if confirm_result.item() == MenuItem.yes():
+                        state.disk_device = selected
+                        return 'next'
+                    # User said No -> return to disk selection (re-enter this step)
+                    return await step_disk(state)
+                case _:
+                    return 'back'
         case _:
             return 'back'
 
@@ -189,7 +228,7 @@ async def step_network(state: WizardState) -> str:
 
     result = await Selection[str](
         group,
-        header='Select network backend',
+        header=t('step.net.title'),
         allow_skip=True,
     ).show()
 
@@ -207,7 +246,7 @@ async def step_network(state: WizardState) -> str:
 async def step_repos(state: WizardState) -> str:
     """Step 5: Enable multilib repository."""
     result = await Confirmation(
-        header='Enable multilib repository? (32-bit library support)',
+        header=t('step.repos.confirm'),
         allow_skip=True,
         preset=state.multilib,
     ).show()
@@ -237,7 +276,7 @@ async def step_gpu_drivers(state: WizardState) -> str:
 
     result = await Selection[str](
         group,
-        header='Select GPU drivers (Space to toggle, Enter to confirm)',
+        header=t('step.gpu.title'),
         multi=True,
         allow_skip=True,
     ).show()
@@ -261,15 +300,15 @@ async def step_username(state: WizardState) -> str:
 
     def validate(value: str) -> str | None:
         if not value:
-            return 'Username cannot be empty'
+            return t('validate.username.empty')
         if not re.match(r'^[a-z_][a-z0-9_-]*$', value):
-            return 'Must start with a-z or _, followed by a-z 0-9 _ -'
+            return t('validate.username.format')
         if len(value) > 32:
             return 'Username must be 32 characters or fewer'
         return None
 
     result = await Input(
-        header='Enter username',
+        header=t('step.user.title'),
         default_value=default if default else None,
         allow_skip=True,
         validator_callback=validate,
@@ -291,7 +330,7 @@ async def step_username(state: WizardState) -> str:
 async def step_user_password(state: WizardState) -> str:
     """Step 8: Enter user password."""
     password = await get_password(
-        header=f'Enter password for {state.username}',
+        header=t('step.passwd.title'),
         allow_skip=True,
     )
 
@@ -305,7 +344,7 @@ async def step_user_password(state: WizardState) -> str:
 async def step_root_password(state: WizardState) -> str:
     """Step 9: Enter root password (optional)."""
     result = await Confirmation(
-        header='Set a root password? (skip for no root login)',
+        header=t('step.root.title'),
         allow_skip=True,
         preset=False,
     ).show()
@@ -316,7 +355,7 @@ async def step_root_password(state: WizardState) -> str:
         case ResultType.Selection:
             if result.item() == MenuItem.yes():
                 password = await get_password(
-                    header='Enter root password',
+                    header=t('step.root.title'),
                     allow_skip=True,
                 )
                 if password is None:
@@ -341,23 +380,23 @@ async def step_confirm(
     # Build summary text
     kmscon_needed = needs_kmscon(state.locale)
     lines = [
-        f'Language:     {state.locale}',
-        f'Region:       {COUNTRY_NAMES.get(state.country, "Unknown") if state.country else "Not set"}',
-        f'Timezone:     {config.timezone}',
-        f'Disk:         {state.disk_device.device_info.path if state.disk_device else "Not set"}'
+        f'{t("confirm.lang")}:     {state.locale}',
+        f'{t("confirm.region")}:   {COUNTRY_NAMES.get(state.country, "Unknown") if state.country else t("status.not_set")}',
+        f'{t("confirm.timezone")}:   {config.timezone}',
+        f'{t("confirm.disk")}:     {state.disk_device.device_info.path if state.disk_device else t("status.not_set")}'
         f'  ({state.disk_device.device_info.total_size.format_highest() if state.disk_device else ""})',
-        f'Network:      {state.network_type.display_msg()}',
+        f'{t("confirm.net")}:      {state.network_type.display_msg()}',
         f'Multilib:     {"Enabled" if state.multilib else "Disabled"}',
-        f'GPU Drivers:  {", ".join(GPU_LABELS.get(v, v) for v in state.gpu_vendors) or "None"}',
-        f'Username:     {state.username}',
-        f'Root login:   {"Enabled" if state.root_password else "Disabled"}',
-        f'kmscon:       {"Added (CJK console)" if kmscon_needed else "Not needed"}',
+        f'{t("confirm.gpu")}:  {", ".join(GPU_LABELS.get(v, v) for v in state.gpu_vendors) or "None"}',
+        f'{t("confirm.user")}:   {state.username}',
+        f'{t("confirm.root")}:   {t("status.set") if state.root_password else t("status.not_set")}',
+        f'kmscon:       {"Added (CJK console)" if kmscon_needed else t("status.not_needed")}',
         '',
         '── Fixed defaults ──',
-        'Bootloader:   EFISTUB (UKI)',
-        'Filesystem:   Btrfs + zstd + Snapper',
-        'Audio:        PipeWire',
-        'Bluetooth:    Enabled',
+        f'{t("fixed.boot")}:    EFISTUB (UKI)',
+        f'{t("fixed.fs")}:      Btrfs + zstd + Snapper',
+        f'{t("fixed.audio")}:   PipeWire',
+        f'{t("fixed.bt")}:      {t("status.enabled")}',
         'Power:        tuned',
         'Swap:         zram (lzo-rle)',
         'Profile:      Minimal',
@@ -397,6 +436,8 @@ async def run_wizard(
     mirror_list_handler: MirrorListHandler,
 ) -> str:
     """Run the complete wizard. Returns 'install', 'advanced', or 'abort'."""
+    state.mirror_list_handler = mirror_list_handler
+
     steps = [
         step_language,
         step_region,

@@ -37,7 +37,7 @@ from .constants import (
 )
 from .detection import needs_kmscon
 from .disk import build_disk_layout
-from .mirrors import resolve_mirror_regions
+from .mirrors import build_mirror_config
 
 if TYPE_CHECKING:
     from .wizard import WizardState
@@ -94,8 +94,7 @@ def build_default_config(
         config.timezone = COUNTRY_TIMEZONES[country]
 
     # Mirror configuration (with fallback pools)
-    mirror_regions = resolve_mirror_regions(country, mirror_list_handler)
-    config.mirror_config = MirrorConfiguration(mirror_regions=mirror_regions)
+    config.mirror_config = build_mirror_config(country, mirror_list_handler)
 
     # archlinuxcn repository for CN users
     if country == 'CN':
@@ -140,10 +139,12 @@ def apply_wizard_state_to_config(
         config.timezone = COUNTRY_TIMEZONES[state.country]
 
     # Mirror regions (with fallback pools)
-    mirror_regions = resolve_mirror_regions(state.country, mirror_list_handler)
+    new_mirror = build_mirror_config(state.country, mirror_list_handler)
     if config.mirror_config is None:
-        config.mirror_config = MirrorConfiguration()
-    config.mirror_config.mirror_regions = mirror_regions
+        config.mirror_config = new_mirror
+    else:
+        config.mirror_config.mirror_regions = new_mirror.mirror_regions
+        config.mirror_config.custom_servers = new_mirror.custom_servers
 
     # archlinuxcn
     # Remove existing archlinuxcn if any

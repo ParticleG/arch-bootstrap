@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import sys
-from pathlib import Path
 
 from archinstall.lib.disk.filesystem import FilesystemHandler
 from archinstall.lib.menu.util import delayed_warning
@@ -14,12 +13,12 @@ from archinstall.tui.ui.components import tui
 
 from .config import build_default_config
 from .constants import COUNTRY_NAMES, GPU_LABELS
+from .i18n import set_lang
 from .detection import (
     cleanup_disk_locks,
     detect_country,
     detect_gpu,
     detect_preferred_disk,
-    is_iso_environment,
 )
 from .installation import perform_installation, run_global_menu
 from .wizard import WizardState, run_wizard
@@ -46,6 +45,10 @@ def main() -> None:
 
     # Phase 1: Auto-detection (silent)
     detected_country = detect_country()
+
+    # Set initial i18n language based on detected country
+    initial_lang = {'CN': 'zh', 'JP': 'ja'}.get(detected_country or '', 'en')
+    set_lang(initial_lang)
     if detected_country:
         info(f'  Detected country: {detected_country} ({COUNTRY_NAMES.get(detected_country, "Unknown")})')
 
@@ -106,16 +109,6 @@ def main() -> None:
         delayed_warning('\nWARNING: All data on the selected disk will be destroyed!')
 
         fs_handler.perform_filesystem_operations()
-
-    # Apply mirrors to live ISO before installation (speeds up pacstrap)
-    if is_iso_environment() and config.mirror_config:
-        mirrorlist_path = Path('/etc/pacman.d/mirrorlist')
-        mirror_content = config.mirror_config.regions_config(
-            mirror_list_handler, speed_sort=True,
-        )
-        if mirror_content.strip():
-            mirrorlist_path.write_text(mirror_content)
-            info('Applied fast mirrors to live ISO.')
 
     # Phase 4: Execute installation
     perform_installation(config, mirror_list_handler)

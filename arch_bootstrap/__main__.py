@@ -19,6 +19,7 @@ from .detection import (
     detect_country,
     detect_gpu,
     detect_preferred_disk,
+    detect_screen_resolution,
 )
 from .installation import perform_installation, run_global_menu
 from .wizard import WizardState, run_wizard
@@ -60,11 +61,16 @@ def main() -> None:
     if preferred_disk:
         info(f'  Preferred disk: {preferred_disk}')
 
+    screen_resolution = detect_screen_resolution()
+    if screen_resolution:
+        info(f'  Screen resolution: {screen_resolution[0]}x{screen_resolution[1]}')
+
     # Initialize mirror list handler
     mirror_list_handler = MirrorListHandler(offline=False, verbose=False)
 
     # Build initial config with defaults
-    initial_locale = 'zh_CN.UTF-8' if detected_country == 'CN' else 'en_US.UTF-8'
+    locale_map = {'CN': 'zh_CN.UTF-8', 'JP': 'ja_JP.UTF-8'}
+    initial_locale = locale_map.get(detected_country or '', 'en_US.UTF-8')
     config = build_default_config(detected_country, initial_locale, mirror_list_handler)
 
     # Initialize wizard state with detection results
@@ -75,6 +81,7 @@ def main() -> None:
     state.detected_gpu = detected_gpu
     state.gpu_vendors = list(detected_gpu)
     state.preferred_disk = preferred_disk
+    state.screen_resolution = screen_resolution
 
     # Phase 2: Interactive wizard (archinstall native UI)
     while True:
@@ -111,7 +118,13 @@ def main() -> None:
         fs_handler.perform_filesystem_operations()
 
     # Phase 4: Execute installation
-    perform_installation(config, mirror_list_handler)
+    perform_installation(
+        config,
+        mirror_list_handler,
+        kmscon_font_name=state.kmscon_font_name,
+        screen_resolution=state.screen_resolution,
+        gpu_vendors=state.gpu_vendors,
+    )
 
 
 if __name__ == '__main__':

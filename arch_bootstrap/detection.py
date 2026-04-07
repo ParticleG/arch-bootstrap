@@ -8,7 +8,13 @@ from pathlib import Path
 from archinstall.lib.disk.device_handler import device_handler
 from archinstall.lib.models.device import BDevice, Unit
 
-from .constants import GPU_DETECT_PATTERNS, GEO_ENDPOINTS, NVIDIA_TURING_THRESHOLD
+from .constants import (
+    GPU_DETECT_PATTERNS,
+    GEO_ENDPOINTS,
+    KMSCON_DEFAULT_FONT_SIZE,
+    KMSCON_FONT_SIZE_THRESHOLDS,
+    NVIDIA_TURING_THRESHOLD,
+)
 
 
 # =============================================================================
@@ -102,6 +108,80 @@ def detect_preferred_disk() -> Path | None:
 
     # No preference
     return None
+
+
+def detect_screen_resolution() -> tuple[int, int] | None:
+    """Detect the highest screen resolution via DRM sysfs.
+
+    Reads /sys/class/drm/card*-*/modes to find connected displays.
+    Each modes file lists supported resolutions line-by-line (e.g. '1920x1080').
+    The first line is the preferred/native mode.
+
+    Returns (width, height) of the highest resolution display, or None on failure.
+    """
+    drm_path = Path('/sys/class/drm')
+    if not drm_path.exists():
+        return None
+
+    best: tuple[int, int] | None = None
+    best_pixels = 0
+
+    try:
+        for connector_dir in drm_path.iterdir():
+            modes_file = connector_dir / 'modes'
+            if not modes_file.exists():
+                continue
+
+            # Check if the connector has an active display
+            status_file = connector_dir / 'status'
+            if status_file.exists():
+                try:
+                    status = status_file.read_text().strip()
+                    if status != 'connected':
+                        continue
+                except OSError:
+                    continue
+
+            try:
+                modes_text = modes_file.read_text().strip()
+            except OSError:
+                continue
+
+            if not modes_text:
+                continue
+
+            # First line is the preferred/native mode
+            first_mode = modes_text.splitlines()[0].strip()
+            match = re.match(r'^(\d+)x(\d+)', first_mode)
+            if not match:
+                continue
+
+            width, height = int(match.group(1)), int(match.group(2))
+            pixels = width * height
+            if pixels > best_pixels:
+                best = (width, height)
+                best_pixels = pixels
+    except OSError:
+        return None
+
+    return best
+
+
+def calculate_kmscon_font_size(resolution: tuple[int, int] | None) -> int:
+    """Calculate appropriate kmscon font size based on screen resolution.
+
+    Uses vertical pixel count to determine font size from threshold table.
+    Falls back to default (18, suitable for 1080p) if resolution is unknown.
+    """
+    if resolution is None:
+        return KMSCON_DEFAULT_FONT_SIZE
+
+    _, height = resolution
+    for max_height, font_size in KMSCON_FONT_SIZE_THRESHOLDS:
+        if height <= max_height:
+            return font_size
+
+    return KMSCON_DEFAULT_FONT_SIZE
 
 
 def needs_kmscon(locale: str) -> bool:

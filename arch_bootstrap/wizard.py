@@ -20,6 +20,7 @@ from .constants import (
     COUNTRY_NAMES,
     GPU_LABELS,
     GPU_VENDORS,
+    KMSCON_FONT_OPTIONS,
     LANGUAGES,
     NETWORK_BACKENDS,
     REGION_MENU_COUNTRIES,
@@ -53,6 +54,10 @@ class WizardState:
         self.detected_gpu: list[str] = []
         self.preferred_disk: Path | None = None
         self.mirror_list_handler: MirrorListHandler | None = None
+        # kmscon font selection
+        self.kmscon_font_name: str = ''
+        self.kmscon_font_package: str = ''
+        self.screen_resolution: tuple[int, int] | None = None
 
 
 async def step_language(state: WizardState) -> str:
@@ -91,6 +96,64 @@ async def step_language(state: WizardState) -> str:
             state.locale = result.get_value()
             lang_map = {'zh_CN.UTF-8': 'zh', 'ja_JP.UTF-8': 'ja'}
             set_lang(lang_map.get(state.locale, 'en'))
+            return 'next'
+        case _:
+            return 'back'
+
+
+async def step_kmscon_font(state: WizardState) -> str:
+    """Step 1.5: Select kmscon font (only shown for non-English locales).
+
+    This step is conditionally inserted after language selection when kmscon
+    is needed for CJK console rendering.
+    """
+    if not needs_kmscon(state.locale):
+        # Auto-skip: not needed for English locale
+        # Clear any previously selected font if user switched back to English
+        state.kmscon_font_name = ''
+        state.kmscon_font_package = ''
+        return 'next'
+
+    # Determine locale prefix for font lookup (e.g. 'zh_CN' from 'zh_CN.UTF-8')
+    locale_prefix = state.locale.split('.')[0]
+    font_options = KMSCON_FONT_OPTIONS.get(locale_prefix, [])
+
+    if not font_options:
+        # No font options for this locale, fall back to Noto Sans CJK
+        state.kmscon_font_name = 'Noto Sans CJK SC'
+        state.kmscon_font_package = 'noto-fonts-cjk'
+        return 'next'
+
+    items = [
+        MenuItem(f'{opt["label"]}  ({opt["package"]})', value=idx)
+        for idx, opt in enumerate(font_options)
+    ]
+    group = MenuItemGroup(items)
+
+    # Pre-select current choice or default to first option
+    preset_idx = 0
+    if state.kmscon_font_name:
+        for idx, opt in enumerate(font_options):
+            if opt['name'] == state.kmscon_font_name:
+                preset_idx = idx
+                break
+    group.set_default_by_value(preset_idx)
+    group.set_focus_by_value(preset_idx)
+
+    result = await Selection[int](
+        group,
+        header=t('step.kmscon_font.title'),
+        allow_skip=True,
+    ).show()
+
+    match result.type_:
+        case ResultType.Skip:
+            return 'back'
+        case ResultType.Selection:
+            selected_idx = result.get_value()
+            selected = font_options[selected_idx]
+            state.kmscon_font_name = selected['name']
+            state.kmscon_font_package = selected['package']
             return 'next'
         case _:
             return 'back'
@@ -391,6 +454,10 @@ async def step_confirm(
         f'{t("confirm.user")}:   {state.username}',
         f'{t("confirm.root")}:   {t("status.set") if state.root_password else t("status.not_set")}',
         f'kmscon:       {"Added (CJK console)" if kmscon_needed else t("status.not_needed")}',
+        *(
+            [f'  Font:       {state.kmscon_font_name} ({state.kmscon_font_package})']
+            if kmscon_needed and state.kmscon_font_name else []
+        ),
         '',
         '── Fixed defaults ──',
         f'{t("fixed.boot")}:    EFISTUB (UKI)',
@@ -440,6 +507,7 @@ async def run_wizard(
 
     steps = [
         step_language,
+        step_kmscon_font,
         step_region,
         step_disk,
         step_network,

@@ -48,6 +48,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'step.user.title': 'Username',
         'step.passwd.title': 'User Password',
         'step.root.title': 'Root Password (empty = none)',
+        # -- kmscon --
+        'step.kmscon_font.title': 'Console Font (kmscon)',
         # -- Step messages --
         'step.lang.success': 'Language: %s',
         'step.lang.kmscon': 'Auto-added %s for non-English TTY rendering',
@@ -148,6 +150,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'step.user.title': '用户名',
         'step.passwd.title': '用户密码',
         'step.root.title': 'Root 密码 (留空则不设置)',
+        # -- kmscon --
+        'step.kmscon_font.title': '控制台字体 (kmscon)',
         # -- Step messages --
         'step.lang.success': '语言: %s',
         'step.lang.kmscon': '已自动添加 %s 用于非英文 TTY 显示支持',
@@ -248,6 +252,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'step.user.title': 'ユーザー名',
         'step.passwd.title': 'ユーザーパスワード',
         'step.root.title': 'Root パスワード (空欄 = 設定なし)',
+        # -- kmscon --
+        'step.kmscon_font.title': 'コンソールフォント (kmscon)',
         # -- Step messages --
         'step.lang.success': '言語: %s',
         'step.lang.kmscon': '非英語 TTY 表示のため %s を自動追加',

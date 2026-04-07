@@ -21,6 +21,9 @@ from archinstall.lib.output import debug, error, info
 from archinstall.lib.profile.profiles_handler import profile_handler
 from archinstall.tui.ui.components import tui
 
+from .config import generate_kmscon_config
+from .detection import calculate_kmscon_font_size, needs_kmscon
+
 
 # =============================================================================
 # Advanced menu (GlobalMenu escape hatch)
@@ -48,6 +51,9 @@ def run_global_menu(
 def perform_installation(
     config: ArchConfig,
     mirror_list_handler: MirrorListHandler,
+    kmscon_font_name: str = '',
+    screen_resolution: tuple[int, int] | None = None,
+    gpu_vendors: list[str] | None = None,
 ) -> None:
     """Execute the installation using archinstall's Installer."""
     start_time = time.monotonic()
@@ -159,6 +165,19 @@ def perform_installation(
 
     vconsole = chroot_dir / 'etc' / 'vconsole.conf'
     vconsole.write_text('KEYMAP=us\n')
+
+    # Post-install: write kmscon configuration if needed
+    locale = config.locale_config.sys_lang if config.locale_config else 'en_US.UTF-8'
+    if needs_kmscon(locale) and kmscon_font_name:
+        font_size = calculate_kmscon_font_size(screen_resolution)
+        has_gpu = bool(gpu_vendors)
+        kmscon_conf_content = generate_kmscon_config(kmscon_font_name, font_size, has_gpu)
+
+        kmscon_dir = chroot_dir / 'etc' / 'kmscon'
+        kmscon_dir.mkdir(parents=True, exist_ok=True)
+        kmscon_conf = kmscon_dir / 'kmscon.conf'
+        kmscon_conf.write_text(kmscon_conf_content)
+        info(f'  Written kmscon.conf (font: {kmscon_font_name}, size: {font_size})')
 
     elapsed_time = time.monotonic() - start_time
     info(f'Installation completed in {elapsed_time:.0f} seconds.')

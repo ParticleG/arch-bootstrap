@@ -140,3 +140,36 @@ GEO_ENDPOINTS: list[str] = [
 
 # NVIDIA Turing+ threshold (PCI Device ID >= 0x1e00)
 NVIDIA_TURING_THRESHOLD = 0x1E00
+
+# =============================================================================
+# kmscon font configuration
+# =============================================================================
+
+# Font options per locale prefix, ordered by recommendation
+# Each entry: label (display), name (font-name in kmscon.conf), package (pacman)
+KMSCON_FONT_OPTIONS: dict[str, list[dict[str, str]]] = {
+    'zh_CN': [
+        {'label': 'Noto Sans CJK SC', 'name': 'Noto Sans CJK SC', 'package': 'noto-fonts-cjk'},
+        {'label': 'WenQuanYi Micro Hei', 'name': 'WenQuanYi Micro Hei', 'package': 'wqy-microhei'},
+        {'label': 'Sarasa Gothic SC', 'name': 'Sarasa Gothic SC', 'package': 'ttf-sarasa-gothic'},
+        {'label': 'Source Han Sans SC', 'name': 'Source Han Sans SC', 'package': 'adobe-source-han-sans-cn-fonts'},
+    ],
+    'ja_JP': [
+        {'label': 'Noto Sans CJK JP', 'name': 'Noto Sans CJK JP', 'package': 'noto-fonts-cjk'},
+        {'label': 'IPAex Gothic', 'name': 'IPAexGothic', 'package': 'otf-ipafont'},
+        {'label': 'Source Han Sans JP', 'name': 'Source Han Sans JP', 'package': 'adobe-source-han-sans-jp-fonts'},
+    ],
+}
+
+# Font size thresholds: (max_vertical_pixels, font_size)
+# Evaluated in order; first match wins. Final entry is the fallback.
+KMSCON_FONT_SIZE_THRESHOLDS: list[tuple[int, int]] = [
+    (768, 14),    # 720p and below
+    (1080, 18),   # 1080p
+    (1440, 24),   # 1440p
+    (2160, 32),   # 4K
+    (99999, 40),  # 5K+ (fallback)
+]
+
+# Default font size when resolution detection fails (assumes 1080p)
+KMSCON_DEFAULT_FONT_SIZE = 18

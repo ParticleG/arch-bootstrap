@@ -173,3 +173,33 @@ KMSCON_FONT_SIZE_THRESHOLDS: list[tuple[int, int]] = [
 
 # Default font size when resolution detection fails (assumes 1080p)
 KMSCON_DEFAULT_FONT_SIZE = 18
+
+# =============================================================================
+# Fontconfig: CJK font alias mappings
+# =============================================================================
+
+# Common CJK font names that should be aliased to the user-selected font.
+# When these fonts are requested but not installed, fontconfig will substitute
+# the selected CJK font instead of falling back to a random glyph provider.
+FONTCONFIG_CJK_ALIASES: dict[str, list[str]] = {
+    'zh': [
+        'WenQuanYi Zen Hei',
+        'WenQuanYi Micro Hei',
+        'WenQuanYi Micro Hei Light',
+        'Microsoft YaHei',
+        'SimHei',
+        'SimSun',
+        'SimSun-18030',
+        'FangSong',
+        'KaiTi',
+    ],
+    'ja': [
+        'MS Gothic',
+        'MS PGothic',
+        'MS Mincho',
+        'MS PMincho',
+        'Yu Gothic',
+        'Yu Mincho',
+        'Meiryo',
+    ],
+}

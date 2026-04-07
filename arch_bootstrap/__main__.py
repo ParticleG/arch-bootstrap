@@ -124,6 +124,7 @@ def main() -> None:
         kmscon_font_name=state.kmscon_font_name,
         screen_resolution=state.screen_resolution,
         gpu_vendors=state.gpu_vendors,
+        username=state.username,
     )
 
 

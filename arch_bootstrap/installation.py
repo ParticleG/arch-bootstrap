@@ -21,7 +21,7 @@ from archinstall.lib.output import debug, error, info
 from archinstall.lib.profile.profiles_handler import profile_handler
 from archinstall.tui.ui.components import tui
 
-from .config import generate_kmscon_config
+from .config import generate_fontconfig, generate_kmscon_config
 from .detection import calculate_kmscon_font_size, needs_kmscon
 
 
@@ -54,6 +54,7 @@ def perform_installation(
     kmscon_font_name: str = '',
     screen_resolution: tuple[int, int] | None = None,
     gpu_vendors: list[str] | None = None,
+    username: str = '',
 ) -> None:
     """Execute the installation using archinstall's Installer."""
     start_time = time.monotonic()
@@ -178,6 +179,36 @@ def perform_installation(
         kmscon_conf = kmscon_dir / 'kmscon.conf'
         kmscon_conf.write_text(kmscon_conf_content)
         info(f'  Written kmscon.conf (font: {kmscon_font_name}, size: {font_size})')
+
+    # Post-install: write user fontconfig for CJK locales
+    if needs_kmscon(locale) and kmscon_font_name and username:
+        fontconfig_content = generate_fontconfig(kmscon_font_name, locale)
+        user_home = chroot_dir / 'home' / username
+        fontconfig_dir = user_home / '.config' / 'fontconfig'
+        fontconfig_dir.mkdir(parents=True, exist_ok=True)
+        fontconfig_file = fontconfig_dir / 'fonts.conf'
+        fontconfig_file.write_text(fontconfig_content)
+
+        # Fix ownership: look up the user's UID/GID from the chroot's /etc/passwd
+        try:
+            # Read passwd from the installed system, not the live ISO
+            passwd_file = chroot_dir / 'etc' / 'passwd'
+            uid = gid = 1000  # fallback for first non-root user
+            if passwd_file.exists():
+                for line in passwd_file.read_text().splitlines():
+                    fields = line.split(':')
+                    if len(fields) >= 4 and fields[0] == username:
+                        uid, gid = int(fields[2]), int(fields[3])
+                        break
+
+            # chown the entire .config/fontconfig tree
+            for path in [user_home / '.config', fontconfig_dir, fontconfig_file]:
+                if path.exists():
+                    os.chown(path, uid, gid)
+        except (ValueError, OSError):
+            pass  # best-effort ownership fix
+
+        info(f'  Written fontconfig for user {username}')
 
     elapsed_time = time.monotonic() - start_time
     info(f'Installation completed in {elapsed_time:.0f} seconds.')

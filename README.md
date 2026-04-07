@@ -23,7 +23,7 @@
 </p>
 
 <p align="center">
-  <strong>Interactive configuration generator for archinstall 4.1</strong>
+  <strong>Opinionated Arch Linux installer powered by archinstall 4.1</strong>
 </p>
 
 <p align="center">
@@ -34,165 +34,147 @@
 
 ---
 
-A full-screen TUI wizard that walks you through Arch Linux installation options for **archinstall 4.1**. No manual JSON editing required.
+A 9-step TUI wizard that walks you through Arch Linux installation using archinstall's native Python API. No manual JSON editing required — the installer detects your hardware, guides you through options, and runs the installation directly.
 
-> **Two interfaces:** a Bash-based config generator (`install.sh`) and a Python-based
-> direct installer (`install.py`). The Python version uses archinstall's native
-> TUI and API — no JSON files needed; installation runs directly.
-
-## Python Installer (`install.py`)
-
-### Usage on Arch ISO
+## Quick Start
 
 Boot the [Arch Linux ISO](https://archlinux.org/download/), connect to the network, then:
 
 ```bash
-# Download and run (must be root — which you are on the ISO)
-curl -LO https://raw.githubusercontent.com/ParticleG/arch-bootstrap/main/install.py
-python install.py
+curl -sL https://raw.githubusercontent.com/ParticleG/arch-bootstrap/main/install.py | python
 ```
 
-Or clone and run:
+Or download the pre-built zipapp from [Releases](https://github.com/ParticleG/arch-bootstrap/releases/latest):
 
 ```bash
-git clone https://github.com/ParticleG/arch-bootstrap.git
-cd arch-bootstrap
-python install.py
+curl -LO https://github.com/ParticleG/arch-bootstrap/releases/latest/download/arch_bootstrap.pyz
+python arch_bootstrap.pyz
 ```
 
-The script will:
+> **CN users:** The bootstrap script automatically detects your region and routes GitHub downloads through a proxy (ghproxy.link / ghfast.top) for faster access.
 
-1. Auto-upgrade `archinstall` to the latest version (the ISO ships an older version)
-2. Detect your country (IP geolocation), GPU (`lspci`), and preferred disk
-3. Walk you through a **9-step wizard** with pre-selected defaults
-4. Show a confirmation panel: **Install** / **Advanced Modify** (archinstall GlobalMenu) / **Cancel**
-5. Clean up disk locks (swap, LVM, LUKS), format the disk, install Arch Linux
-6. Present post-install options: exit, reboot, or arch-chroot
+## How It Works
 
-### Wizard Navigation
+`install.py` is a lightweight bootstrap script (stdlib only) that:
 
-| Key | Action |
-|-----|--------|
-| Enter | Confirm / proceed |
-| Esc / Skip | Go back to previous step |
-| Arrow keys | Navigate menu items |
-| Type to filter | Available in region selection |
+1. Reopens stdin from `/dev/tty` (for pipe-friendly `curl | python` usage)
+2. Detects your country and applies fast mirrors to the live ISO
+3. Upgrades `archinstall` to the latest version (the ISO ships an older one)
+4. Downloads and runs the full installer (`arch_bootstrap.pyz`)
 
-### Differences from the Bash version
+The full installer then:
 
-| | Bash (`install.sh`) | Python (`install.py`) |
-|-|---------------------|------------------------------|
-| Output | JSON files + `archinstall --config` | Direct archinstall Python API |
-| TUI | fzf with preview panels | archinstall's textual TUI |
-| Advanced editing | N/A | GlobalMenu escape hatch |
-| Disk cleanup | Manual umount/swapoff | Automatic (swap, LVM, LUKS) |
-| Post-install | 30s auto-reboot countdown | Choose: exit / reboot / chroot |
-
-### Requirements (ISO environment)
-
-| Dependency | Notes |
-|------------|-------|
-| Python 3.11+ | Pre-installed on Arch ISO |
-| archinstall 4.1+ | Auto-upgraded at script startup |
-| pciutils (`lspci`) | Pre-installed on Arch ISO |
-| Root privileges | Required |
-| Network connection | Required for mirrors and packages |
-
-## Features
-
-- **10-step guided wizard** — language, region, disk, network, repos, GPU drivers, user accounts, and final confirmation
-- **fzf-powered TUI** — fuzzy search, multi-select checklists, masked password input, and a live progress sidebar
-- **Auto-detection** — IP geolocation for mirror region, `lspci` for GPU vendor, `lsblk` for target disks
-- **Smart mirrors** — `reflector` speed-test with per-country fallback pools; `archlinuxcn` repo auto-added for CN users
-- **i18n** — English, Simplified Chinese, and Japanese (auto-fallback to English on raw TTY for CJK rendering)
-- **Wizard navigation** — `Esc` to go back, `Ctrl-C` to abort, with full step history
-- **Self-extracting archive** — CI builds a single `.sh` file via `makeself` for easy distribution
-
-## Bash Config Generator (`install.sh`)
-
-### One-liner
-
-```bash
-curl -sL https://github.com/ParticleG/arch-bootstrap/releases/latest/download/bootstrap.sh | bash
-```
-
-### From source
-
-```bash
-git clone https://github.com/ParticleG/arch-bootstrap.git
-cd arch-bootstrap
-sudo bash install.sh
-```
-
-After the wizard completes, run archinstall with the generated files:
-
-```bash
-archinstall --config user_configuration.json --creds user_credentials.json
-```
+1. **Auto-detects** your country (IP geolocation), GPU (`lspci`), and preferred disk
+2. **Walks you through a 9-step wizard** with pre-selected defaults
+3. Shows a **confirmation panel**: Install / Advanced Modify (archinstall GlobalMenu) / Cancel
+4. Cleans up disk locks (swap, LVM, LUKS), formats the disk, installs Arch Linux
+5. Presents **post-install options**: exit, reboot, or arch-chroot
 
 ## Wizard Steps
 
 | # | Step | Description |
 |---|------|-------------|
 | 1 | Language | System locale (`en_US`, `zh_CN`, `ja_JP`); non-English adds `kmscon` |
-| 2 | Region | Mirror country (auto-detected via IP), triggers `reflector` speed test |
-| 3 | Disk | Target block device; auto-calculates EFI (1 GiB) + Btrfs partition |
-| 4 | Network | Backend choice: NetworkManager + iwd or + wpa_supplicant |
+| 2 | Region | Mirror country (auto-detected via IP); applies mirrors to live ISO immediately |
+| 3 | Disk | Target block device with partition preview; confirms data destruction |
+| 4 | Network | Backend choice: NetworkManager + iwd (recommended) or + wpa_supplicant |
 | 5 | Repos | Optionally enable `multilib` (32-bit / Steam support) |
-| 6 | GPU Drivers | Auto-detects vendor; choose from AMD / Intel / NVIDIA / nouveau |
+| 6 | GPU Drivers | Auto-detects vendor; choose from AMD / Intel / NVIDIA (open) / nouveau |
 | 7 | Username | With format validation (`[a-z_][a-z0-9_-]*`) |
-| 8 | User Password | Masked input via fzf |
-| 9 | Root Password | Masked input (may be left empty) |
-| 10 | Confirm | Review summary, then generate JSON |
+| 8 | User Password | Masked input via archinstall's `get_password()` |
+| 9 | Root Password | Optional; prompted only if you choose to set one |
+
+### Navigation
+
+| Key | Action |
+|-----|--------|
+| Enter | Confirm / proceed |
+| Esc | Go back to previous step |
+| Arrow keys | Navigate menu items |
+| Type to filter | Available in region selection |
 
 ## Opinionated Defaults
 
-These are baked into every generated configuration and are not configurable through the wizard:
+These are baked into every installation and are **not configurable** through the wizard:
 
 | Option | Value |
 |--------|-------|
 | Bootloader | EFISTUB + Unified Kernel Image (UKI) |
 | Filesystem | Btrfs with `zstd` compression + Snapper snapshots |
 | Subvolumes | `@` `/`, `@home` `/home`, `@log` `/var/log`, `@pkg` `/var/cache/pacman/pkg` |
+| Partitions | 1 GiB EFI (FAT32) + remaining space Btrfs |
 | Audio | PipeWire |
 | Bluetooth | Enabled |
 | Power | tuned |
+| Swap | zram (lzo-rle) |
 | Base packages | `neovim`, `git`, `7zip`, `base-devel`, `zsh` |
+| CN extras | `archlinuxcn` repo auto-added for CN region |
+
+## Features
+
+- **archinstall native TUI** — uses archinstall's textual-based Selection, Input, and Confirmation components
+- **Auto-detection** — IP geolocation for mirror region, `lspci` for GPU vendor (NVIDIA Turing+ detection via PCI Device ID), `lsblk` for target disks
+- **Smart mirrors** — per-country fallback mirror pools (CN, US, JP, DE); applied to live ISO before any `pacman` operation
+- **i18n** — English, Simplified Chinese, and Japanese (auto-fallback to English on raw TTY where CJK cannot render)
+- **Advanced escape hatch** — archinstall's GlobalMenu available from the confirmation panel for full manual override
+- **Pipe-friendly** — designed for `curl | python` with automatic stdin recovery from `/dev/tty`
+- **GitHub proxy for CN** — auto-detects China region and routes `.pyz` downloads through ghproxy.link / ghfast.top
+
+## Requirements
+
+| Dependency | Notes |
+|------------|-------|
+| Python 3.11+ | Pre-installed on Arch ISO |
+| archinstall 4.1+ | Auto-upgraded by the bootstrap script |
+| pciutils (`lspci`) | Pre-installed on Arch ISO |
+| Root privileges | Required |
+| Network connection | Required for mirrors and packages |
+
+## Development
+
+Run from source:
+
+```bash
+git clone https://github.com/ParticleG/arch-bootstrap.git
+cd arch-bootstrap
+python install.py
+```
+
+Or invoke the package directly:
+
+```bash
+python -m arch_bootstrap
+```
+
+Build the zipapp manually:
+
+```bash
+mkdir -p _staging
+cp -r arch_bootstrap _staging/arch_bootstrap
+printf 'from arch_bootstrap.__main__ import main\nmain()\n' > _staging/__main__.py
+python -m zipapp _staging -o arch_bootstrap.pyz -p '/usr/bin/env python3'
+```
 
 ## Project Structure
 
 ```
 arch-bootstrap/
-├── install.py              # Python installer (direct archinstall API)
-├── install.sh              # Bash entry point — wizard + JSON generation
-├── lib/
-│   ├── ui.sh               # TUI engine (fzf integration, ANSI, logging)
-│   ├── config.sh            # Pure data (packages, GPU maps, mirrors)
-│   ├── wizard.sh            # Step registration & navigation engine
-│   ├── generate.sh          # JSON generation for archinstall
-│   └── i18n/
-│       ├── en.sh            # English (authoritative key set)
-│       ├── zh.sh            # Simplified Chinese
-│       └── ja.sh            # Japanese
-├── scripts/
-│   └── bootstrap.sh         # Remote one-liner bootstrap script
+├── install.py              # Bootstrap script (stdlib only, pipe-friendly)
+├── arch_bootstrap/         # Main Python package
+│   ├── __init__.py         # Version (0.2.0)
+│   ├── __main__.py         # Entry point: detect → wizard → install
+│   ├── config.py           # ArchConfig builder
+│   ├── constants.py        # GPU maps, mirrors, languages, countries
+│   ├── detection.py        # Hardware & environment detection
+│   ├── disk.py             # Btrfs disk layout builder
+│   ├── i18n.py             # Trilingual translations (en/zh/ja)
+│   ├── installation.py     # archinstall API integration
+│   ├── mirrors.py          # Mirror resolution & fallback
+│   └── wizard.py           # 9-step interactive wizard
 └── .github/
     └── workflows/
-        └── package.yml      # CI: makeself packaging + GitHub Releases
+        └── package.yml     # CI: build .pyz + GitHub Release
 ```
-
-## Requirements (Bash version)
-
-| Dependency | Purpose |
-|------------|---------|
-| `bash` 4.0+ | Associative arrays |
-| `fzf` | TUI menus (auto-installed if missing) |
-| `curl` | IP geolocation + downloads |
-| `openssl` | SHA-512 password hashing |
-| `lsblk` / `blockdev` | Disk enumeration |
-| `reflector` | Mirror speed test (graceful fallback if unavailable) |
-| `archinstall` 4.1 | Final installation executor |
-| Root privileges | Required to run |
 
 ## License
 

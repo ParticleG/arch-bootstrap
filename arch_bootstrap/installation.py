@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import os
+import re
 import shlex
 import subprocess
 import time
 import urllib.request
 from pathlib import Path
-from urllib.parse import urlparse
 
 from archinstall.lib.applications.application_handler import ApplicationHandler
 from archinstall.lib.args import ArchConfig
@@ -75,37 +75,33 @@ def _resolve_omz_remote(country: str | None) -> str | None:
 
     For non-CN: returns None (use default upstream).
     For CN: resolves GitHub proxy and returns proxied git URL.
+
+    ghproxy.link is a Vue SPA; available proxy domains are embedded in a
+    webpack JS chunk as href="https://gh<word>.<tld>".  We parse the chunk
+    to extract the first available domain, then wrap the git URL with it.
     """
     if country != 'CN':
         return None
 
     _info('China detected, resolving GitHub proxy for oh-my-zsh...')
 
-    # Try ghproxy.link
+    # Try ghproxy.link — parse JS chunk for available proxy domain
     try:
-        req = urllib.request.Request(GHPROXY_CHUNK_URL, method='GET')
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            parsed = urlparse(resp.url)
-            proxy = f'{parsed.scheme}://{parsed.netloc}'
-            if proxy != 'https://ghproxy.link':
-                _info(f'Found proxy: {proxy}')
-                return f'{proxy}/{OMZ_REMOTE_GITHUB}'
+        req = urllib.request.Request(GHPROXY_CHUNK_URL)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            content = resp.read().decode('utf-8', errors='ignore')
+        matches = re.findall(r'href=.{0,5}(https://gh[a-z0-9]+\.[a-z]+)', content)
+        if matches:
+            proxy = matches[0]
+            _info(f'Found proxy: {proxy}')
+            return f'{proxy}/{OMZ_REMOTE_GITHUB}'
     except Exception:
         pass
 
-    # Try fallback
-    _info(f'Trying fallback proxy: {GHPROXY_FALLBACK}')
-    try:
-        test_url = f'{GHPROXY_FALLBACK}/{OMZ_REMOTE_GITHUB}'
-        req = urllib.request.Request(test_url, method='HEAD')
-        urllib.request.urlopen(req, timeout=10)
-        return f'{GHPROXY_FALLBACK}/{OMZ_REMOTE_GITHUB}'
-    except Exception:
-        pass
-
-    # Fall back to direct GitHub (may be slow but oh-my-zsh install is non-critical)
-    _info('No proxy available, using direct GitHub URL')
-    return OMZ_REMOTE_GITHUB
+    # Use fallback proxy directly (don't test with HEAD — many proxies reject it,
+    # which caused the previous code to silently fall through to direct GitHub)
+    _info(f'Using fallback proxy: {GHPROXY_FALLBACK}')
+    return f'{GHPROXY_FALLBACK}/{OMZ_REMOTE_GITHUB}'
 
 
 # =============================================================================

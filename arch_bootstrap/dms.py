@@ -8,6 +8,7 @@ All operations target the chroot environment during installation.
 from __future__ import annotations
 
 import os
+import re
 import shlex
 import subprocess
 import urllib.request
@@ -48,20 +49,22 @@ def _debug(msg: str) -> None:
 def _resolve_ghproxy() -> str | None:
     """Resolve a working GitHub proxy URL from ghproxy.link.
 
-    Returns proxy base URL (e.g. 'https://xxx.example.com') or None.
+    ghproxy.link is a Vue SPA; the available proxy domains are embedded in
+    a webpack JS chunk as href="https://gh<word>.<tld>" links.  Blocked
+    domains use <del> tags instead.  We fetch the chunk and extract the
+    first available domain.
+
+    Returns proxy base URL (e.g. 'https://ghfast.top') or None.
     """
     try:
-        req = urllib.request.Request(GHPROXY_CHUNK_URL, method='GET')
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            final_url = resp.url
-            from urllib.parse import urlparse
-            parsed = urlparse(final_url)
-            proxy = f'{parsed.scheme}://{parsed.netloc}'
-            if proxy != 'https://ghproxy.link':
-                return proxy
+        req = urllib.request.Request(GHPROXY_CHUNK_URL)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            content = resp.read().decode('utf-8', errors='ignore')
     except Exception:
-        pass
-    return None
+        return None
+
+    matches = re.findall(r'href=.{0,5}(https://gh[a-z0-9]+\.[a-z]+)', content)
+    return matches[0] if matches else None
 
 
 def _resolve_download_base_url(country: str | None) -> str:
@@ -81,19 +84,9 @@ def _resolve_download_base_url(country: str | None) -> str:
         _info(f'Found proxy: {proxy}')
         return f'{proxy}/{DMS_TEMPLATE_BASE_URL}'
 
-    # Try fallback
-    _info(f'Trying fallback proxy: {GHPROXY_FALLBACK}')
-    try:
-        test_url = f'{GHPROXY_FALLBACK}/{DMS_TEMPLATE_BASE_URL}/niri.kdl'
-        req = urllib.request.Request(test_url, method='HEAD')
-        urllib.request.urlopen(req, timeout=10)
-        return f'{GHPROXY_FALLBACK}/{DMS_TEMPLATE_BASE_URL}'
-    except Exception:
-        pass
-
-    # Fall through to direct URL (may be slow but might work)
-    _info('No proxy available, using direct GitHub URL')
-    return DMS_TEMPLATE_BASE_URL
+    # Use fallback directly (don't test with HEAD — many proxies reject it)
+    _info(f'Using fallback proxy: {GHPROXY_FALLBACK}')
+    return f'{GHPROXY_FALLBACK}/{DMS_TEMPLATE_BASE_URL}'
 
 
 # ---------------------------------------------------------------------------

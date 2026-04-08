@@ -12,6 +12,7 @@ from archinstall.lib.mirror.mirror_handler import MirrorListHandler
 from archinstall.lib.models.device import BDevice, Unit
 from archinstall.lib.models.network import NicType
 from archinstall.lib.models.users import Password
+from archinstall.tui.ui.components import OptionListScreen
 from archinstall.tui.ui.menu_item import MenuItem, MenuItemGroup
 from archinstall.tui.ui.result import ResultType
 
@@ -28,6 +29,27 @@ from .constants import (
 from .detection import is_raw_tty, needs_kmscon
 from .i18n import set_lang, t
 from .mirrors import apply_mirrors_to_live_iso
+
+
+# =============================================================================
+# TUI helpers
+# =============================================================================
+
+class _LeftAlignedScreen[ValueT](OptionListScreen[ValueT]):
+    """OptionListScreen with left-aligned header text.
+
+    archinstall's default CSS sets `text-align: center` on `.header-text`,
+    which makes the confirmation panel unreadable when labels have different
+    lengths.  This subclass overrides that to left-align.
+    """
+
+    def on_mount(self) -> None:
+        try:
+            from textual.widgets import Label
+            header = self.query_one('#header_text', Label)
+            header.styles.text_align = 'left'
+        except Exception:
+            pass
 
 
 # =============================================================================
@@ -593,11 +615,11 @@ async def step_confirm(
     group = MenuItemGroup(items)
     group.set_focus_by_value('install')
 
-    result = await Selection[str](
+    result = await _LeftAlignedScreen[str](
         group,
         header=summary,
         allow_skip=True,
-    ).show()
+    ).run()
 
     match result.type_:
         case ResultType.Skip:

@@ -11,6 +11,7 @@ from archinstall.lib.mirror.mirror_handler import MirrorListHandler
 from archinstall.lib.output import Font, info
 from archinstall.tui.ui.components import tui
 
+from . import __version__
 from .config import build_default_config
 from .constants import COUNTRY_NAMES, GPU_LABELS
 from .i18n import set_lang
@@ -25,6 +26,33 @@ from .installation import perform_installation, run_global_menu
 from .wizard import WizardState, run_wizard
 
 _PREFIX = '[arch-bootstrap]'
+
+# ANSI escape sequences
+_C = '\033[1;36m'  # cyan bold   — Arch logo
+_B = '\033[1;34m'  # blue bold   — "Arch Linux" text
+_M = '\033[1;35m'  # magenta bold — "Bootstrap" text
+_D = '\033[2m'     # dim          — subtitle
+_0 = '\033[0m'     # reset
+
+_BANNER = f"""\
+{_C}                 -@               {_0}  {_B}  ___           _          _     _                   {_0}
+{_C}                .##@              {_0}  {_B} / _ \\         | |        | |   (_)                  {_0}
+{_C}               .####@            {_0}  {_B}/ /_\\ \\_ __ ___| |__      | |    _ _ __  _   ___  __ {_0}
+{_C}               @#####@           {_0}  {_B}|  _  | '__/ __| '_ \\     | |   | | '_ \\| | | \\ \\/ / {_0}
+{_C}             . *######@          {_0}  {_B}| | | | | | (__| | | |    | |___| | | | | |_| |>  <  {_0}
+{_C}            .##@o@#####@         {_0}  {_B}\\_| |_/_|  \\___|_| |_|    \\_____/_|_| |_|\\__,_/_/\\_\\ {_0}
+{_C}           /############@        {_0}
+{_C}          /##############@       {_0}  {_M}______             _       _                          {_0}
+{_C}         @######@**%######@      {_0}  {_M}| ___ \\           | |     | |                         {_0}
+{_C}        @######`     %#####o     {_0}  {_M}| |_/ / ___   ___ | |_ ___| |_ _ __ __ _ _ __        {_0}
+{_C}       @######@       ######%    {_0}  {_M}| ___ \\/ _ \\ / _ \\| __/ __| __| '__/ _` | '_ \\       {_0}
+{_C}     -@#######h       ######@.`  {_0}  {_M}| |_/ / (_) | (_) | |_\\__ \\ |_| | | (_| | |_) |      {_0}
+{_C}    /#####h**``       `**%@####@ {_0}  {_M}\\____/ \\___/ \\___/ \\__|___/\\__|_|  \\__,_| .__/       {_0}
+{_C}   @H@*`                    `*%#@{_0}  {_M}                                        | |          {_0}
+{_C}  *`                            `*{_0} {_M}                                        |_|          {_0}
+
+  {_D}Opinionated Arch Linux installer powered by archinstall 4.x - v{__version__}{_0}
+"""
 
 
 def _info(msg: str) -> None:
@@ -48,7 +76,7 @@ def main() -> None:
         os.close(tty_fd)
         sys.stdin = open(0, closefd=False)
 
-    _info('Opinionated Arch Linux installer')
+    print(_BANNER)
     _info('Detecting environment...')
 
     # Phase 1: Auto-detection (silent)

@@ -58,6 +58,9 @@ def perform_installation(
     gpu_vendors: list[str] | None = None,
     username: str = '',
     country: str | None = None,
+    desktop_env: str = 'minimal',
+    dms_compositor: str = 'niri',
+    dms_terminal: str = 'ghostty',
 ) -> None:
     """Execute the installation using archinstall's Installer."""
     start_time = time.monotonic()
@@ -238,6 +241,18 @@ def perform_installation(
             info(f'  Installed oh-my-zsh for user {username}')
         else:
             info(f'  oh-my-zsh installation failed (exit {result.returncode}), skipping')
+
+    # Post-install: DMS desktop environment
+    if desktop_env == 'dms' and username:
+        from .dms import install_dms
+        info('Setting up DMS desktop environment...')
+        install_dms(
+            chroot_dir=chroot_dir,
+            username=username,
+            compositor=dms_compositor,
+            terminal=dms_terminal,
+            country=country,
+        )
 
     elapsed_time = time.monotonic() - start_time
     info(f'Installation completed in {elapsed_time:.0f} seconds.')

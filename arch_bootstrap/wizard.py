@@ -58,6 +58,10 @@ class WizardState:
         self.kmscon_font_name: str = ''
         self.kmscon_font_package: str = ''
         self.screen_resolution: tuple[int, int] | None = None
+        # DMS desktop environment
+        self.desktop_env: str = 'minimal'      # 'minimal' | 'dms'
+        self.dms_compositor: str = 'niri'       # 'niri' | 'hyprland'
+        self.dms_terminal: str = 'ghostty'      # 'ghostty' | 'kitty' | 'alacritty'
 
 
 async def step_language(state: WizardState) -> str:
@@ -354,8 +358,90 @@ async def step_gpu_drivers(state: WizardState) -> str:
             return 'back'
 
 
+async def step_desktop_env(state: WizardState) -> str:
+    """Step 7: Select desktop environment."""
+    items = [
+        MenuItem(t('step.desktop.minimal'), value='minimal'),
+        MenuItem(t('step.desktop.dms'), value='dms'),
+    ]
+    group = MenuItemGroup(items)
+    group.set_focus_by_value(state.desktop_env)
+
+    result = await Selection[str](
+        group,
+        header=t('step.desktop.title'),
+        allow_skip=True,
+    ).show()
+
+    match result.type_:
+        case ResultType.Skip:
+            return 'back'
+        case ResultType.Selection:
+            state.desktop_env = result.get_value()
+            return 'next'
+        case _:
+            return 'back'
+
+
+async def step_dms_compositor(state: WizardState) -> str:
+    """Step 8: Select DMS compositor (only shown if DMS selected)."""
+    if state.desktop_env != 'dms':
+        return 'next'
+
+    items = [
+        MenuItem(t('step.compositor.niri'), value='niri'),
+        MenuItem(t('step.compositor.hyprland'), value='hyprland'),
+    ]
+    group = MenuItemGroup(items)
+    group.set_focus_by_value(state.dms_compositor)
+
+    result = await Selection[str](
+        group,
+        header=t('step.compositor.title'),
+        allow_skip=True,
+    ).show()
+
+    match result.type_:
+        case ResultType.Skip:
+            return 'back'
+        case ResultType.Selection:
+            state.dms_compositor = result.get_value()
+            return 'next'
+        case _:
+            return 'back'
+
+
+async def step_dms_terminal(state: WizardState) -> str:
+    """Step 9: Select DMS terminal emulator (only shown if DMS selected)."""
+    if state.desktop_env != 'dms':
+        return 'next'
+
+    items = [
+        MenuItem(t('step.terminal.ghostty'), value='ghostty'),
+        MenuItem(t('step.terminal.kitty'), value='kitty'),
+        MenuItem(t('step.terminal.alacritty'), value='alacritty'),
+    ]
+    group = MenuItemGroup(items)
+    group.set_focus_by_value(state.dms_terminal)
+
+    result = await Selection[str](
+        group,
+        header=t('step.terminal.title'),
+        allow_skip=True,
+    ).show()
+
+    match result.type_:
+        case ResultType.Skip:
+            return 'back'
+        case ResultType.Selection:
+            state.dms_terminal = result.get_value()
+            return 'next'
+        case _:
+            return 'back'
+
+
 async def step_username(state: WizardState) -> str:
-    """Step 7: Enter username."""
+    """Step 10: Enter username."""
     default = state.username or os.environ.get('SUDO_USER', '') or os.environ.get('USER', '')
     # Filter out 'root' — not a useful default
     if default == 'root':
@@ -466,7 +552,15 @@ async def step_confirm(
         f'{t("fixed.bt")}:      {t("status.enabled")}',
         'Power:        tuned',
         'Swap:         zram (lzo-rle)',
-        'Profile:      Minimal',
+        *(
+            [
+                f'{t("confirm.desktop")}:  DMS (DankMaterialShell)',
+                f'  {t("confirm.compositor")}:  {state.dms_compositor}',
+                f'  {t("confirm.terminal")}:   {state.dms_terminal}',
+            ]
+            if state.desktop_env == 'dms'
+            else [f'{t("confirm.desktop")}:  Minimal']
+        ),
     ]
     summary = '\n'.join(lines)
 
@@ -513,6 +607,9 @@ async def run_wizard(
         step_network,
         step_repos,
         step_gpu_drivers,
+        step_desktop_env,
+        step_dms_compositor,
+        step_dms_terminal,
         step_username,
         step_user_password,
         step_root_password,

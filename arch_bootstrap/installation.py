@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
 import time
+import urllib.request
 from pathlib import Path
+from urllib.parse import urlparse
 
 from archinstall.lib.applications.application_handler import ApplicationHandler
 from archinstall.lib.args import ArchConfig
@@ -18,12 +21,12 @@ from archinstall.lib.models.bootloader import Bootloader
 from archinstall.lib.models.device import DiskLayoutType
 from archinstall.lib.models.users import User
 from archinstall.lib.network.network_handler import install_network_config
-from archinstall.lib.output import debug, error, info
+from archinstall.lib.output import Font, debug, error, info
 from archinstall.lib.profile.profiles_handler import profile_handler
 from archinstall.tui.ui.components import tui
 
 from .config import generate_fontconfig, generate_kmscon_config
-from .constants import OMZ_INSTALL_URL, OMZ_REMOTE_CN
+from .constants import GHPROXY_CHUNK_URL, GHPROXY_FALLBACK, OMZ_INSTALL_URL, OMZ_REMOTE_GITHUB
 from .detection import calculate_kmscon_font_size, needs_kmscon
 
 
@@ -47,6 +50,65 @@ def run_global_menu(
 
 
 # =============================================================================
+# Prefixed logging helpers
+# =============================================================================
+
+_PREFIX = '[arch-bootstrap]'
+
+
+def _info(msg: str) -> None:
+    """Log an info message with a colored [arch-bootstrap] prefix."""
+    info(f'{_PREFIX} {msg}', fg='cyan', font=[Font.bold])
+
+
+def _debug(msg: str) -> None:
+    """Log a debug message with a colored [arch-bootstrap] prefix."""
+    debug(f'{_PREFIX} {msg}', fg='cyan')
+
+
+# =============================================================================
+# GitHub proxy resolution (for CN oh-my-zsh)
+# =============================================================================
+
+def _resolve_omz_remote(country: str | None) -> str | None:
+    """Resolve the oh-my-zsh REMOTE git URL for CN users.
+
+    For non-CN: returns None (use default upstream).
+    For CN: resolves GitHub proxy and returns proxied git URL.
+    """
+    if country != 'CN':
+        return None
+
+    _info('China detected, resolving GitHub proxy for oh-my-zsh...')
+
+    # Try ghproxy.link
+    try:
+        req = urllib.request.Request(GHPROXY_CHUNK_URL, method='GET')
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            parsed = urlparse(resp.url)
+            proxy = f'{parsed.scheme}://{parsed.netloc}'
+            if proxy != 'https://ghproxy.link':
+                _info(f'Found proxy: {proxy}')
+                return f'{proxy}/{OMZ_REMOTE_GITHUB}'
+    except Exception:
+        pass
+
+    # Try fallback
+    _info(f'Trying fallback proxy: {GHPROXY_FALLBACK}')
+    try:
+        test_url = f'{GHPROXY_FALLBACK}/{OMZ_REMOTE_GITHUB}'
+        req = urllib.request.Request(test_url, method='HEAD')
+        urllib.request.urlopen(req, timeout=10)
+        return f'{GHPROXY_FALLBACK}/{OMZ_REMOTE_GITHUB}'
+    except Exception:
+        pass
+
+    # Fall back to direct GitHub (may be slow but oh-my-zsh install is non-critical)
+    _info('No proxy available, using direct GitHub URL')
+    return OMZ_REMOTE_GITHUB
+
+
+# =============================================================================
 # Installation
 # =============================================================================
 
@@ -64,7 +126,7 @@ def perform_installation(
 ) -> None:
     """Execute the installation using archinstall's Installer."""
     start_time = time.monotonic()
-    info('Starting installation...')
+    _info('Starting installation...')
 
     auth_handler = AuthenticationHandler()
     application_handler = ApplicationHandler()
@@ -163,7 +225,7 @@ def perform_installation(
 
         installation.genfstab()
 
-        debug(f'Disk states after installing:\n{disk_layouts()}')
+        _debug(f'Disk states after installing:\n{disk_layouts()}')
 
     # Post-install: write keyboard layout to vconsole.conf
     chroot_dir = mountpoint
@@ -184,7 +246,7 @@ def perform_installation(
         kmscon_dir.mkdir(parents=True, exist_ok=True)
         kmscon_conf = kmscon_dir / 'kmscon.conf'
         kmscon_conf.write_text(kmscon_conf_content)
-        info(f'  Written kmscon.conf (font: {kmscon_font_name}, size: {font_size})')
+        _info(f'Written kmscon.conf (font: {kmscon_font_name}, size: {font_size})')
 
     # Post-install: write user fontconfig for CJK locales
     if needs_kmscon(locale) and kmscon_font_name and username:
@@ -214,7 +276,7 @@ def perform_installation(
         except (ValueError, OSError):
             pass  # best-effort ownership fix
 
-        info(f'  Written fontconfig for user {username}')
+        _info(f'Written fontconfig for user {username}')
 
     # Post-install: set default shell to zsh and install oh-my-zsh
     if username:
@@ -223,9 +285,10 @@ def perform_installation(
             check=False,
         )
 
-        if country == 'CN':
+        omz_remote = _resolve_omz_remote(country)
+        if omz_remote:
             omz_cmd = (
-                f'REMOTE={OMZ_REMOTE_CN} '
+                f'REMOTE={shlex.quote(omz_remote)} '
                 f'sh -c "$(curl -fsSL {OMZ_INSTALL_URL})" "" --unattended'
             )
         else:
@@ -238,14 +301,14 @@ def perform_installation(
             timeout=120,
         )
         if result.returncode == 0:
-            info(f'  Installed oh-my-zsh for user {username}')
+            _info(f'Installed oh-my-zsh for user {username}')
         else:
-            info(f'  oh-my-zsh installation failed (exit {result.returncode}), skipping')
+            _info(f'oh-my-zsh installation failed (exit {result.returncode}), skipping')
 
     # Post-install: DMS desktop environment
     if desktop_env == 'dms' and username:
         from .dms import install_dms
-        info('Setting up DMS desktop environment...')
+        _info('Setting up DMS desktop environment...')
         install_dms(
             chroot_dir=chroot_dir,
             username=username,
@@ -255,7 +318,7 @@ def perform_installation(
         )
 
     elapsed_time = time.monotonic() - start_time
-    info(f'Installation completed in {elapsed_time:.0f} seconds.')
+    _info(f'Installation completed in {elapsed_time:.0f} seconds.')
 
     # Post-installation action
     action: PostInstallationAction = tui.run(lambda: select_post_installation(elapsed_time))

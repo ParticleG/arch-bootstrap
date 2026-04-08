@@ -14,7 +14,7 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 
-from archinstall.lib.output import info, debug
+from archinstall.lib.output import Font, info, debug
 
 from .constants import (
     DMS_AUR_PACKAGES,
@@ -27,6 +27,18 @@ from .constants import (
     GHPROXY_FALLBACK,
 )
 from .i18n import t
+
+_PREFIX = '[DMS]'
+
+
+def _info(msg: str) -> None:
+    """Log an info message with a colored [DMS] prefix."""
+    info(f'{_PREFIX} {msg}', fg='green', font=[Font.bold])
+
+
+def _debug(msg: str) -> None:
+    """Log a debug message with a colored [DMS] prefix."""
+    debug(f'{_PREFIX} {msg}', fg='green')
 
 
 # ---------------------------------------------------------------------------
@@ -61,16 +73,16 @@ def _resolve_download_base_url(country: str | None) -> str:
     if country != 'CN':
         return DMS_TEMPLATE_BASE_URL
 
-    info('  DMS: China detected, resolving GitHub proxy for templates...')
+    _info('China detected, resolving GitHub proxy for templates...')
 
     # Try ghproxy.link
     proxy = _resolve_ghproxy()
     if proxy:
-        info(f'  Found proxy: {proxy}')
+        _info(f'Found proxy: {proxy}')
         return f'{proxy}/{DMS_TEMPLATE_BASE_URL}'
 
     # Try fallback
-    info(f'  Trying fallback proxy: {GHPROXY_FALLBACK}')
+    _info(f'Trying fallback proxy: {GHPROXY_FALLBACK}')
     try:
         test_url = f'{GHPROXY_FALLBACK}/{DMS_TEMPLATE_BASE_URL}/niri.kdl'
         req = urllib.request.Request(test_url, method='HEAD')
@@ -80,7 +92,7 @@ def _resolve_download_base_url(country: str | None) -> str:
         pass
 
     # Fall through to direct URL (may be slow but might work)
-    info('  No proxy available, using direct GitHub URL')
+    _info('No proxy available, using direct GitHub URL')
     return DMS_TEMPLATE_BASE_URL
 
 
@@ -106,7 +118,7 @@ def build_dms_aur_packages(
     aur_packages.extend(DMS_AUR_PACKAGES.get('greeter', []))
 
     for pkg in aur_packages:
-        info(t('dms.building_aur') % pkg)
+        _info(t('dms.building_aur') % pkg)
 
         safe_pkg = shlex.quote(pkg)
         build_script = (
@@ -124,7 +136,7 @@ def build_dms_aur_packages(
         )
 
         if result.returncode != 0:
-            info(t('dms.aur_failed') % (pkg, result.returncode))
+            _info(t('dms.aur_failed') % (pkg, result.returncode))
             raise RuntimeError(
                 f'AUR package {pkg} failed to build (exit {result.returncode}). '
                 f'DMS installation cannot continue without this package.'
@@ -164,7 +176,7 @@ def deploy_dms_configs(
         terminal: 'ghostty', 'kitty', or 'alacritty'.
         country: User's country code (for CN proxy).
     """
-    info(t('dms.downloading_templates'))
+    _info(t('dms.downloading_templates'))
 
     base_url = _resolve_download_base_url(country)
     user_home = chroot_dir / 'home' / username
@@ -179,7 +191,7 @@ def deploy_dms_configs(
         content = _download_template(url)
 
         if content is None:
-            info(t('dms.download_failed') % remote_name)
+            _info(t('dms.download_failed') % remote_name)
             continue
 
         # Replace template placeholder
@@ -189,16 +201,16 @@ def deploy_dms_configs(
         target = user_home / local_rel_path
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content)
-        debug(f'  Deployed: {local_rel_path}')
+        _debug(f'Deployed: {local_rel_path}')
 
     # Create placeholder files for user customization
-    info(t('dms.deploying_config') % compositor)
+    _info(t('dms.deploying_config') % compositor)
     for rel_path in DMS_PLACEHOLDER_FILES.get(compositor, []):
         target = user_home / rel_path
         target.parent.mkdir(parents=True, exist_ok=True)
         if not target.exists():
             target.write_text('')
-            debug(f'  Created placeholder: {rel_path}')
+            _debug(f'Created placeholder: {rel_path}')
 
 
 # ---------------------------------------------------------------------------
@@ -220,7 +232,7 @@ def setup_dms_systemd(
         username: Target user.
         compositor: 'niri' or 'hyprland'.
     """
-    info(t('dms.setup_systemd'))
+    _info(t('dms.setup_systemd'))
 
     target = DMS_SYSTEMD_TARGETS.get(compositor)
     if not target:
@@ -236,7 +248,7 @@ def setup_dms_systemd(
         # Absolute target path is correct: systemd reads this symlink at runtime
         # inside the installed system, where /usr/lib/systemd/user/ is the real path.
         symlink.symlink_to(service_path)
-        debug(f'  Symlink: {symlink} -> {service_path}')
+        _debug(f'Symlink: {symlink} -> {service_path}')
 
 
 # ---------------------------------------------------------------------------
@@ -257,7 +269,7 @@ def setup_greetd(
         username: Target user.
         compositor: 'niri' or 'hyprland'.
     """
-    info(t('dms.setup_greetd'))
+    _info(t('dms.setup_greetd'))
 
     # Write greetd config
     greetd_dir = chroot_dir / 'etc' / 'greetd'
@@ -268,7 +280,7 @@ def setup_greetd(
         .replace('{compositor}', compositor)
         .replace('{username}', username)
     )
-    debug(f'  Written greetd config: {config_file}')
+    _debug(f'Written greetd config: {config_file}')
 
     # Enable greetd.service
     subprocess.run(
@@ -276,7 +288,7 @@ def setup_greetd(
          'systemctl', 'enable', 'greetd.service'],
         check=True,
     )
-    debug('  Enabled greetd.service')
+    _debug('Enabled greetd.service')
 
 
 # ---------------------------------------------------------------------------
@@ -357,4 +369,4 @@ def install_dms(
     # 5. Fix ownership of all deployed config files
     _fix_ownership(chroot_dir, username)
 
-    info(t('dms.complete'))
+    _info(t('dms.complete'))

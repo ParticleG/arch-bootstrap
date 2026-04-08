@@ -526,42 +526,63 @@ async def step_confirm(
     config: ArchConfig,
 ) -> str:
     """Confirmation panel: Install / Advanced Modify / Cancel."""
-    # Build summary text
+    # Build summary text with dynamic left-aligned padding
     kmscon_needed = needs_kmscon(state.locale)
-    lines = [
-        f'{t("confirm.lang")}:     {state.locale}',
-        f'{t("confirm.region")}:   {COUNTRY_NAMES.get(state.country, "Unknown") if state.country else t("status.not_set")}',
-        f'{t("confirm.timezone")}:   {config.timezone}',
-        f'{t("confirm.disk")}:     {state.disk_device.device_info.path if state.disk_device else t("status.not_set")}'
-        f'  ({state.disk_device.device_info.total_size.format_highest() if state.disk_device else ""})',
-        f'{t("confirm.net")}:      {state.network_type.display_msg()}',
-        f'Multilib:     {"Enabled" if state.multilib else "Disabled"}',
-        f'{t("confirm.gpu")}:  {", ".join(GPU_LABELS.get(v, v) for v in state.gpu_vendors) or "None"}',
-        f'{t("confirm.user")}:   {state.username}',
-        f'{t("confirm.root")}:   {t("status.set") if state.root_password else t("status.not_set")}',
-        f'kmscon:       {"Added (CJK console)" if kmscon_needed else t("status.not_needed")}',
-        *(
-            [f'  Font:       {state.kmscon_font_name} ({state.kmscon_font_package})']
-            if kmscon_needed and state.kmscon_font_name else []
+
+    def _row(label: str, value: str, indent: int = 0) -> tuple[int, str, str]:
+        """Return (indent, label, value) for later formatting."""
+        return (indent, label, value)
+
+    # Collect rows as (indent, label, value)
+    rows: list[tuple[int, str, str]] = [
+        _row(t('confirm.lang'), state.locale),
+        _row(t('confirm.region'), COUNTRY_NAMES.get(state.country, 'Unknown') if state.country else t('status.not_set')),
+        _row(t('confirm.timezone'), config.timezone),
+        _row(
+            t('confirm.disk'),
+            (f'{state.disk_device.device_info.path}  '
+             f'({state.disk_device.device_info.total_size.format_highest()})')
+            if state.disk_device else t('status.not_set'),
         ),
-        '',
-        '── Fixed defaults ──',
-        f'{t("fixed.boot")}:    EFISTUB (UKI)',
-        f'{t("fixed.fs")}:      Btrfs + zstd + Snapper',
-        f'{t("fixed.audio")}:   PipeWire',
-        f'{t("fixed.bt")}:      {t("status.enabled")}',
-        'Power:        tuned',
-        'Swap:         zram (lzo-rle)',
-        *(
-            [
-                f'{t("confirm.desktop")}:  DMS (DankMaterialShell)',
-                f'  {t("confirm.compositor")}:  {state.dms_compositor}',
-                f'  {t("confirm.terminal")}:   {state.dms_terminal}',
-            ]
-            if state.desktop_env == 'dms'
-            else [f'{t("confirm.desktop")}:  Minimal']
-        ),
+        _row(t('confirm.net'), state.network_type.display_msg()),
+        _row('Multilib', 'Enabled' if state.multilib else 'Disabled'),
+        _row(t('confirm.gpu'), ', '.join(GPU_LABELS.get(v, v) for v in state.gpu_vendors) or 'None'),
+        _row(t('confirm.user'), state.username),
+        _row(t('confirm.root'), t('status.set') if state.root_password else t('status.not_set')),
+        _row('kmscon', 'Added (CJK console)' if kmscon_needed else t('status.not_needed')),
     ]
+    if kmscon_needed and state.kmscon_font_name:
+        rows.append(_row('Font', f'{state.kmscon_font_name} ({state.kmscon_font_package})', indent=2))
+
+    fixed_rows: list[tuple[int, str, str]] = [
+        _row(t('fixed.boot'), 'EFISTUB (UKI)'),
+        _row(t('fixed.fs'), 'Btrfs + zstd + Snapper'),
+        _row(t('fixed.audio'), 'PipeWire'),
+        _row(t('fixed.bt'), t('status.enabled')),
+        _row('Power', 'tuned'),
+        _row('Swap', 'zram (lzo-rle)'),
+    ]
+    if state.desktop_env == 'dms':
+        fixed_rows.append(_row(t('confirm.desktop'), 'DMS (DankMaterialShell)'))
+        fixed_rows.append(_row(t('confirm.compositor'), state.dms_compositor, indent=2))
+        fixed_rows.append(_row(t('confirm.terminal'), state.dms_terminal, indent=2))
+    else:
+        fixed_rows.append(_row(t('confirm.desktop'), 'Minimal'))
+
+    # Compute max label width (excluding indent) for uniform padding
+    all_rows = rows + fixed_rows
+    max_label_len = max((len(label) for _, label, _ in all_rows), default=12)
+
+    def _fmt(indent: int, label: str, value: str) -> str:
+        pad = ' ' * indent
+        # Pad label+colon to fill (max_label_len + 1 - indent) so colons align
+        field_width = max_label_len + 1 - indent
+        return f'{pad}{label + ":":<{field_width}}  {value}'
+
+    lines = [_fmt(*r) for r in rows]
+    lines.append('')
+    lines.append('── Fixed defaults ──')
+    lines.extend(_fmt(*r) for r in fixed_rows)
     summary = '\n'.join(lines)
 
     items = [

@@ -279,16 +279,16 @@ def setup_dms_systemd(
 
 def setup_greetd(
     chroot_dir: Path,
-    username: str,
     compositor: str,
 ) -> None:
-    """Configure greetd to start the DMS compositor on boot.
+    """Configure greetd to launch the DMS greeter on boot.
 
-    Writes /etc/greetd/config.toml and enables greetd.service.
+    Writes /etc/greetd/config.toml with dms-greeter as the default session
+    (running as the "greeter" user created by the greetd package), and
+    enables greetd.service.
 
     Args:
         chroot_dir: Path to the mounted chroot.
-        username: Target user.
         compositor: 'niri' or 'hyprland'.
     """
     _info(t('dms.setup_greetd'))
@@ -298,9 +298,7 @@ def setup_greetd(
     greetd_dir.mkdir(parents=True, exist_ok=True)
     config_file = greetd_dir / 'config.toml'
     config_file.write_text(
-        DMS_GREETD_CONFIG
-        .replace('{compositor}', compositor)
-        .replace('{username}', username)
+        DMS_GREETD_CONFIG.replace('{compositor}', compositor)
     )
     _debug(f'Written greetd config: {config_file}')
 
@@ -386,7 +384,7 @@ def install_dms(
     setup_dms_systemd(chroot_dir, username, compositor)
 
     # 4. Configure greetd
-    setup_greetd(chroot_dir, username, compositor)
+    setup_greetd(chroot_dir, compositor)
 
     # 5. Fix ownership of all deployed config files
     _fix_ownership(chroot_dir, username)

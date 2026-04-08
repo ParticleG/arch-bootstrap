@@ -257,32 +257,41 @@ GHPROXY_FALLBACK = 'https://ghfast.top'
 DMS_TEMPLATES: dict[str, list[tuple[str, str]]] = {
     'niri': [
         ('niri.kdl', '.config/niri/config.kdl'),
+        ('niri-colors.kdl', '.config/niri/dms/colors.kdl'),
+        ('niri-layout.kdl', '.config/niri/dms/layout.kdl'),
+        ('niri-alttab.kdl', '.config/niri/dms/alttab.kdl'),
+        ('niri-binds.kdl', '.config/niri/dms/binds.kdl'),
     ],
     'hyprland': [
         ('hyprland.conf', '.config/hypr/hyprland.conf'),
+        ('hypr-colors.conf', '.config/hypr/dms/colors.conf'),
+        ('hypr-layout.conf', '.config/hypr/dms/layout.conf'),
+        ('hypr-binds.conf', '.config/hypr/dms/binds.conf'),
     ],
     'ghostty': [
         ('ghostty.conf', '.config/ghostty/config'),
+        ('ghostty-colors.conf', '.config/ghostty/themes/dankcolors'),
     ],
     'kitty': [
         ('kitty.conf', '.config/kitty/kitty.conf'),
+        ('kitty-tabs.conf', '.config/kitty/dank-tabs.conf'),
+        ('kitty-theme.conf', '.config/kitty/dank-theme.conf'),
     ],
     'alacritty': [
         ('alacritty.toml', '.config/alacritty/alacritty.toml'),
+        ('alacritty-theme.toml', '.config/alacritty/dank-theme.toml'),
     ],
 }
 
 # Placeholder config files to create (empty, for user customization)
 DMS_PLACEHOLDER_FILES: dict[str, list[str]] = {
     'niri': [
-        '.config/niri/outputs.kdl',
-        '.config/niri/cursor.kdl',
-        '.config/niri/windowrules.kdl',
+        '.config/niri/dms/outputs.kdl',
+        '.config/niri/dms/cursor.kdl',
     ],
     'hyprland': [
-        '.config/hypr/outputs.conf',
-        '.config/hypr/cursor.conf',
-        '.config/hypr/windowrules.conf',
+        '.config/hypr/dms/outputs.conf',
+        '.config/hypr/dms/cursor.conf',
     ],
 }
 
@@ -300,11 +309,13 @@ DMS_SYSTEMD_TARGETS: dict[str, tuple[str, str]] = {
 }
 
 # greetd config — written to /etc/greetd/config.toml
+# The greeter runs as the "greeter" user (created by the greetd package)
+# and launches dms-greeter which handles authentication and session start.
 DMS_GREETD_CONFIG = """\
 [terminal]
 vt = 1
 
 [default_session]
-command = "{compositor} --session"
-user = "{username}"
+user = "greeter"
+command = "/usr/bin/dms-greeter --command {compositor}"
 """

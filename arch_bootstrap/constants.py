@@ -207,3 +207,100 @@ FONTCONFIG_CJK_ALIASES: dict[str, list[str]] = {
         'Meiryo',
     ],
 }
+
+# ---------------------------------------------------------------------------
+# DMS (DankMaterialShell) desktop environment
+# ---------------------------------------------------------------------------
+
+# Version marker — CI automation compares this against dankinstall releases
+DMS_SYNCED_VERSION = 'v1.4.4'
+
+# Pacman packages grouped by component
+DMS_SYSTEM_PACKAGES: dict[str, list[str]] = {
+    'common': [
+        'dms-shell',
+        'git',
+        'xdg-desktop-portal-gtk',
+        'accountsservice',
+        'matugen',
+        'dgop',
+    ],
+    'niri': ['niri', 'xwayland-satellite'],
+    'hyprland': ['hyprland', 'jq'],
+    'ghostty': ['ghostty'],
+    'kitty': ['kitty'],
+    'alacritty': ['alacritty'],
+}
+
+# AUR packages (built via makepkg in chroot)
+DMS_AUR_PACKAGES: dict[str, list[str]] = {
+    'common': ['quickshell-git'],
+    'greeter': ['greetd-dms-greeter-git'],
+}
+
+# GitHub raw base URL for configuration templates
+DMS_TEMPLATE_BASE_URL = (
+    'https://raw.githubusercontent.com/AvengeMedia/DankMaterialShell'
+    '/master/core/internal/config/embedded'
+)
+
+# GitHub proxy constants (reused from install.py pattern)
+GHPROXY_CHUNK_URL = 'https://ghproxy.link/js/src_views_home_HomeView_vue.js'
+GHPROXY_FALLBACK = 'https://ghfast.top'
+
+# Template files to download, keyed by compositor/terminal
+# Values are (relative_path_in_embedded, deploy_target_relative_to_home)
+DMS_TEMPLATES: dict[str, list[tuple[str, str]]] = {
+    'niri': [
+        ('niri.kdl', '.config/niri/config.kdl'),
+    ],
+    'hyprland': [
+        ('hyprland.conf', '.config/hypr/hyprland.conf'),
+    ],
+    'ghostty': [
+        ('ghostty.conf', '.config/ghostty/config'),
+    ],
+    'kitty': [
+        ('kitty.conf', '.config/kitty/kitty.conf'),
+    ],
+    'alacritty': [
+        ('alacritty.toml', '.config/alacritty/alacritty.toml'),
+    ],
+}
+
+# Placeholder config files to create (empty, for user customization)
+DMS_PLACEHOLDER_FILES: dict[str, list[str]] = {
+    'niri': [
+        '.config/niri/outputs.kdl',
+        '.config/niri/cursor.kdl',
+        '.config/niri/windowrules.kdl',
+    ],
+    'hyprland': [
+        '.config/hypr/outputs.conf',
+        '.config/hypr/cursor.conf',
+        '.config/hypr/windowrules.conf',
+    ],
+}
+
+# systemd user service symlink targets
+DMS_SYSTEMD_TARGETS: dict[str, tuple[str, str]] = {
+    # compositor: (wants_dir_relative, service_unit_path)
+    'niri': (
+        '.config/systemd/user/niri.service.wants',
+        '/usr/lib/systemd/user/dms.service',
+    ),
+    'hyprland': (
+        '.config/systemd/user/hyprland-session.target.wants',
+        '/usr/lib/systemd/user/dms.service',
+    ),
+}
+
+# greetd config — written to /etc/greetd/config.toml
+DMS_GREETD_CONFIG = """\
+[terminal]
+vt = 1
+
+[default_session]
+command = "{compositor} --session"
+user = "{username}"
+"""

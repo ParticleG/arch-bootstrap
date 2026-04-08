@@ -8,6 +8,7 @@ All operations target the chroot environment during installation.
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
 import urllib.request
 import urllib.error
@@ -19,7 +20,6 @@ from .constants import (
     DMS_AUR_PACKAGES,
     DMS_GREETD_CONFIG,
     DMS_PLACEHOLDER_FILES,
-    DMS_SYSTEM_PACKAGES,
     DMS_SYSTEMD_TARGETS,
     DMS_TEMPLATE_BASE_URL,
     DMS_TEMPLATES,
@@ -85,41 +85,8 @@ def _resolve_download_base_url(country: str | None) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Package installation
+# AUR package building
 # ---------------------------------------------------------------------------
-
-def install_dms_pacman_packages(
-    chroot_dir: Path,
-    compositor: str,
-    terminal: str,
-) -> None:
-    """Install DMS system packages via pacman in the chroot.
-
-    Args:
-        chroot_dir: Path to the mounted chroot (e.g. /mnt).
-        compositor: 'niri' or 'hyprland'.
-        terminal: 'ghostty', 'kitty', or 'alacritty'.
-    """
-    info(t('dms.installing_pacman'))
-
-    packages = list(DMS_SYSTEM_PACKAGES['common'])
-    packages.extend(DMS_SYSTEM_PACKAGES.get(compositor, []))
-    packages.extend(DMS_SYSTEM_PACKAGES.get(terminal, []))
-
-    # Deduplicate while preserving order
-    seen: set[str] = set()
-    unique: list[str] = []
-    for pkg in packages:
-        if pkg not in seen:
-            seen.add(pkg)
-            unique.append(pkg)
-
-    debug(f'  DMS pacman packages: {unique}')
-    subprocess.run(
-        ['arch-chroot', str(chroot_dir), 'pacman', '-S', '--noconfirm', '--needed']
-        + unique,
-        check=True,
-    )
 
 
 def build_dms_aur_packages(
@@ -141,12 +108,13 @@ def build_dms_aur_packages(
     for pkg in aur_packages:
         info(t('dms.building_aur') % pkg)
 
+        safe_pkg = shlex.quote(pkg)
         build_script = (
             f'set -e; '
             f'cd /tmp; '
-            f'rm -rf {pkg}; '
-            f'git clone https://aur.archlinux.org/{pkg}.git; '
-            f'cd {pkg}; '
+            f'rm -rf {safe_pkg}; '
+            f'git clone https://aur.archlinux.org/{safe_pkg}.git; '
+            f'cd {safe_pkg}; '
             f'makepkg -si --noconfirm --needed'
         )
 
@@ -157,6 +125,10 @@ def build_dms_aur_packages(
 
         if result.returncode != 0:
             info(t('dms.aur_failed') % (pkg, result.returncode))
+            raise RuntimeError(
+                f'AUR package {pkg} failed to build (exit {result.returncode}). '
+                f'DMS installation cannot continue without this package.'
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -261,6 +233,8 @@ def setup_dms_systemd(
 
     symlink = wants_dir / 'dms.service'
     if not symlink.exists():
+        # Absolute target path is correct: systemd reads this symlink at runtime
+        # inside the installed system, where /usr/lib/systemd/user/ is the real path.
         symlink.symlink_to(service_path)
         debug(f'  Symlink: {symlink} -> {service_path}')
 
@@ -290,7 +264,9 @@ def setup_greetd(
     greetd_dir.mkdir(parents=True, exist_ok=True)
     config_file = greetd_dir / 'config.toml'
     config_file.write_text(
-        DMS_GREETD_CONFIG.format(compositor=compositor, username=username)
+        DMS_GREETD_CONFIG
+        .replace('{compositor}', compositor)
+        .replace('{username}', username)
     )
     debug(f'  Written greetd config: {config_file}')
 
@@ -352,7 +328,10 @@ def install_dms(
     terminal: str,
     country: str | None = None,
 ) -> None:
-    """Full DMS installation: packages + config + systemd + greetd.
+    """Full DMS installation: AUR packages + config + systemd + greetd.
+
+    System packages (pacman) are already installed via config.packages in
+    apply_wizard_state_to_config(). This function handles everything else.
 
     This is the single entry point called from installation.py.
 
@@ -363,22 +342,19 @@ def install_dms(
         terminal: 'ghostty', 'kitty', or 'alacritty'.
         country: User's country code (for CN proxy resolution).
     """
-    # 1. Install pacman packages
-    install_dms_pacman_packages(chroot_dir, compositor, terminal)
-
-    # 2. Build and install AUR packages
+    # 1. Build and install AUR packages
     build_dms_aur_packages(chroot_dir, username)
 
-    # 3. Deploy configuration templates
+    # 2. Deploy configuration templates
     deploy_dms_configs(chroot_dir, username, compositor, terminal, country)
 
-    # 4. Set up systemd user service
+    # 3. Set up systemd user service
     setup_dms_systemd(chroot_dir, username, compositor)
 
-    # 5. Configure greetd
+    # 4. Configure greetd
     setup_greetd(chroot_dir, username, compositor)
 
-    # 6. Fix ownership of all deployed config files
+    # 5. Fix ownership of all deployed config files
     _fix_ownership(chroot_dir, username)
 
     info(t('dms.complete'))

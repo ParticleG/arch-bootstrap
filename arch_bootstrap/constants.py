@@ -220,6 +220,7 @@ DMS_SYSTEM_PACKAGES: dict[str, list[str]] = {
     'common': [
         'dms-shell',
         'git',
+        'greetd',
         'xdg-desktop-portal-gtk',
         'accountsservice',
         'matugen',

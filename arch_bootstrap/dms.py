@@ -104,24 +104,55 @@ def _resolve_download_base_url(country: str | None) -> str:
 def build_dms_aur_packages(
     chroot_dir: Path,
     username: str,
+    country: str | None = None,
 ) -> None:
     """Build and install DMS AUR packages via makepkg in the chroot.
 
     Uses `runuser -l <username>` to run makepkg as non-root, following the
     same pattern as oh-my-zsh installation in installation.py.
 
+    Locale is forced to C.UTF-8 to prevent CJK character rendering issues
+    (block glyphs) in makepkg output and sudo prompts when a CJK locale
+    is selected.
+
+    For CN users, a GitHub proxy is configured via git's url.insteadOf so
+    that PKGBUILD git sources (e.g. quickshell-git) can clone through a
+    mirror instead of hitting GitHub directly.
+
     Args:
         chroot_dir: Path to the mounted chroot.
         username: Non-root user to run makepkg as.
+        country: User's country code (for CN git proxy).
     """
     aur_packages = list(DMS_AUR_PACKAGES['common'])
     aur_packages.extend(DMS_AUR_PACKAGES.get('greeter', []))
+
+    # Resolve GitHub proxy for CN users (once, before the build loop)
+    git_proxy_cmd = ''
+    if country == 'CN':
+        proxy = _resolve_ghproxy()
+        if proxy:
+            _info(f'Using GitHub proxy for AUR git sources: {proxy}')
+            git_proxy_cmd = (
+                f'git config --global '
+                f'url."{proxy}/https://github.com/".insteadOf '
+                f'"https://github.com/"; '
+            )
+        else:
+            _info(f'Using fallback GitHub proxy: {GHPROXY_FALLBACK}')
+            git_proxy_cmd = (
+                f'git config --global '
+                f'url."{GHPROXY_FALLBACK}/https://github.com/".insteadOf '
+                f'"https://github.com/"; '
+            )
 
     for pkg in aur_packages:
         _info(t('dms.building_aur') % pkg)
 
         safe_pkg = shlex.quote(pkg)
         build_script = (
+            f'export LANG=C.UTF-8; '
+            f'{git_proxy_cmd}'
             f'set -e; '
             f'cd /tmp; '
             f'rm -rf {safe_pkg}; '
@@ -355,7 +386,7 @@ def install_dms(
         country: User's country code (for CN proxy resolution).
     """
     # 1. Build and install AUR packages
-    build_dms_aur_packages(chroot_dir, username)
+    build_dms_aur_packages(chroot_dir, username, country=country)
 
     # 2. Deploy configuration templates
     deploy_dms_configs(chroot_dir, username, compositor, terminal, country)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import time
 from pathlib import Path
 
@@ -22,6 +23,7 @@ from archinstall.lib.profile.profiles_handler import profile_handler
 from archinstall.tui.ui.components import tui
 
 from .config import generate_fontconfig, generate_kmscon_config
+from .constants import OMZ_INSTALL_URL, OMZ_REMOTE_CN
 from .detection import calculate_kmscon_font_size, needs_kmscon
 
 
@@ -55,6 +57,7 @@ def perform_installation(
     screen_resolution: tuple[int, int] | None = None,
     gpu_vendors: list[str] | None = None,
     username: str = '',
+    country: str | None = None,
 ) -> None:
     """Execute the installation using archinstall's Installer."""
     start_time = time.monotonic()
@@ -209,6 +212,32 @@ def perform_installation(
             pass  # best-effort ownership fix
 
         info(f'  Written fontconfig for user {username}')
+
+    # Post-install: set default shell to zsh and install oh-my-zsh
+    if username:
+        subprocess.run(
+            ['arch-chroot', str(chroot_dir), 'chsh', '-s', '/bin/zsh', username],
+            check=False,
+        )
+
+        if country == 'CN':
+            omz_cmd = (
+                f'REMOTE={OMZ_REMOTE_CN} '
+                f'sh -c "$(curl -fsSL {OMZ_INSTALL_URL})" "" --unattended'
+            )
+        else:
+            omz_cmd = f'sh -c "$(curl -fsSL {OMZ_INSTALL_URL})" "" --unattended'
+
+        result = subprocess.run(
+            ['arch-chroot', str(chroot_dir),
+             'runuser', '-l', username, '-c', omz_cmd],
+            check=False,
+            timeout=120,
+        )
+        if result.returncode == 0:
+            info(f'  Installed oh-my-zsh for user {username}')
+        else:
+            info(f'  oh-my-zsh installation failed (exit {result.returncode}), skipping')
 
     elapsed_time = time.monotonic() - start_time
     info(f'Installation completed in {elapsed_time:.0f} seconds.')

@@ -125,6 +125,7 @@ def main() -> None:
         screen_resolution=state.screen_resolution,
         gpu_vendors=state.gpu_vendors,
         username=state.username,
+        country=state.country,
     )
 
 

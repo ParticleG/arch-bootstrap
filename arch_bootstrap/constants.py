@@ -86,6 +86,10 @@ REGION_MENU_COUNTRIES: list[str] = [
 
 ARCHLINUXCN_URL = 'https://repo.archlinuxcn.org/$arch'
 
+# oh-my-zsh
+OMZ_INSTALL_URL = 'https://install.ohmyz.sh'
+OMZ_REMOTE_CN = 'https://mirrors.tuna.tsinghua.edu.cn/git/ohmyzsh.git'
+
 # Fallback mirror pools (used when MirrorListHandler has no data for a region)
 FALLBACK_MIRRORS: dict[str, list[str]] = {
     'CN': [

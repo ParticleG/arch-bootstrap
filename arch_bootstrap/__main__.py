@@ -8,7 +8,7 @@ import sys
 from archinstall.lib.disk.filesystem import FilesystemHandler
 from archinstall.lib.menu.util import delayed_warning
 from archinstall.lib.mirror.mirror_handler import MirrorListHandler
-from archinstall.lib.output import info
+from archinstall.lib.output import Font, info
 from archinstall.tui.ui.components import tui
 
 from .config import build_default_config
@@ -23,6 +23,13 @@ from .detection import (
 )
 from .installation import perform_installation, run_global_menu
 from .wizard import WizardState, run_wizard
+
+_PREFIX = '[arch-bootstrap]'
+
+
+def _info(msg: str) -> None:
+    """Log an info message with a colored [arch-bootstrap] prefix."""
+    info(f'{_PREFIX} {msg}', fg='cyan', font=[Font.bold])
 
 
 def main() -> None:
@@ -41,8 +48,8 @@ def main() -> None:
         os.close(tty_fd)
         sys.stdin = open(0, closefd=False)
 
-    info('arch-bootstrap: Opinionated Arch Linux installer')
-    info('Detecting environment...')
+    _info('Opinionated Arch Linux installer')
+    _info('Detecting environment...')
 
     # Phase 1: Auto-detection (silent)
     detected_country = detect_country()
@@ -51,19 +58,19 @@ def main() -> None:
     initial_lang = {'CN': 'zh', 'JP': 'ja'}.get(detected_country or '', 'en')
     set_lang(initial_lang)
     if detected_country:
-        info(f'  Detected country: {detected_country} ({COUNTRY_NAMES.get(detected_country, "Unknown")})')
+        _info(f'Detected country: {detected_country} ({COUNTRY_NAMES.get(detected_country, "Unknown")})')
 
     detected_gpu = detect_gpu()
     if detected_gpu:
-        info(f'  Detected GPU: {", ".join(GPU_LABELS.get(v, v) for v in detected_gpu)}')
+        _info(f'Detected GPU: {", ".join(GPU_LABELS.get(v, v) for v in detected_gpu)}')
 
     preferred_disk = detect_preferred_disk()
     if preferred_disk:
-        info(f'  Preferred disk: {preferred_disk}')
+        _info(f'Preferred disk: {preferred_disk}')
 
     screen_resolution = detect_screen_resolution()
     if screen_resolution:
-        info(f'  Screen resolution: {screen_resolution[0]}x{screen_resolution[1]}')
+        _info(f'Screen resolution: {screen_resolution[0]}x{screen_resolution[1]}')
 
     # Initialize mirror list handler
     mirror_list_handler = MirrorListHandler(offline=False, verbose=False)
@@ -88,7 +95,7 @@ def main() -> None:
         action = tui.run(lambda: run_wizard(state, config, mirror_list_handler))
 
         if action == 'abort':
-            info('Installation aborted.')
+            _info('Installation aborted.')
             sys.exit(0)
 
         if action == 'advanced':
@@ -105,7 +112,7 @@ def main() -> None:
 
     # Phase 3: Disk formatting warning
     if config.disk_config:
-        info('Preparing disk operations...')
+        _info('Preparing disk operations...')
 
         # Release disk locks (swap, LVM, LUKS) to avoid 'Device busy'
         cleanup_disk_locks()

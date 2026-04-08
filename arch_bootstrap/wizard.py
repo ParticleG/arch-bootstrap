@@ -36,18 +36,24 @@ from .mirrors import apply_mirrors_to_live_iso
 # =============================================================================
 
 class _LeftAlignedScreen[ValueT](OptionListScreen[ValueT]):
-    """OptionListScreen with left-aligned header text.
+    """OptionListScreen with left-aligned header text centered as a block.
 
-    archinstall's default CSS sets `text-align: center` on `.header-text`,
-    which makes the confirmation panel unreadable when labels have different
-    lengths.  This subclass overrides that to left-align.
+    archinstall's default CSS sets `text-align: center` and `width: 100%`
+    on `.header-text`, which makes the confirmation panel unreadable when
+    labels have different lengths.  This subclass overrides those styles so
+    the text block is internally left-aligned but centered on screen.
     """
 
     def on_mount(self) -> None:
+        super().on_mount()
         try:
             from textual.widgets import Label
             header = self.query_one('#header_text', Label)
             header.styles.text_align = 'left'
+            header.styles.width = 'auto'
+            # Center the shrunk label inside its parent (content-container)
+            if header.parent is not None:
+                header.parent.styles.align_horizontal = 'center'
         except Exception:
             pass
 

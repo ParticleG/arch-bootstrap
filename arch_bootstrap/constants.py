@@ -234,8 +234,11 @@ DMS_SYSTEM_PACKAGES: dict[str, list[str]] = {
 }
 
 # AUR packages (built via makepkg in chroot)
+# Note: quickshell-git is NOT listed here — it is automatically pulled in
+# as a dependency of dms-shell (which depends on the virtual package
+# "quickshell", currently provided only by quickshell-git).
 DMS_AUR_PACKAGES: dict[str, list[str]] = {
-    'common': ['quickshell-git'],
+    'common': [],
     'greeter': ['greetd-dms-greeter-git'],
 }
 

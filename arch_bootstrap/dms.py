@@ -12,7 +12,6 @@ import re
 import shlex
 import subprocess
 import urllib.request
-import urllib.error
 from pathlib import Path
 
 from archinstall.lib.output import Font, info, debug
@@ -108,9 +107,12 @@ def build_dms_aur_packages(
     (block glyphs) in makepkg output and sudo prompts when a CJK locale
     is selected.
 
-    For CN users, a GitHub proxy is configured via git's url.insteadOf so
-    that PKGBUILD git sources (e.g. quickshell-git) can clone through a
-    mirror instead of hitting GitHub directly.
+    For CN users, a GitHub proxy is configured via ``/etc/makepkg.d/gitconfig``
+    (the system-level git config that makepkg reads) so that PKGBUILD git
+    sources are cloned through a mirror instead of hitting GitHub directly.
+    Note: ``git config --global`` does NOT work because makepkg forces
+    ``GIT_CONFIG_GLOBAL=/dev/null``; the system config path is the only
+    way to inject ``url.insteadOf`` into makepkg's git operations.
 
     Args:
         chroot_dir: Path to the mounted chroot.
@@ -120,24 +122,21 @@ def build_dms_aur_packages(
     aur_packages = list(DMS_AUR_PACKAGES['common'])
     aur_packages.extend(DMS_AUR_PACKAGES.get('greeter', []))
 
-    # Resolve GitHub proxy for CN users (once, before the build loop)
-    git_proxy_cmd = ''
+    # Write makepkg git system config for CN users so that makepkg's own
+    # git clone operations go through the proxy.
     if country == 'CN':
         proxy = _resolve_ghproxy()
-        if proxy:
-            _info(f'Using GitHub proxy for AUR git sources: {proxy}')
-            git_proxy_cmd = (
-                f'git config --global '
-                f'url."{proxy}/https://github.com/".insteadOf '
-                f'"https://github.com/"; '
-            )
-        else:
-            _info(f'Using fallback GitHub proxy: {GHPROXY_FALLBACK}')
-            git_proxy_cmd = (
-                f'git config --global '
-                f'url."{GHPROXY_FALLBACK}/https://github.com/".insteadOf '
-                f'"https://github.com/"; '
-            )
+        if not proxy:
+            proxy = GHPROXY_FALLBACK
+        _info(f'Using GitHub proxy for AUR git sources: {proxy}')
+
+        gitconfig_dir = chroot_dir / 'etc' / 'makepkg.d'
+        gitconfig_dir.mkdir(parents=True, exist_ok=True)
+        gitconfig_file = gitconfig_dir / 'gitconfig'
+        gitconfig_file.write_text(
+            f'[url "{proxy}/https://github.com/"]\n'
+            f'\tinsteadOf = https://github.com/\n'
+        )
 
     for pkg in aur_packages:
         _info(t('dms.building_aur') % pkg)
@@ -145,7 +144,6 @@ def build_dms_aur_packages(
         safe_pkg = shlex.quote(pkg)
         build_script = (
             f'export LANG=C.UTF-8; '
-            f'{git_proxy_cmd}'
             f'set -e; '
             f'cd /tmp; '
             f'rm -rf {safe_pkg}; '

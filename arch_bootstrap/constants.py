@@ -84,7 +84,7 @@ REGION_MENU_COUNTRIES: list[str] = [
     'CN', 'US', 'JP', 'DE', 'GB', 'FR', 'KR', 'AU', 'CA', 'SG', 'TW', 'HK',
 ]
 
-ARCHLINUXCN_URL = 'https://repo.archlinuxcn.org/$arch'
+ARCHLINUXCN_URL = 'https://mirrors.tuna.tsinghua.edu.cn/archlinuxcn/$arch'
 
 # oh-my-zsh
 OMZ_INSTALL_URL = 'https://install.ohmyz.sh'

@@ -231,11 +231,11 @@ def _setup_archlinuxcn(chroot_dir: Path) -> None:
 
     pacman_conf = chroot_dir / 'etc' / 'pacman.conf'
 
-    # Step 1: add [archlinuxcn] with relaxed SigLevel for keyring bootstrap
+    # Step 1: add [archlinuxcn] with SigLevel = Never for keyring bootstrap
     with open(pacman_conf, 'a') as f:
         f.write(
             f'\n[archlinuxcn]\n'
-            f'SigLevel = Optional TrustAll\n'
+            f'SigLevel = Never\n'
             f'Server = {ARCHLINUXCN_URL}\n\n'
         )
 
@@ -254,7 +254,7 @@ def _setup_archlinuxcn(chroot_dir: Path) -> None:
     # (Required DatabaseOptional) will verify signatures for future installs
     # now that archlinuxcn-keyring has populated the trust chain.
     content = pacman_conf.read_text()
-    content = content.replace('SigLevel = Optional TrustAll\n', '')
+    content = content.replace('SigLevel = Never\n', '')
     pacman_conf.write_text(content)
 
 

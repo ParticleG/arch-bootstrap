@@ -323,7 +323,17 @@ def perform_installation(
         installation.sanity_check(offline=False, skip_ntp=False, skip_wkd=False)
 
         if mirror_config := config.mirror_config:
+            # Temporarily remove custom repositories (e.g. archlinuxcn) for
+            # the host-side mirror setup.  archinstall's set_mirrors() uses
+            # append mode ('a') to write custom repo sections into
+            # pacman.conf, and minimal_installation() copies the host
+            # pacman.conf to the target.  If we write repos here, the second
+            # set_mirrors(on_target=True) call below will duplicate them,
+            # causing pacman's "database already registered" error.
+            saved_repos = mirror_config.custom_repositories
+            mirror_config.custom_repositories = []
             installation.set_mirrors(mirror_list_handler, mirror_config, on_target=False)
+            mirror_config.custom_repositories = saved_repos
 
         installation.minimal_installation(
             optional_repositories=optional_repos,

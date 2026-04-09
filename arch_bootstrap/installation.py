@@ -523,10 +523,10 @@ def perform_installation(
         if omz_remote:
             omz_cmd = (
                 f'REMOTE={shlex.quote(omz_remote)} '
-                f'sh -c "$(curl -fsSL {OMZ_INSTALL_URL})" "" --unattended'
+                f'sh -c "$(curl -fsSL {OMZ_INSTALL_URL})" "" --unattended --skip-chsh'
             )
         else:
-            omz_cmd = f'sh -c "$(curl -fsSL {OMZ_INSTALL_URL})" "" --unattended'
+            omz_cmd = f'sh -c "$(curl -fsSL {OMZ_INSTALL_URL})" "" --unattended --skip-chsh'
 
         result = subprocess.run(
             ['arch-chroot', str(chroot_dir),

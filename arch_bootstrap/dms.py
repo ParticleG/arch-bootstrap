@@ -101,9 +101,10 @@ def _download_dankinstall(chroot_dir: Path, country: str | None) -> Path:
     with urllib.request.urlopen(req, timeout=120) as resp:
         compressed = resp.read()
 
-    # Decompress and write to chroot /tmp
+    # Decompress and write to chroot /var/tmp (NOT /tmp — arch-chroot
+    # mounts a fresh tmpfs over /tmp, hiding files written from outside)
     binary_data = gzip.decompress(compressed)
-    target = chroot_dir / 'tmp' / 'dankinstall'
+    target = chroot_dir / 'var' / 'tmp' / 'dankinstall'
     target.write_bytes(binary_data)
     target.chmod(target.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
@@ -153,7 +154,7 @@ def install_dms(
         # 3. Run dankinstall in headless mode
         _info(t('dms.running_dankinstall'))
         cmd = (
-            f'LANG=C.UTF-8 /tmp/dankinstall '
+            f'LANG=C.UTF-8 /var/tmp/dankinstall '
             f'-c {compositor} -t {terminal} '
             f'--include-deps dms-greeter '
             f'--replace-configs-all -y'

@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import time
 import urllib.request
@@ -26,8 +27,15 @@ from archinstall.lib.profile.profiles_handler import profile_handler
 from archinstall.tui.ui.components import tui
 
 from .config import generate_fontconfig, generate_kmscon_config
-from .constants import GHPROXY_CHUNK_URL, GHPROXY_FALLBACK, OMZ_INSTALL_URL, OMZ_REMOTE_GITHUB
+from .constants import (
+    BROWSER_OPTIONS,
+    GHPROXY_CHUNK_URL,
+    GHPROXY_FALLBACK,
+    OMZ_INSTALL_URL,
+    OMZ_REMOTE_GITHUB,
+)
 from .detection import calculate_kmscon_font_size, needs_kmscon
+from .i18n import t
 
 
 # =============================================================================
@@ -105,6 +113,171 @@ def _resolve_omz_remote(country: str | None) -> str | None:
 
 
 # =============================================================================
+# WiFi connection transfer
+# =============================================================================
+
+def _copy_wifi_connections(chroot_dir: Path) -> None:
+    """Copy WiFi connection configs from the live ISO to the new system.
+
+    Transfers both iwd network profiles (/var/lib/iwd/*.psk etc.) and
+    NetworkManager connection files (/etc/NetworkManager/system-connections/)
+    so the installed system automatically connects to known WiFi networks.
+    """
+    _info(t('wifi.copying'))
+    count = 0
+
+    # Copy iwd network configs (*.psk, *.open, *.8021x)
+    iwd_src = Path('/var/lib/iwd')
+    if iwd_src.exists():
+        iwd_dst = chroot_dir / 'var' / 'lib' / 'iwd'
+        iwd_dst.mkdir(parents=True, exist_ok=True)
+        for f in iwd_src.iterdir():
+            if f.is_file() and f.suffix in ('.psk', '.open', '.8021x'):
+                shutil.copy2(f, iwd_dst / f.name)
+                _debug(f'Copied iwd config: {f.name}')
+                count += 1
+
+    # Copy NetworkManager connection files
+    nm_src = Path('/etc/NetworkManager/system-connections')
+    if nm_src.exists():
+        nm_dst = chroot_dir / 'etc' / 'NetworkManager' / 'system-connections'
+        nm_dst.mkdir(parents=True, exist_ok=True)
+        for f in nm_src.iterdir():
+            if f.is_file():
+                shutil.copy2(f, nm_dst / f.name)
+                _debug(f'Copied NM connection: {f.name}')
+                count += 1
+
+    if count > 0:
+        _info(t('wifi.copied') % count)
+
+
+# =============================================================================
+# paru AUR helper installation
+# =============================================================================
+
+def _install_paru(
+    chroot_dir: Path,
+    username: str,
+    country: str | None = None,
+) -> bool:
+    """Install paru AUR helper in the chroot.
+
+    For CN users: paru is available in the archlinuxcn repository and can
+    be installed directly via pacman.
+    For other users: paru-bin is built from the AUR via makepkg (pre-built
+    binary, no Rust compilation needed).
+
+    Returns True if paru was installed successfully.
+    """
+    _info(t('paru.installing'))
+
+    if country == 'CN':
+        # archlinuxcn repo should be configured — install via pacman
+        result = subprocess.run(
+            ['arch-chroot', str(chroot_dir),
+             'pacman', '-S', '--noconfirm', '--needed', 'paru'],
+            check=False,
+        )
+        if result.returncode == 0:
+            _info(t('paru.installed_pacman'))
+            return True
+        _info('pacman install failed, falling back to AUR build...')
+
+    # Build paru-bin from AUR (binary package, no compilation needed)
+    build_script = (
+        'export LANG=C.UTF-8; '
+        'set -e; '
+        'cd /tmp; '
+        'rm -rf paru-bin; '
+        'git clone https://aur.archlinux.org/paru-bin.git; '
+        'cd paru-bin; '
+        'makepkg -si --noconfirm --needed'
+    )
+    result = subprocess.run(
+        ['arch-chroot', str(chroot_dir),
+         'runuser', '-l', username, '-c', build_script],
+        check=False,
+    )
+    if result.returncode == 0:
+        _info(t('paru.installed_aur'))
+        return True
+
+    _info(t('paru.failed') % result.returncode)
+    return False
+
+
+# =============================================================================
+# CN GitHub proxy for git in chroot
+# =============================================================================
+
+def _setup_cn_git_proxy(chroot_dir: Path) -> None:
+    """Write GitHub URL rewrite to /etc/gitconfig for CN users.
+
+    This enables git operations (including makepkg and paru source fetches)
+    to use a GitHub proxy.  Written to /etc/gitconfig (system-level git
+    config) which is read by all git invocations, including those from
+    makepkg (which nullifies GIT_CONFIG_GLOBAL but NOT GIT_CONFIG_SYSTEM).
+    """
+    # Resolve proxy URL (reuse logic from dms.py)
+    proxy = None
+    try:
+        req = urllib.request.Request(GHPROXY_CHUNK_URL)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            content = resp.read().decode('utf-8', errors='ignore')
+        matches = re.findall(r'href=.{0,5}(https://gh[a-z0-9]+\.[a-z]+)', content)
+        if matches:
+            proxy = matches[0]
+    except Exception:
+        pass
+
+    if not proxy:
+        proxy = GHPROXY_FALLBACK
+
+    _info(f'CN: GitHub proxy for git → {proxy}')
+    gitconfig = chroot_dir / 'etc' / 'gitconfig'
+    gitconfig.write_text(
+        f'[url "{proxy}/https://github.com/"]\n'
+        f'\tinsteadOf = https://github.com/\n'
+    )
+
+
+# =============================================================================
+# AUR browser installation
+# =============================================================================
+
+def _install_aur_browsers(
+    chroot_dir: Path,
+    username: str,
+    browsers: list[str],
+) -> None:
+    """Install AUR-only browser packages via paru.
+
+    Only called when paru is available and there are AUR browsers selected.
+    """
+    aur_packages = []
+    for key in browsers:
+        info = BROWSER_OPTIONS.get(key, {})
+        if info.get('aur', False):
+            aur_packages.append(info['package'])
+
+    if not aur_packages:
+        return
+
+    pkg_str = ' '.join(shlex.quote(p) for p in aur_packages)
+    _info(f'Installing AUR browsers: {", ".join(aur_packages)}')
+
+    result = subprocess.run(
+        ['arch-chroot', str(chroot_dir),
+         'runuser', '-l', username, '-c',
+         f'LANG=C.UTF-8 paru -S --noconfirm --needed --skipreview {pkg_str}'],
+        check=False,
+    )
+    if result.returncode != 0:
+        _info(f'AUR browser installation failed (exit {result.returncode}), skipping')
+
+
+# =============================================================================
 # Installation
 # =============================================================================
 
@@ -119,6 +292,7 @@ def perform_installation(
     desktop_env: str = 'minimal',
     dms_compositor: str = 'niri',
     dms_terminal: str = 'ghostty',
+    browsers: list[str] | None = None,
 ) -> None:
     """Execute the installation using archinstall's Installer."""
     start_time = time.monotonic()
@@ -274,6 +448,18 @@ def perform_installation(
 
         _info(f'Written fontconfig for user {username}')
 
+    # Post-install: copy WiFi connections from live ISO
+    _copy_wifi_connections(chroot_dir)
+
+    # Post-install: CN git proxy (must be set before any AUR operations)
+    if country == 'CN':
+        _setup_cn_git_proxy(chroot_dir)
+
+    # Post-install: install paru AUR helper
+    has_paru = False
+    if username:
+        has_paru = _install_paru(chroot_dir, username, country)
+
     # Post-install: set default shell to zsh and install oh-my-zsh
     if username:
         subprocess.run(
@@ -311,7 +497,12 @@ def perform_installation(
             compositor=dms_compositor,
             terminal=dms_terminal,
             country=country,
+            use_paru=has_paru,
         )
+
+    # Post-install: AUR browsers (requires paru)
+    if has_paru and browsers:
+        _install_aur_browsers(chroot_dir, username, browsers)
 
     elapsed_time = time.monotonic() - start_time
     _info(f'Installation completed in {elapsed_time:.0f} seconds.')

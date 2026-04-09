@@ -225,6 +225,9 @@ DMS_SYSTEM_PACKAGES: dict[str, list[str]] = {
         'accountsservice',
         'matugen',
         'dgop',
+        'cups-pk-helper',
+        'kimageformats',
+        'cava',
     ],
     'niri': ['niri', 'xwayland-satellite'],
     'hyprland': ['hyprland', 'jq'],
@@ -319,3 +322,33 @@ vt = 1
 user = "greeter"
 command = "/usr/bin/dms-greeter --command {compositor}"
 """
+
+# Wayland session desktop entries — written to /usr/share/wayland-sessions/
+# These are clean entries without uwsm so the greeter can launch compositors
+# directly.  Non-selected compositor session files are removed to avoid
+# the greeter defaulting to an uninstalled compositor.
+WAYLAND_SESSION_ENTRIES: dict[str, dict[str, str]] = {
+    'niri': {
+        'name': 'Niri',
+        'comment': 'Niri scrolling tiling Wayland compositor',
+        'exec': 'niri --session',
+    },
+    'hyprland': {
+        'name': 'Hyprland',
+        'comment': 'Hyprland dynamic tiling Wayland compositor',
+        'exec': 'Hyprland',
+    },
+}
+
+# ---------------------------------------------------------------------------
+# Browser options
+# ---------------------------------------------------------------------------
+
+# Browser packages available for installation.
+# key: internal identifier, package: pacman/AUR package name, aur: True if AUR
+BROWSER_OPTIONS: dict[str, dict] = {
+    'firefox': {'label': 'Firefox', 'package': 'firefox', 'aur': False},
+    'chromium': {'label': 'Chromium', 'package': 'chromium', 'aur': False},
+    'chrome': {'label': 'Google Chrome (AUR)', 'package': 'google-chrome', 'aur': True},
+    'edge': {'label': 'Microsoft Edge (AUR)', 'package': 'microsoft-edge-stable-bin', 'aur': True},
+}

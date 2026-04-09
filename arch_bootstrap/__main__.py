@@ -164,6 +164,7 @@ def main() -> None:
         desktop_env=state.desktop_env,
         dms_compositor=state.dms_compositor,
         dms_terminal=state.dms_terminal,
+        browsers=state.browsers,
     )
 
 

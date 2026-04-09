@@ -25,6 +25,7 @@ from .constants import (
     DMS_TEMPLATES,
     GHPROXY_CHUNK_URL,
     GHPROXY_FALLBACK,
+    WAYLAND_SESSION_ENTRIES,
 )
 from .i18n import t
 
@@ -93,51 +94,68 @@ def _resolve_download_base_url(country: str | None) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _install_via_paru(
+    chroot_dir: Path,
+    username: str,
+    packages: list[str],
+) -> None:
+    """Install AUR packages using paru.
+
+    Args:
+        chroot_dir: Path to the mounted chroot.
+        username: Non-root user to run paru as.
+        packages: List of package names.
+    """
+    pkg_str = ' '.join(shlex.quote(p) for p in packages)
+    _info(f'Installing via paru: {", ".join(packages)}')
+
+    result = subprocess.run(
+        ['arch-chroot', str(chroot_dir),
+         'runuser', '-l', username, '-c',
+         f'LANG=C.UTF-8 paru -S --noconfirm --needed --skipreview {pkg_str}'],
+    )
+
+    if result.returncode != 0:
+        raise RuntimeError(
+            f'paru install failed for {packages} (exit {result.returncode}). '
+            f'DMS installation cannot continue without these packages.'
+        )
+
+
 def build_dms_aur_packages(
     chroot_dir: Path,
     username: str,
     country: str | None = None,
+    use_paru: bool = False,
 ) -> None:
-    """Build and install DMS AUR packages via makepkg in the chroot.
+    """Build and install DMS AUR packages in the chroot.
 
-    Uses `runuser -l <username>` to run makepkg as non-root, following the
-    same pattern as oh-my-zsh installation in installation.py.
+    When paru is available (use_paru=True), delegates to paru for a cleaner
+    install.  Otherwise falls back to manual makepkg builds.
+
+    The CN GitHub proxy should already be configured in /etc/gitconfig by
+    the caller (installation.py) before this function is invoked.
 
     Locale is forced to C.UTF-8 to prevent CJK character rendering issues
-    (block glyphs) in makepkg output and sudo prompts when a CJK locale
-    is selected.
-
-    For CN users, a GitHub proxy is configured via ``/etc/makepkg.d/gitconfig``
-    (the system-level git config that makepkg reads) so that PKGBUILD git
-    sources are cloned through a mirror instead of hitting GitHub directly.
-    Note: ``git config --global`` does NOT work because makepkg forces
-    ``GIT_CONFIG_GLOBAL=/dev/null``; the system config path is the only
-    way to inject ``url.insteadOf`` into makepkg's git operations.
+    in makepkg output and sudo prompts.
 
     Args:
         chroot_dir: Path to the mounted chroot.
-        username: Non-root user to run makepkg as.
-        country: User's country code (for CN git proxy).
+        username: Non-root user to run makepkg/paru as.
+        country: User's country code (unused when use_paru=True).
+        use_paru: If True, use paru instead of manual makepkg.
     """
     aur_packages = list(DMS_AUR_PACKAGES['common'])
     aur_packages.extend(DMS_AUR_PACKAGES.get('greeter', []))
 
-    # Write makepkg git system config for CN users so that makepkg's own
-    # git clone operations go through the proxy.
-    if country == 'CN':
-        proxy = _resolve_ghproxy()
-        if not proxy:
-            proxy = GHPROXY_FALLBACK
-        _info(f'Using GitHub proxy for AUR git sources: {proxy}')
+    if not aur_packages:
+        return
 
-        gitconfig_dir = chroot_dir / 'etc' / 'makepkg.d'
-        gitconfig_dir.mkdir(parents=True, exist_ok=True)
-        gitconfig_file = gitconfig_dir / 'gitconfig'
-        gitconfig_file.write_text(
-            f'[url "{proxy}/https://github.com/"]\n'
-            f'\tinsteadOf = https://github.com/\n'
-        )
+    if use_paru:
+        _install_via_paru(chroot_dir, username, aur_packages)
+        return
 
+    # Manual makepkg fallback (no paru available)
     for pkg in aur_packages:
         _info(t('dms.building_aur') % pkg)
 
@@ -277,6 +295,53 @@ def setup_dms_systemd(
 # greetd display manager setup
 # ---------------------------------------------------------------------------
 
+def _configure_wayland_sessions(
+    chroot_dir: Path,
+    compositor: str,
+) -> None:
+    """Ensure the greeter session list only contains the selected compositor.
+
+    Removes session .desktop files for non-installed compositors (to prevent
+    the greeter from defaulting to e.g. "Hyprland(uwsm)" when niri is
+    installed) and writes a clean session entry for the selected compositor
+    that does NOT depend on uwsm.
+
+    Args:
+        chroot_dir: Path to the mounted chroot.
+        compositor: 'niri' or 'hyprland'.
+    """
+    sessions_dir = chroot_dir / 'usr' / 'share' / 'wayland-sessions'
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+
+    # All compositor names we manage — remove session entries for non-selected
+    all_compositors = set(WAYLAND_SESSION_ENTRIES.keys())
+    unwanted = all_compositors - {compositor}
+
+    if sessions_dir.exists():
+        for f in sessions_dir.iterdir():
+            if f.suffix == '.desktop':
+                stem_lower = f.stem.lower()
+                for uw in unwanted:
+                    if uw in stem_lower:
+                        _debug(f'Removing session entry: {f.name}')
+                        f.unlink()
+                        break
+
+    # Write a clean session entry for the selected compositor
+    session = WAYLAND_SESSION_ENTRIES.get(compositor)
+    if session:
+        entry = (
+            '[Desktop Entry]\n'
+            f'Name={session["name"]}\n'
+            f'Comment={session["comment"]}\n'
+            f'Exec={session["exec"]}\n'
+            'Type=Application\n'
+        )
+        session_file = sessions_dir / f'{compositor}.desktop'
+        session_file.write_text(entry)
+        _debug(f'Written session entry: {session_file.name}')
+
+
 def setup_greetd(
     chroot_dir: Path,
     compositor: str,
@@ -309,6 +374,9 @@ def setup_greetd(
         check=True,
     )
     _debug('Enabled greetd.service')
+
+    # Configure wayland session entries for the greeter's session selector
+    _configure_wayland_sessions(chroot_dir, compositor)
 
 
 # ---------------------------------------------------------------------------
@@ -359,6 +427,7 @@ def install_dms(
     compositor: str,
     terminal: str,
     country: str | None = None,
+    use_paru: bool = False,
 ) -> None:
     """Full DMS installation: AUR packages + config + systemd + greetd.
 
@@ -373,9 +442,10 @@ def install_dms(
         compositor: 'niri' or 'hyprland'.
         terminal: 'ghostty', 'kitty', or 'alacritty'.
         country: User's country code (for CN proxy resolution).
+        use_paru: If True, use paru for AUR installs.
     """
     # 1. Build and install AUR packages
-    build_dms_aur_packages(chroot_dir, username, country=country)
+    build_dms_aur_packages(chroot_dir, username, country=country, use_paru=use_paru)
 
     # 2. Deploy configuration templates
     deploy_dms_configs(chroot_dir, username, compositor, terminal, country)

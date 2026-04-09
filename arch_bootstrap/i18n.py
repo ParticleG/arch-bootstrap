@@ -129,6 +129,17 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'dms.complete': 'DMS desktop environment configured successfully',
         'dms.download_failed': 'Failed to download template %s, skipping',
         'dms.aur_failed': 'AUR build failed for %s (exit %s), skipping',
+        # -- Browser --
+        'step.browser.title': 'Web Browser (multi-select, skip = none)',
+        'confirm.browser': 'Browser',
+        # -- paru --
+        'paru.installing': 'Installing paru AUR helper...',
+        'paru.installed_pacman': 'Installed paru from archlinuxcn',
+        'paru.installed_aur': 'Installed paru from AUR',
+        'paru.failed': 'paru installation failed (exit %s), AUR packages will be built manually',
+        # -- WiFi --
+        'wifi.copying': 'Copying WiFi connections to new system...',
+        'wifi.copied': 'Copied %s WiFi connection(s)',
     },
     'zh': {
         # -- Common status --
@@ -254,6 +265,17 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'dms.complete': 'DMS 桌面环境配置完成',
         'dms.download_failed': '下载模板 %s 失败，已跳过',
         'dms.aur_failed': 'AUR 包 %s 构建失败（退出码 %s），已跳过',
+        # -- 浏览器 --
+        'step.browser.title': '网页浏览器（多选，跳过 = 不安装）',
+        'confirm.browser': '浏览器',
+        # -- paru --
+        'paru.installing': '正在安装 paru AUR 助手...',
+        'paru.installed_pacman': '已从 archlinuxcn 安装 paru',
+        'paru.installed_aur': '已从 AUR 安装 paru',
+        'paru.failed': 'paru 安装失败（退出码 %s），AUR 包将手动构建',
+        # -- WiFi --
+        'wifi.copying': '正在复制 WiFi 连接信息到新系统...',
+        'wifi.copied': '已复制 %s 个 WiFi 连接',
     },
     'ja': {
         # -- Common status --
@@ -379,6 +401,17 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'dms.complete': 'DMS デスクトップ環境の設定が完了しました',
         'dms.download_failed': 'テンプレート %s のダウンロードに失敗、スキップ',
         'dms.aur_failed': 'AUR パッケージ %s のビルドに失敗（終了コード %s）、スキップ',
+        # -- ブラウザ --
+        'step.browser.title': 'ウェブブラウザ（複数選択可、スキップ = インストールしない）',
+        'confirm.browser': 'ブラウザ',
+        # -- paru --
+        'paru.installing': 'paru AUR ヘルパーをインストール中...',
+        'paru.installed_pacman': 'archlinuxcn から paru をインストール',
+        'paru.installed_aur': 'AUR から paru をインストール',
+        'paru.failed': 'paru インストール失敗（終了コード %s）、AUR パッケージは手動ビルドします',
+        # -- WiFi --
+        'wifi.copying': 'WiFi 接続情報を新システムにコピー中...',
+        'wifi.copied': '%s 個の WiFi 接続をコピー',
     },
 }
 

@@ -32,6 +32,7 @@ from archinstall.lib.profile.profiles_handler import profile_handler
 from .constants import (
     ARCHLINUXCN_URL,
     BASE_PACKAGES,
+    BROWSER_OPTIONS,
     COUNTRY_TIMEZONES,
     FONTCONFIG_CJK_ALIASES,
     GPU_PACKAGES,
@@ -339,6 +340,13 @@ def apply_wizard_state_to_config(
         dms_pkgs.extend(DMS_SYSTEM_PACKAGES.get(state.dms_terminal, []))
         for pkg in dms_pkgs:
             if pkg not in all_packages:
+                all_packages.append(pkg)
+    # Browser packages (pacman only; AUR browsers handled in post-install)
+    for browser_key in state.browsers:
+        info = BROWSER_OPTIONS.get(browser_key, {})
+        if not info.get('aur', False):
+            pkg = info.get('package', '')
+            if pkg and pkg not in all_packages:
                 all_packages.append(pkg)
     config.packages = all_packages
 

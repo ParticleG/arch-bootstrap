@@ -18,6 +18,7 @@ from archinstall.tui.ui.result import ResultType
 
 from .config import apply_wizard_state_to_config
 from .constants import (
+    BROWSER_OPTIONS,
     COUNTRY_NAMES,
     GPU_LABELS,
     GPU_VENDORS,
@@ -90,6 +91,8 @@ class WizardState:
         self.desktop_env: str = 'minimal'      # 'minimal' | 'dms'
         self.dms_compositor: str = 'niri'       # 'niri' | 'hyprland'
         self.dms_terminal: str = 'ghostty'      # 'ghostty' | 'kitty' | 'alacritty'
+        # Browser selection
+        self.browsers: list[str] = []           # ['firefox', 'chromium', ...]
 
 
 async def step_language(state: WizardState) -> str:
@@ -468,6 +471,35 @@ async def step_dms_terminal(state: WizardState) -> str:
             return 'back'
 
 
+async def step_browser(state: WizardState) -> str:
+    """Step: Select web browsers to install (multi-select, optional)."""
+    items = [
+        MenuItem(info['label'], value=key)
+        for key, info in BROWSER_OPTIONS.items()
+    ]
+    group = MenuItemGroup(items)
+
+    # Pre-select current choices
+    if state.browsers:
+        group.set_selected_by_value(state.browsers)
+
+    result = await Selection[str](
+        group,
+        header=t('step.browser.title'),
+        multi=True,
+        allow_skip=True,
+    ).show()
+
+    match result.type_:
+        case ResultType.Skip:
+            return 'back'
+        case ResultType.Selection:
+            state.browsers = result.get_values()
+            return 'next'
+        case _:
+            return 'back'
+
+
 async def step_username(state: WizardState) -> str:
     """Step 10: Enter username."""
     default = state.username or os.environ.get('SUDO_USER', '') or os.environ.get('USER', '')
@@ -575,6 +607,10 @@ async def step_confirm(
         _row(t('confirm.net'), state.network_type.display_msg()),
         _row('Multilib', 'Enabled' if state.multilib else 'Disabled'),
         _row(t('confirm.gpu'), ', '.join(GPU_LABELS.get(v, v) for v in state.gpu_vendors) or 'None'),
+        _row(
+            t('confirm.browser'),
+            ', '.join(BROWSER_OPTIONS[b]['label'] for b in state.browsers) if state.browsers else 'None',
+        ),
         _row(t('confirm.user'), state.username),
         _row(t('confirm.root'), t('status.set') if state.root_password else t('status.not_set')),
         _row('kmscon', 'Added (CJK console)' if kmscon_needed else t('status.not_needed')),
@@ -659,6 +695,7 @@ async def run_wizard(
         step_desktop_env,
         step_dms_compositor,
         step_dms_terminal,
+        step_browser,
         step_username,
         step_user_password,
         step_root_password,

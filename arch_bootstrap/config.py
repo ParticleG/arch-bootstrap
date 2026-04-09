@@ -104,8 +104,8 @@ def build_default_config(
             CustomRepository(
                 name='archlinuxcn',
                 url=ARCHLINUXCN_URL,
-                sign_check=SignCheck.Optional,
-                sign_option=SignOption.TrustAll,
+                sign_check=SignCheck.Required,
+                sign_option=SignOption.TrustedOnly,
             ),
         )
 
@@ -114,6 +114,8 @@ def build_default_config(
     config.kernels = ['linux']
     config.ntp = True
     config.packages = list(BASE_PACKAGES)
+    if country == 'CN':
+        config.packages.extend(['archlinuxcn-keyring', 'archlinuxcn-mirrorlist-git'])
     config.parallel_downloads = 0  # 0 = pacman default (5), matches Bash version
 
     return config
@@ -295,8 +297,8 @@ def apply_wizard_state_to_config(
             CustomRepository(
                 name='archlinuxcn',
                 url=ARCHLINUXCN_URL,
-                sign_check=SignCheck.Optional,
-                sign_option=SignOption.TrustAll,
+                sign_check=SignCheck.Required,
+                sign_option=SignOption.TrustedOnly,
             ),
         )
 
@@ -338,6 +340,11 @@ def apply_wizard_state_to_config(
         if not info.get('aur', False):
             pkg = info.get('package', '')
             if pkg and pkg not in all_packages:
+                all_packages.append(pkg)
+    # archlinuxcn keyring and mirrorlist for CN users
+    if state.country == 'CN':
+        for pkg in ['archlinuxcn-keyring', 'archlinuxcn-mirrorlist-git']:
+            if pkg not in all_packages:
                 all_packages.append(pkg)
     config.packages = all_packages
 

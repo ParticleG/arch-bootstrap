@@ -155,7 +155,8 @@ def install_dms(
         cmd = (
             f'LANG=C.UTF-8 /tmp/dankinstall '
             f'-c {compositor} -t {terminal} '
-            f'--include-deps dms-greeter -y'
+            f'--include-deps dms-greeter '
+            f'--replace-configs-all -y'
         )
 
         result = subprocess.run(

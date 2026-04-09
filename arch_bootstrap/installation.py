@@ -75,6 +75,52 @@ def _debug(msg: str) -> None:
 
 
 # =============================================================================
+# Pacman config deduplication (defense-in-depth)
+# =============================================================================
+
+def _strip_custom_repos_from_target(target: Path, mirror_config) -> None:
+    """Remove pre-existing custom repository sections from target pacman.conf.
+
+    archinstall's set_mirrors() uses append mode ('a') which can produce
+    duplicate [repo] sections if the target already has them (e.g. from
+    pacstrap copying the host config, or from a previous set_mirrors call).
+    Pacman treats duplicates as "database already registered" errors.
+
+    This function strips any section whose header matches a custom_repository
+    name, so the subsequent set_mirrors(on_target=True) can cleanly append.
+    """
+    pacman_conf = target / 'etc' / 'pacman.conf'
+    if not pacman_conf.exists():
+        return
+
+    repo_names = {r.name for r in mirror_config.custom_repositories}
+    if not repo_names:
+        return
+
+    lines = pacman_conf.read_text().splitlines(keepends=True)
+    cleaned: list[str] = []
+    skip = False
+
+    for line in lines:
+        stripped = line.strip()
+        # Detect [section-name] headers
+        if stripped.startswith('[') and stripped.endswith(']'):
+            section = stripped[1:-1]
+            skip = section in repo_names
+            if skip:
+                _debug(f'Stripping pre-existing [{section}] from target pacman.conf')
+                # Also remove any trailing blank lines before the section header
+                while cleaned and cleaned[-1].strip() == '':
+                    cleaned.pop()
+                continue
+        if skip:
+            continue
+        cleaned.append(line)
+
+    pacman_conf.write_text(''.join(cleaned))
+
+
+# =============================================================================
 # GitHub proxy resolution (for CN oh-my-zsh)
 # =============================================================================
 
@@ -343,6 +389,11 @@ def perform_installation(
         )
 
         if mirror_config := config.mirror_config:
+            # Defense-in-depth: strip any pre-existing custom repo sections
+            # from the target pacman.conf before appending.  set_mirrors()
+            # uses append mode ('a'), so a stale section from pacstrap or
+            # any other code path would cause "database already registered".
+            _strip_custom_repos_from_target(installation.target, mirror_config)
             installation.set_mirrors(mirror_list_handler, mirror_config, on_target=True)
 
         if config.swap and config.swap.enabled:

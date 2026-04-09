@@ -18,10 +18,7 @@ from archinstall.lib.models.authentication import AuthenticationConfiguration
 from archinstall.lib.models.bootloader import Bootloader, BootloaderConfiguration
 from archinstall.lib.models.locale import LocaleConfiguration
 from archinstall.lib.models.mirrors import (
-    CustomRepository,
     MirrorConfiguration,
-    SignCheck,
-    SignOption,
 )
 from archinstall.lib.models.network import NetworkConfiguration, NicType
 from archinstall.lib.models.packages import Repository
@@ -30,7 +27,6 @@ from archinstall.lib.models.users import Password, User
 from archinstall.lib.profile.profiles_handler import profile_handler
 
 from .constants import (
-    ARCHLINUXCN_URL,
     BASE_PACKAGES,
     BROWSER_OPTIONS,
     COUNTRY_TIMEZONES,
@@ -98,24 +94,11 @@ def build_default_config(
     # Mirror configuration (with fallback pools)
     config.mirror_config = build_mirror_config(country, mirror_list_handler)
 
-    # archlinuxcn repository for CN users
-    if country == 'CN':
-        config.mirror_config.custom_repositories.append(
-            CustomRepository(
-                name='archlinuxcn',
-                url=ARCHLINUXCN_URL,
-                sign_check=SignCheck.Required,
-                sign_option=SignOption.TrustedOnly,
-            ),
-        )
-
     # Hostname, kernel, NTP, packages, downloads
     config.hostname = 'archlinux'
     config.kernels = ['linux']
     config.ntp = True
     config.packages = list(BASE_PACKAGES)
-    if country == 'CN':
-        config.packages.extend(['archlinuxcn-keyring', 'archlinuxcn-mirrorlist-git'])
     config.parallel_downloads = 0  # 0 = pacman default (5), matches Bash version
 
     return config
@@ -286,22 +269,6 @@ def apply_wizard_state_to_config(
         config.mirror_config.mirror_regions = new_mirror.mirror_regions
         config.mirror_config.custom_servers = new_mirror.custom_servers
 
-    # archlinuxcn
-    # Remove existing archlinuxcn if any
-    config.mirror_config.custom_repositories = [
-        r for r in config.mirror_config.custom_repositories
-        if r.name != 'archlinuxcn'
-    ]
-    if state.country == 'CN':
-        config.mirror_config.custom_repositories.append(
-            CustomRepository(
-                name='archlinuxcn',
-                url=ARCHLINUXCN_URL,
-                sign_check=SignCheck.Required,
-                sign_option=SignOption.TrustedOnly,
-            ),
-        )
-
     # Multilib
     if state.multilib:
         if Repository.Multilib not in config.mirror_config.optional_repositories:
@@ -340,11 +307,6 @@ def apply_wizard_state_to_config(
         if not info.get('aur', False):
             pkg = info.get('package', '')
             if pkg and pkg not in all_packages:
-                all_packages.append(pkg)
-    # archlinuxcn keyring and mirrorlist for CN users
-    if state.country == 'CN':
-        for pkg in ['archlinuxcn-keyring', 'archlinuxcn-mirrorlist-git']:
-            if pkg not in all_packages:
                 all_packages.append(pkg)
     config.packages = all_packages
 

@@ -212,133 +212,17 @@ FONTCONFIG_CJK_ALIASES: dict[str, list[str]] = {
 # DMS (DankMaterialShell) desktop environment
 # ---------------------------------------------------------------------------
 
-# Version marker — CI automation compares this against dankinstall releases
-DMS_SYNCED_VERSION = 'v1.4.4'
-
-# Pacman packages grouped by component
-DMS_SYSTEM_PACKAGES: dict[str, list[str]] = {
-    'common': [
-        'dms-shell',
-        'git',
-        'greetd',
-        'xdg-desktop-portal-gtk',
-        'accountsservice',
-        'matugen',
-        'dgop',
-        'cups-pk-helper',
-        'kimageformats',
-        'cava',
-    ],
-    'niri': ['niri', 'xwayland-satellite'],
-    'hyprland': ['hyprland', 'jq'],
-    'ghostty': ['ghostty'],
-    'kitty': ['kitty'],
-    'alacritty': ['alacritty'],
-}
-
-# AUR packages (built via makepkg in chroot)
-# Note: quickshell-git is NOT listed here — it is automatically pulled in
-# as a dependency of dms-shell (which depends on the virtual package
-# "quickshell", currently provided only by quickshell-git).
-DMS_AUR_PACKAGES: dict[str, list[str]] = {
-    'common': [],
-    'greeter': ['greetd-dms-greeter-git'],
-}
-
-# GitHub raw base URL for configuration templates
-DMS_TEMPLATE_BASE_URL = (
-    'https://raw.githubusercontent.com/AvengeMedia/DankMaterialShell'
-    '/master/core/internal/config/embedded'
+# dankinstall is downloaded from this GitHub releases base URL.
+# Currently using ParticleG's fork which adds headless CLI support.
+# Once upstream merges the PR, switch to AvengeMedia/DankMaterialShell.
+DANKINSTALL_RELEASE_BASE = (
+    'https://github.com/ParticleG/DankMaterialShell'
+    '/releases/latest/download'
 )
 
 # GitHub proxy constants (reused from install.py pattern)
 GHPROXY_CHUNK_URL = 'https://ghproxy.link/js/src_views_home_HomeView_vue.js'
 GHPROXY_FALLBACK = 'https://ghfast.top'
-
-# Template files to download, keyed by compositor/terminal
-# Values are (relative_path_in_embedded, deploy_target_relative_to_home)
-DMS_TEMPLATES: dict[str, list[tuple[str, str]]] = {
-    'niri': [
-        ('niri.kdl', '.config/niri/config.kdl'),
-        ('niri-colors.kdl', '.config/niri/dms/colors.kdl'),
-        ('niri-layout.kdl', '.config/niri/dms/layout.kdl'),
-        ('niri-alttab.kdl', '.config/niri/dms/alttab.kdl'),
-        ('niri-binds.kdl', '.config/niri/dms/binds.kdl'),
-    ],
-    'hyprland': [
-        ('hyprland.conf', '.config/hypr/hyprland.conf'),
-        ('hypr-colors.conf', '.config/hypr/dms/colors.conf'),
-        ('hypr-layout.conf', '.config/hypr/dms/layout.conf'),
-        ('hypr-binds.conf', '.config/hypr/dms/binds.conf'),
-    ],
-    'ghostty': [
-        ('ghostty.conf', '.config/ghostty/config'),
-        ('ghostty-colors.conf', '.config/ghostty/themes/dankcolors'),
-    ],
-    'kitty': [
-        ('kitty.conf', '.config/kitty/kitty.conf'),
-        ('kitty-tabs.conf', '.config/kitty/dank-tabs.conf'),
-        ('kitty-theme.conf', '.config/kitty/dank-theme.conf'),
-    ],
-    'alacritty': [
-        ('alacritty.toml', '.config/alacritty/alacritty.toml'),
-        ('alacritty-theme.toml', '.config/alacritty/dank-theme.toml'),
-    ],
-}
-
-# Placeholder config files to create (empty, for user customization)
-DMS_PLACEHOLDER_FILES: dict[str, list[str]] = {
-    'niri': [
-        '.config/niri/dms/outputs.kdl',
-        '.config/niri/dms/cursor.kdl',
-    ],
-    'hyprland': [
-        '.config/hypr/dms/outputs.conf',
-        '.config/hypr/dms/cursor.conf',
-    ],
-}
-
-# systemd user service symlink targets
-DMS_SYSTEMD_TARGETS: dict[str, tuple[str, str]] = {
-    # compositor: (wants_dir_relative, service_unit_path)
-    'niri': (
-        '.config/systemd/user/niri.service.wants',
-        '/usr/lib/systemd/user/dms.service',
-    ),
-    'hyprland': (
-        '.config/systemd/user/hyprland-session.target.wants',
-        '/usr/lib/systemd/user/dms.service',
-    ),
-}
-
-# greetd config — written to /etc/greetd/config.toml
-# The greeter runs as the "greeter" user (created by the greetd package)
-# and launches dms-greeter which handles authentication and session start.
-DMS_GREETD_CONFIG = """\
-[terminal]
-vt = 1
-
-[default_session]
-user = "greeter"
-command = "/usr/bin/dms-greeter --command {compositor}"
-"""
-
-# Wayland session desktop entries — written to /usr/share/wayland-sessions/
-# These are clean entries without uwsm so the greeter can launch compositors
-# directly.  Non-selected compositor session files are removed to avoid
-# the greeter defaulting to an uninstalled compositor.
-WAYLAND_SESSION_ENTRIES: dict[str, dict[str, str]] = {
-    'niri': {
-        'name': 'Niri',
-        'comment': 'Niri scrolling tiling Wayland compositor',
-        'exec': 'niri --session',
-    },
-    'hyprland': {
-        'name': 'Hyprland',
-        'comment': 'Hyprland dynamic tiling Wayland compositor',
-        'exec': 'Hyprland',
-    },
-}
 
 # ---------------------------------------------------------------------------
 # Browser options

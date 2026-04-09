@@ -332,15 +332,6 @@ def apply_wizard_state_to_config(
     # kmscon font package
     if state.kmscon_font_package and state.kmscon_font_package not in all_packages:
         all_packages.append(state.kmscon_font_package)
-    # DMS system packages (pacman only; AUR packages handled in dms.py)
-    if state.desktop_env == 'dms':
-        from .constants import DMS_SYSTEM_PACKAGES
-        dms_pkgs = list(DMS_SYSTEM_PACKAGES['common'])
-        dms_pkgs.extend(DMS_SYSTEM_PACKAGES.get(state.dms_compositor, []))
-        dms_pkgs.extend(DMS_SYSTEM_PACKAGES.get(state.dms_terminal, []))
-        for pkg in dms_pkgs:
-            if pkg not in all_packages:
-                all_packages.append(pkg)
     # Browser packages (pacman only; AUR browsers handled in post-install)
     for browser_key in state.browsers:
         info = BROWSER_OPTIONS.get(browser_key, {})

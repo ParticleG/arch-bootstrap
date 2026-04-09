@@ -497,7 +497,6 @@ def perform_installation(
             compositor=dms_compositor,
             terminal=dms_terminal,
             country=country,
-            use_paru=has_paru,
         )
 
     # Post-install: AUR browsers (requires paru)

@@ -216,19 +216,30 @@ def _setup_archlinuxcn(chroot_dir: Path) -> None:
     """Configure archlinuxcn repository and install keyring in the chroot.
 
     This runs as a late post-install step so that the base system (with the
-    default Arch keyring) is fully set up first.  The archlinuxcn database
-    and the keyring package are both signed by farseerfc (an Arch Trusted
-    User), so signature verification works with the stock keyring.
+    default Arch keyring) is fully set up first.
+
+    The keyring bootstrap is a chicken-and-egg problem: packages from
+    archlinuxcn are signed by keys that only become trusted *after*
+    archlinuxcn-keyring is installed.  We solve this by temporarily
+    setting ``SigLevel = Optional TrustAll`` for the repo, installing
+    the keyring (which runs ``pacman-key --populate archlinuxcn``
+    automatically), then removing the override so the global default
+    (``Required DatabaseOptional``) takes effect for all future
+    operations.
     """
     _info('Configuring archlinuxcn repository...')
 
     pacman_conf = chroot_dir / 'etc' / 'pacman.conf'
+
+    # Step 1: add [archlinuxcn] with relaxed SigLevel for keyring bootstrap
     with open(pacman_conf, 'a') as f:
         f.write(
             f'\n[archlinuxcn]\n'
+            f'SigLevel = Optional TrustAll\n'
             f'Server = {ARCHLINUXCN_URL}\n\n'
         )
 
+    # Step 2: install keyring (no PGP prompt, no signature failure)
     _info('Installing archlinuxcn-keyring...')
     result = subprocess.run(
         ['arch-chroot', str(chroot_dir),
@@ -238,6 +249,13 @@ def _setup_archlinuxcn(chroot_dir: Path) -> None:
     )
     if result.returncode != 0:
         _info(f'archlinuxcn-keyring installation failed (exit {result.returncode})')
+
+    # Step 3: remove the temporary SigLevel override; the global default
+    # (Required DatabaseOptional) will verify signatures for future installs
+    # now that archlinuxcn-keyring has populated the trust chain.
+    content = pacman_conf.read_text()
+    content = content.replace('SigLevel = Optional TrustAll\n', '')
+    pacman_conf.write_text(content)
 
 
 # =============================================================================

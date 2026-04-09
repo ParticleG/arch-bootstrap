@@ -114,6 +114,77 @@ def _download_dankinstall(chroot_dir: Path, country: str | None) -> Path:
 
 
 # ---------------------------------------------------------------------------
+# Post-dankinstall service enablement
+# ---------------------------------------------------------------------------
+
+def _enable_dms_services(
+    chroot_dir: Path,
+    username: str,
+    compositor: str,
+) -> None:
+    """Enable DMS-related systemd services via manual symlinks.
+
+    dankinstall runs inside arch-chroot where there is no running systemd,
+    so its ``systemctl enable`` / ``systemctl set-default`` / ``systemctl
+    --user add-wants`` calls fail silently.  We recreate the symlinks that
+    those commands *would* have created.
+    """
+    _info('Enabling DMS services (post-dankinstall fixup)...')
+
+    # -- 1. Enable greetd (display-manager.service) -----------------------
+    dm_link = chroot_dir / 'etc' / 'systemd' / 'system' / 'display-manager.service'
+    dm_link.parent.mkdir(parents=True, exist_ok=True)
+    greetd_unit = Path('/usr/lib/systemd/system/greetd.service')
+    if not dm_link.exists():
+        dm_link.symlink_to(greetd_unit)
+        _debug(f'Symlinked display-manager.service -> {greetd_unit}')
+    else:
+        _debug('display-manager.service already exists, skipping')
+
+    # -- 2. Set graphical.target as default --------------------------------
+    default_link = chroot_dir / 'etc' / 'systemd' / 'system' / 'default.target'
+    default_link.parent.mkdir(parents=True, exist_ok=True)
+    graphical_unit = Path('/usr/lib/systemd/system/graphical.target')
+    # Remove existing symlink if present (might point to multi-user.target)
+    if default_link.is_symlink() or default_link.exists():
+        default_link.unlink()
+    default_link.symlink_to(graphical_unit)
+    _debug(f'Symlinked default.target -> {graphical_unit}')
+
+    # -- 3. Enable dms user service ----------------------------------------
+    if compositor == 'niri':
+        wants_dir_name = 'niri.service.wants'
+    elif compositor == 'hyprland':
+        wants_dir_name = 'hyprland-session.target.wants'
+    else:
+        _debug(f'Unknown compositor {compositor!r}, skipping user service')
+        return
+
+    user_wants_dir = (
+        chroot_dir / 'home' / username / '.config' / 'systemd' / 'user'
+        / wants_dir_name
+    )
+    user_wants_dir.mkdir(parents=True, exist_ok=True)
+    dms_link = user_wants_dir / 'dms.service'
+    dms_unit = Path('/usr/lib/systemd/user/dms.service')
+    if not dms_link.exists():
+        dms_link.symlink_to(dms_unit)
+        _debug(f'Symlinked {wants_dir_name}/dms.service -> {dms_unit}')
+    else:
+        _debug(f'{wants_dir_name}/dms.service already exists, skipping')
+
+    # Fix ownership: .config/systemd tree should be owned by the user
+    subprocess.run(
+        ['arch-chroot', str(chroot_dir), 'chown', '-R',
+         f'{username}:{username}', f'/home/{username}/.config/systemd'],
+        check=False,
+    )
+    _debug(f'Fixed ownership of /home/{username}/.config/systemd')
+
+    _info('DMS services enabled successfully')
+
+
+# ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
 
@@ -178,3 +249,6 @@ def install_dms(
         if binary_path.exists():
             binary_path.unlink()
             _debug('Removed dankinstall binary')
+
+    # 5. Enable DMS services (systemctl commands fail silently inside chroot)
+    _enable_dms_services(chroot_dir, username, compositor)

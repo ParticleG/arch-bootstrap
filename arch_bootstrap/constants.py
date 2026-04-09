@@ -27,7 +27,7 @@ GPU_PACKAGES: dict[str, list[str]] = {
     'common': ['mesa'],
     'amd': ['vulkan-radeon', 'xf86-video-amdgpu', 'xf86-video-ati'],
     'intel': ['intel-media-driver', 'libva-intel-driver', 'vulkan-intel'],
-    'nvidia_open': ['nvidia-open-dkms', 'dkms', 'libva-nvidia-driver'],
+    'nvidia_open': ['linux-headers', 'nvidia-open-dkms', 'dkms', 'libva-nvidia-driver'],
     'nouveau': ['xf86-video-nouveau', 'vulkan-nouveau'],
 }
 

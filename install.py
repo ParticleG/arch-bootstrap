@@ -338,20 +338,16 @@ def _resolve_download_url(country: str | None) -> str:
 SHASUMS_URL = f'https://github.com/{REPO}/releases/latest/download/SHA256SUMS'
 
 
-def _verify_checksum(pyz_path: Path, is_cn: bool) -> bool | None:
+def _verify_checksum(pyz_path: Path, version: str, proxy: str | None) -> bool | None:
     """Download SHA256SUMS from the release and verify the .pyz file.
 
     Returns True if checksum matches, False if mismatch, None if the
     SHA256SUMS file could not be downloaded (best-effort).
     """
-    # Build URL for SHA256SUMS (apply same proxy logic for CN)
+    # Build URL for SHA256SUMS (reuse proxy resolved by caller)
     sums_url = SHASUMS_URL
-    if is_cn:
-        proxy = _resolve_ghproxy()
-        if proxy and _test_proxy(proxy):
-            sums_url = f'{proxy}/{SHASUMS_URL}'
-        elif _test_proxy(FALLBACK_PROXY):
-            sums_url = f'{FALLBACK_PROXY}/{SHASUMS_URL}'
+    if proxy:
+        sums_url = f'{proxy}/{SHASUMS_URL}'
 
     try:
         req = urllib.request.Request(sums_url, headers={'User-Agent': 'curl/8.0'})
@@ -401,8 +397,11 @@ def _download_pyz(dest: Path, country: str | None) -> bool:
         return False
 
     # Best-effort checksum verification
-    is_cn = (country == 'CN')
-    verified = _verify_checksum(dest, is_cn)
+    # Extract proxy from resolved URL (if proxied, URL is "{proxy}/{GITHUB_URL}")
+    proxy: str | None = None
+    if url != GITHUB_URL:
+        proxy = url.removesuffix(f'/{GITHUB_URL}')
+    verified = _verify_checksum(dest, 'latest', proxy)
     if verified is None:
         print('arch-bootstrap: [WARN] Could not download SHA256SUMS — skipping integrity check.',
               file=sys.stderr)

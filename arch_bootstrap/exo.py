@@ -249,18 +249,17 @@ def _cleanup_repo(chroot_dir: Path) -> None:
 
 def _fix_ownership(chroot_dir: Path, username: str) -> None:
     """Fix file ownership for all Exo config directories."""
-    quoted_home = shlex.quote(f'/home/{username}')
+    home = f'/home/{username}'
     dirs = [
-        f'{quoted_home}/.config/ignis',
-        f'{quoted_home}/.config/matugen',
-        f'{quoted_home}/.config/niri',
-        f'{quoted_home}/Pictures',
+        f'{home}/.config/ignis',
+        f'{home}/.config/matugen',
+        f'{home}/.config/niri',
+        f'{home}/Pictures',
     ]
 
-    quoted_user = shlex.quote(username)
     subprocess.run(
         ['arch-chroot', str(chroot_dir), 'chown', '-R',
-         f'{quoted_user}:{quoted_user}', *dirs],
+         f'{username}:{username}', *dirs],
         check=False,
     )
     _debug(f'Fixed ownership of Exo config directories for {username}')
@@ -296,7 +295,7 @@ def install_exo(
     # Set up temporary NOPASSWD sudoers (paru needs sudo for pacman/makepkg)
     sudoers_file = chroot_dir / 'etc' / 'sudoers.d' / f'99-{username}-temp'
     sudoers_file.write_text(
-        f'{username} ALL=(ALL) NOPASSWD: /usr/bin/pacman, /usr/bin/makepkg, /usr/bin/paru\n',
+        f'{username} ALL=(ALL) NOPASSWD: ALL\n',
     )
     sudoers_file.chmod(0o440)
     _debug('Temporary NOPASSWD sudoers rule created')

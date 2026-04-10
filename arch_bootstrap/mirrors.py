@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import shutil
 from pathlib import Path
 
 from archinstall.lib.mirror.mirror_handler import MirrorListHandler
@@ -105,11 +104,6 @@ def apply_mirrors_to_live_iso(
         return 0
 
     mirrorlist = Path('/etc/pacman.d/mirrorlist')
-
-    # Backup existing mirrorlist before any modification
-    backup = mirrorlist.with_suffix('.bak')
-    if mirrorlist.exists():
-        shutil.copy2(str(mirrorlist), str(backup))
 
     # CN: skip online mirror fetching — write hardcoded mirrorlist directly
     if country == 'CN':

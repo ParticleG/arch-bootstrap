@@ -11,7 +11,6 @@ from archinstall.lib.models.device import BDevice, Unit
 from archinstall.lib.output import debug
 
 from .constants import (
-    COUNTRY_NAMES,
     GPU_DETECT_PATTERNS,
     GEO_ENDPOINTS,
     KMSCON_DEFAULT_FONT_SIZE,
@@ -50,11 +49,9 @@ def detect_country() -> str | None:
                 except (json.JSONDecodeError, AttributeError):
                     code = body.upper()
 
+                # Accept any valid 2-letter ISO 3166-1 alpha-2 code
                 if re.match(r'^[A-Z]{2}$', code):
-                    if code in COUNTRY_NAMES:
-                        return code
-                    _debug(f'Geo-detection returned unrecognized country code: {code}')
-                    return None
+                    return code
         except Exception:
             continue
 

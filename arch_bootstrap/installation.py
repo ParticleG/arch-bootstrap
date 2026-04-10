@@ -20,7 +20,7 @@ from archinstall.lib.models.bootloader import Bootloader
 from archinstall.lib.models.device import DiskLayoutType
 from archinstall.lib.models.users import User
 from archinstall.lib.network.network_handler import install_network_config
-from archinstall.lib.output import Font, debug, info
+from archinstall.lib.output import Font, debug, error, info
 from archinstall.lib.profile.profiles_handler import profile_handler
 from archinstall.tui.ui.components import tui
 
@@ -341,7 +341,8 @@ def perform_installation(
     application_handler = ApplicationHandler()
 
     if not config.disk_config:
-        raise ValueError('No disk configuration provided — cannot proceed with installation')
+        error('No disk configuration provided')
+        return
 
     disk_config = config.disk_config
     run_mkinitcpio = not config.bootloader_config or not config.bootloader_config.uki
@@ -444,7 +445,7 @@ def perform_installation(
     # Post-install: write keyboard layout to vconsole.conf
     chroot_dir = mountpoint
     if not (chroot_dir / 'etc').exists():
-        raise RuntimeError(f'Installation target {chroot_dir} appears incomplete: /etc not found')
+        chroot_dir = Path('/mnt')
 
     vconsole = chroot_dir / 'etc' / 'vconsole.conf'
     vconsole.write_text('KEYMAP=us\n')
@@ -509,7 +510,7 @@ def perform_installation(
     if username:
         sudoers_aur = chroot_dir / 'etc' / 'sudoers.d' / 'aur-tmp'
         sudoers_aur.write_text(
-            f'{username} ALL=(ALL) NOPASSWD: /usr/bin/pacman, /usr/bin/makepkg, /usr/bin/paru\n'
+            f'{username} ALL=(ALL) NOPASSWD: ALL\n'
         )
         sudoers_aur.chmod(0o440)
         _debug('Temporary NOPASSWD sudoers rule created for AUR operations')
@@ -592,6 +593,6 @@ def perform_installation(
         case PostInstallationAction.EXIT:
             pass
         case PostInstallationAction.REBOOT:
-            subprocess.run(['reboot'])
+            subprocess.run(['reboot'], check=False)
         case PostInstallationAction.CHROOT:
-            subprocess.run(['arch-chroot', str(chroot_dir)])
+            subprocess.run(['arch-chroot', str(chroot_dir)], check=False)

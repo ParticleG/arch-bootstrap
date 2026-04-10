@@ -289,7 +289,7 @@ def install_dms(
 
         result = subprocess.run(
             ['arch-chroot', str(chroot_dir),
-             'runuser', '-l', shlex.quote(username), '-c', cmd],
+             'runuser', '-l', username, '-c', cmd],
             check=False,
         )
 

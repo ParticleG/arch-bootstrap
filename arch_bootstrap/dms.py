@@ -279,6 +279,7 @@ def install_dms(
         # 3. Run dankinstall in headless mode
         _info(t('dms.running_dankinstall'))
         cmd = (
+            f'DANKINSTALL_LOG_DIR=/var/tmp '
             f'GIT_CONFIG_SYSTEM=/etc/gitconfig '
             f'LANG=C.UTF-8 /var/tmp/dankinstall '
             f'-c {shlex.quote(compositor)} -t {shlex.quote(terminal)} '
@@ -296,7 +297,7 @@ def install_dms(
             _info(t('dms.complete'))
         else:
             _info(t('dms.failed') % (result.returncode or -1))
-            _debug('Check /var/tmp/dankinstall logs for details; '
+            _debug('Check /var/tmp/dankinstall-*.log for details; '
                    'greeter and configs may need manual setup')
     finally:
         # 4. Clean up: remove temporary sudoers rule and binary

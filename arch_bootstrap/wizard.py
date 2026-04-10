@@ -570,7 +570,7 @@ async def step_user_password(state: WizardState) -> str:
             return 'back'
 
         # Warn on empty password
-        if not password.plain_text:
+        if not password.plaintext:
             confirm_empty = await Confirmation(
                 header='No password set. Continue with empty password?',
                 allow_skip=True,

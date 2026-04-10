@@ -129,7 +129,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'exo.cloning_repo': 'Cloning Exo repository...',
         'exo.copying_configs': 'Copying Exo configuration files...',
         'exo.running_matugen': 'Running matugen for initial color generation...',
-        'exo.configuring_greetd': 'Configuring greetd for Niri greeter...',
+        'exo.configuring_greetd': 'Configuring greetd for Niri autologin...',
         'exo.enabling_services': 'Enabling Exo desktop services...',
         'exo.complete': 'Exo desktop environment installed successfully',
         'exo.failed': 'Exo installation failed (exit %d)',

@@ -249,12 +249,11 @@ EXO_AUR_PACKAGES: list[str] = [
     'dart-sass',
 ]
 
-# Packages installed alongside Exo (compositor, greeter, utils)
+# Packages installed alongside Exo (compositor, greetd, utils)
 EXO_SYSTEM_PACKAGES: list[str] = [
     'niri',
     'xdg-desktop-portal-gnome',
     'greetd',
-    'greetd-niri-greeter',
     'kitty',
     'nautilus',
     'playerctl',

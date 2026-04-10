@@ -3,8 +3,8 @@
 Exo is a Material Design 3 desktop shell for the Niri compositor, built
 with Ignis (Python/GTK4 widget framework).  This module clones the Exo
 repository, installs its AUR dependencies via paru, copies configuration
-files into the user's home directory, configures greetd with the Niri
-greeter, and enables the required systemd services.
+files into the user's home directory, configures greetd for autologin
+into the Niri session, and enables the required systemd services.
 
 Source: https://github.com/debuggyo/Exo
 """
@@ -30,14 +30,14 @@ from .nvidia import install_niri_drm_wait
 
 _PREFIX = '[Exo]'
 
-# greetd configuration for the Niri greeter
+# greetd configuration template (autologin, no greeter)
 _GREETD_CONFIG = """\
 [terminal]
 vt = 1
 
 [default_session]
-command = "niri-session -- niri-greeter"
-user = "greeter"
+command = "niri-session"
+user = "{username}"
 """
 
 
@@ -162,8 +162,8 @@ def _clone_and_copy_configs(
         f'mkdir -p {home}/.config/niri',
         f'mkdir -p {home}/Pictures/Wallpapers',
         # Copy config trees
-        f'cp -r {repo_path}/ignis/* {home}/.config/ignis/',
-        f'cp -r {repo_path}/matugen/* {home}/.config/matugen/',
+        f'cp -r {repo_path}/ignis/. {home}/.config/ignis/',
+        f'cp -r {repo_path}/matugen/. {home}/.config/matugen/',
         # Copy individual files
         f'cp {repo_path}/exodefaults/config.kdl {home}/.config/niri/config.kdl',
         f'cp {repo_path}/exodefaults/default_wallpaper.png {home}/Pictures/Wallpapers/default.png',
@@ -220,14 +220,14 @@ def _set_gtk_theme(chroot_dir: Path, username: str) -> None:
         _debug('GTK theme set to adw-gtk3')
 
 
-def _configure_greetd(chroot_dir: Path) -> None:
-    """Write greetd configuration for the Niri greeter."""
+def _configure_greetd(chroot_dir: Path, username: str) -> None:
+    """Write greetd configuration for autologin into Niri."""
     _info(t('exo.configuring_greetd'))
 
     config_dir = chroot_dir / 'etc' / 'greetd'
     config_dir.mkdir(parents=True, exist_ok=True)
     config_path = config_dir / 'config.toml'
-    config_path.write_text(_GREETD_CONFIG)
+    config_path.write_text(_GREETD_CONFIG.format(username=username))
     _debug(f'Wrote {config_path}')
 
 
@@ -320,7 +320,8 @@ def install_exo(
 
     Installs Exo's AUR dependencies via paru, clones the Exo repository,
     copies configuration files, runs matugen for initial color generation,
-    configures greetd with the Niri greeter, and enables systemd services.
+    configures greetd for autologin into the Niri session, and enables
+    systemd services.
 
     The CN GitHub proxy (if applicable) should already be configured in
     /etc/gitconfig by the caller before this function is invoked, so
@@ -347,8 +348,8 @@ def install_exo(
     # 4. Set GTK theme
     _set_gtk_theme(chroot_dir, username)
 
-    # 5. Configure greetd for Niri greeter
-    _configure_greetd(chroot_dir)
+    # 5. Configure greetd for Niri autologin
+    _configure_greetd(chroot_dir, username)
 
     # 6. Enable systemd services (manual symlinks)
     _enable_services(chroot_dir)

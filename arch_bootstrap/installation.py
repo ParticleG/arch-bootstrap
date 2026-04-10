@@ -264,9 +264,10 @@ def _setup_cn_git_proxy(chroot_dir: Path) -> None:
     """Write GitHub URL rewrite to /etc/gitconfig for CN users.
 
     This enables git operations (including makepkg and paru source fetches)
-    to use a GitHub proxy.  Written to /etc/gitconfig (system-level git
-    config) which is read by all git invocations, including those from
-    makepkg (which nullifies GIT_CONFIG_GLOBAL but NOT GIT_CONFIG_SYSTEM).
+    to use a GitHub proxy.  Written to both /etc/gitconfig (system-level
+    git config) and /etc/makepkg.d/gitconfig, because makepkg's source/git.sh
+    overrides GIT_CONFIG_SYSTEM to /etc/makepkg.d/gitconfig, bypassing the
+    system-level config during AUR builds.
     """
     proxy = resolve_github_proxy(is_cn=True)
     if not proxy:
@@ -276,6 +277,15 @@ def _setup_cn_git_proxy(chroot_dir: Path) -> None:
     _info(f'CN: GitHub proxy for git → {proxy}')
     gitconfig = chroot_dir / 'etc' / 'gitconfig'
     gitconfig.write_text(
+        f'[url "{proxy}/https://github.com/"]\n'
+        f'\tinsteadOf = https://github.com/\n'
+    )
+
+    # Also write to makepkg's git config, since makepkg overrides
+    # GIT_CONFIG_SYSTEM to /etc/makepkg.d/gitconfig (see git.sh).
+    makepkg_gitconfig = chroot_dir / 'etc' / 'makepkg.d' / 'gitconfig'
+    makepkg_gitconfig.parent.mkdir(parents=True, exist_ok=True)
+    makepkg_gitconfig.write_text(
         f'[url "{proxy}/https://github.com/"]\n'
         f'\tinsteadOf = https://github.com/\n'
     )

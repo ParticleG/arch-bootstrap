@@ -281,6 +281,7 @@ def install_dms(
         cmd = (
             f'DANKINSTALL_LOG_DIR=/var/tmp '
             f'GIT_CONFIG_SYSTEM=/etc/gitconfig '
+            f'MAKEPKG_GIT_CONFIG=/etc/gitconfig '
             f'LANG=C.UTF-8 /var/tmp/dankinstall '
             f'-c {shlex.quote(compositor)} -t {shlex.quote(terminal)} '
             f'--include-deps dms-greeter '

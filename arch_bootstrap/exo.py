@@ -69,6 +69,7 @@ def _install_aur_packages(chroot_dir: Path, username: str) -> bool:
 
     cmd = (
         'GIT_CONFIG_SYSTEM=/etc/gitconfig '
+        'MAKEPKG_GIT_CONFIG=/etc/gitconfig '
         'LANG=C.UTF-8 paru -S --noconfirm --needed --skipreview '
         + ' '.join(all_packages)
     )

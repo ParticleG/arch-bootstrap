@@ -88,7 +88,7 @@ class WizardState:
         self.kmscon_font_package: str = ''
         self.screen_resolution: tuple[int, int] | None = None
         # DMS desktop environment
-        self.desktop_env: str = 'minimal'      # 'minimal' | 'dms'
+        self.desktop_env: str = 'minimal'      # 'minimal' | 'dms' | 'exo'
         self.dms_compositor: str = 'niri'       # 'niri' | 'hyprland'
         self.dms_terminal: str = 'ghostty'      # 'ghostty' | 'kitty' | 'alacritty'
         # Browser selection
@@ -394,6 +394,7 @@ async def step_desktop_env(state: WizardState) -> str:
     items = [
         MenuItem(t('step.desktop.minimal'), value='minimal'),
         MenuItem(t('step.desktop.dms'), value='dms'),
+        MenuItem(t('step.desktop.exo'), value='exo'),
     ]
     group = MenuItemGroup(items)
     group.set_focus_by_value(state.desktop_env)
@@ -630,6 +631,8 @@ async def step_confirm(
         fixed_rows.append(_row(t('confirm.desktop'), 'DankMaterialShell (DankInstall)'))
         fixed_rows.append(_row(t('confirm.compositor'), state.dms_compositor, indent=2))
         fixed_rows.append(_row(t('confirm.terminal'), state.dms_terminal, indent=2))
+    elif state.desktop_env == 'exo':
+        fixed_rows.append(_row(t('confirm.desktop'), 'Exo (Material Design 3 + Niri)'))
     else:
         fixed_rows.append(_row(t('confirm.desktop'), 'Minimal'))
 

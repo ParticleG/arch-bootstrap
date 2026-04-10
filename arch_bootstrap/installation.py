@@ -561,6 +561,17 @@ def perform_installation(
                 gpu_vendors=gpu_vendors,
             )
 
+        # Post-install: Exo desktop environment
+        if desktop_env == 'exo' and username:
+            from .exo import install_exo
+            _info('Setting up Exo desktop environment...')
+            install_exo(
+                chroot_dir=chroot_dir,
+                username=username,
+                country=country,
+                gpu_vendors=gpu_vendors,
+            )
+
         # Post-install: AUR browsers (requires paru)
         if has_paru and browsers:
             _install_aur_browsers(chroot_dir, username, browsers)

@@ -232,6 +232,36 @@ GHPROXY_CHUNK_URL = 'https://ghproxy.link/js/src_views_home_HomeView_vue.js'
 GHPROXY_FALLBACK = 'https://ghfast.top'
 
 # ---------------------------------------------------------------------------
+# Exo desktop shell (Material Design 3 for Niri)
+# ---------------------------------------------------------------------------
+
+EXO_REPO_URL = 'https://github.com/debuggyo/Exo.git'
+
+# Essential AUR packages for Exo desktop
+EXO_AUR_PACKAGES: list[str] = [
+    'python-ignis-git',
+    'ignis-gvc',
+    'ttf-material-symbols-variable-git',
+    'matugen-bin',
+    'swww',
+    'gnome-bluetooth-3.0',
+    'adw-gtk-theme',
+    'dart-sass',
+]
+
+# Packages installed alongside Exo (compositor, greeter, utils)
+EXO_SYSTEM_PACKAGES: list[str] = [
+    'niri',
+    'xdg-desktop-portal-gnome',
+    'greetd',
+    'greetd-niri-greeter',
+    'kitty',
+    'nautilus',
+    'playerctl',
+    'brightnessctl',
+]
+
+# ---------------------------------------------------------------------------
 # Browser options
 # ---------------------------------------------------------------------------
 

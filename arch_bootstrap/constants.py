@@ -4,7 +4,14 @@ from __future__ import annotations
 # Constants
 # =============================================================================
 
-BASE_PACKAGES: list[str] = ['neovim', 'git', '7zip', 'base-devel', 'zsh']
+BASE_PACKAGES: list[str] = [
+    '7zip',
+    'base-devel',
+    'neovim',
+    'git',
+    'openssh',
+    'zsh'
+]
 
 # GPU driver configuration
 GPU_VENDORS: list[str] = ['amd', 'intel', 'nvidia_open', 'nouveau']
@@ -24,11 +31,11 @@ GPU_LABELS: dict[str, str] = {
 }
 
 GPU_PACKAGES: dict[str, list[str]] = {
-    'common': ['mesa'],
-    'amd': ['vulkan-radeon', 'xf86-video-amdgpu', 'xf86-video-ati'],
-    'intel': ['intel-media-driver', 'libva-intel-driver', 'vulkan-intel'],
-    'nvidia_open': ['linux-headers', 'nvidia-open-dkms', 'dkms', 'libva-nvidia-driver'],
-    'nouveau': ['xf86-video-nouveau', 'vulkan-nouveau'],
+    'common': ['mesa', 'vulkan-icd-loader'],
+    'amd': ['lib32-mesa', 'lib32-vulkan-radeon', 'vulkan-radeon'],
+    'intel': ['intel-media-driver', 'lib32-mesa', 'lib32-vulkan-intel', 'libva-intel-driver', 'linux-firmware-intel', 'vulkan-intel'],
+    'nvidia_open': ['dkms', 'egl-wayland', 'lib32-nvidia-utils', 'libva-nvidia-driver', 'linux-headers', 'nvidia-open-dkms', 'nvidia-settings', 'nvidia-utils'],
+    'nouveau': ['lib32-mesa', 'lib32-vulkan-nouveau', 'vulkan-nouveau'],
 }
 
 # Language options

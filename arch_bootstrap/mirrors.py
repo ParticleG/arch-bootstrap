@@ -5,7 +5,23 @@ from pathlib import Path
 from archinstall.lib.mirror.mirror_handler import MirrorListHandler
 from archinstall.lib.models.mirrors import CustomServer, MirrorConfiguration, MirrorRegion
 
-from .constants import COUNTRY_NAMES, FALLBACK_MIRRORS
+from .constants import CN_OFFICIAL_MIRRORS, COUNTRY_NAMES, FALLBACK_MIRRORS
+
+
+# =============================================================================
+# CN mirrorlist formatting
+# =============================================================================
+
+def format_cn_mirrorlist() -> str:
+    """Return the formatted CN mirrorlist string (comment header + Server lines).
+
+    Uses CN_OFFICIAL_MIRRORS from constants (CERNET CDN + TUNA/USTC).
+    Does not write to file — the caller handles that.
+    """
+    lines = ['# CN mirrors - CERNET CDN + fallbacks']
+    for url in CN_OFFICIAL_MIRRORS:
+        lines.append(f'Server = {url}')
+    return '\n'.join(lines) + '\n'
 
 
 # =============================================================================
@@ -62,18 +78,32 @@ def apply_mirrors_to_live_iso(
 ) -> int:
     """Apply mirrors to live ISO's /etc/pacman.d/mirrorlist.
 
-    Uses speed_sort=False (archlinux.org score-sorted data is sufficient
-    for the interactive wizard; full speed testing happens at install time
-    via set_mirrors which hardcodes speed_sort=True).
+    For CN: bypasses archinstall's mirror resolution entirely and writes
+    a hardcoded mirrorlist (CERNET CDN + TUNA/USTC fallbacks).
+
+    For other regions: uses speed_sort=False (archlinux.org score-sorted
+    data is sufficient for the interactive wizard; full speed testing
+    happens at install time via set_mirrors which hardcodes speed_sort=True).
 
     Returns number of servers written, or 0 if not in ISO environment.
     """
+    from archinstall.lib.output import info
+
     from .detection import is_iso_environment
 
     if not is_iso_environment():
         return 0
 
     mirrorlist = Path('/etc/pacman.d/mirrorlist')
+
+    # CN: skip online mirror fetching — write hardcoded mirrorlist directly
+    if country == 'CN':
+        info('[arch-bootstrap] CN region: writing hardcoded mirrorlist '
+             '(CERNET CDN + TUNA/USTC)')
+        mirrorlist.parent.mkdir(parents=True, exist_ok=True)
+        mirrorlist.write_text(format_cn_mirrorlist())
+        return len(CN_OFFICIAL_MIRRORS)
+
     config = build_mirror_config(country, handler)
 
     # Build mirrorlist content without speed testing

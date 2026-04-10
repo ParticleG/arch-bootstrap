@@ -91,15 +91,17 @@ REGION_MENU_COUNTRIES: list[str] = [
     'CN', 'US', 'JP', 'DE', 'GB', 'FR', 'KR', 'AU', 'CA', 'SG', 'TW', 'HK',
 ]
 
-# Bootstrap mirrors for archlinuxcn repo (used before archlinuxcn-mirrorlist-git
-# is installed).  After keyring + mirrorlist are in place the section is
-# rewritten to use Include = /etc/pacman.d/archlinuxcn-mirrorlist instead.
-ARCHLINUXCN_BOOTSTRAP_MIRRORS: list[str] = [
-    'https://mirrors.cernet.edu.cn/archlinuxcn/$arch',
-    'https://mirrors.tuna.tsinghua.edu.cn/archlinuxcn/$arch',
-    'https://mirrors.ustc.edu.cn/archlinuxcn/$arch',
-    'https://mirrors.bfsu.edu.cn/archlinuxcn/$arch',
-    'https://mirrors.aliyun.com/archlinuxcn/$arch',
+# CERNET smart-routing CDN — automatically redirects to the nearest Chinese
+# educational mirror, effectively acting as a built-in mirror pool.
+ARCHLINUXCN_URL = 'https://mirrors.cernet.edu.cn/archlinuxcn/$arch'
+
+# Hardcoded official Arch mirrors for CN — bypasses archinstall's mirror
+# speed-testing entirely.  CERNET CDN first (smart-routes to nearest edu
+# mirror), with TUNA and USTC as fallbacks.
+CN_OFFICIAL_MIRRORS: list[str] = [
+    'https://mirrors.cernet.edu.cn/archlinux/$repo/os/$arch',  # CERNET smart CDN
+    'https://mirrors.tuna.tsinghua.edu.cn/archlinux/$repo/os/$arch',  # Tsinghua TUNA
+    'https://mirrors.ustc.edu.cn/archlinux/$repo/os/$arch',  # USTC
 ]
 
 # oh-my-zsh
@@ -107,8 +109,14 @@ OMZ_INSTALL_URL = 'https://install.ohmyz.sh'
 OMZ_REMOTE_GITHUB = 'https://github.com/ohmyzsh/ohmyzsh.git'
 
 # Fallback mirror pools (used when MirrorListHandler has no data for a region)
+# NOTE: For CN region, CN_OFFICIAL_MIRRORS is used directly by
+# format_cn_mirrorlist() and both call sites short-circuit before reaching
+# FALLBACK_MIRRORS['CN'].  This CN fallback list is only retained for
+# build_mirror_config() compatibility, which populates config.mirror_config
+# for the optional_repositories path.
 FALLBACK_MIRRORS: dict[str, list[str]] = {
     'CN': [
+        'https://mirrors.cernet.edu.cn/archlinux/$repo/os/$arch',
         'https://mirrors.ustc.edu.cn/archlinux/$repo/os/$arch',
         'https://mirrors.tuna.tsinghua.edu.cn/archlinux/$repo/os/$arch',
         'https://mirrors.bfsu.edu.cn/archlinux/$repo/os/$arch',

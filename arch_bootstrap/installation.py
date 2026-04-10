@@ -28,7 +28,7 @@ from archinstall.tui.ui.components import tui
 
 from .config import generate_fontconfig, generate_kmscon_config
 from .constants import (
-    ARCHLINUXCN_BOOTSTRAP_MIRRORS,
+    ARCHLINUXCN_URL,
     BROWSER_OPTIONS,
     GHPROXY_CHUNK_URL,
     GHPROXY_FALLBACK,
@@ -37,6 +37,7 @@ from .constants import (
 )
 from .detection import calculate_kmscon_font_size, needs_kmscon
 from .i18n import t
+from .mirrors import format_cn_mirrorlist
 
 
 # =============================================================================
@@ -73,6 +74,18 @@ def _info(msg: str) -> None:
 def _debug(msg: str) -> None:
     """Log a debug message with a colored [arch-bootstrap] prefix."""
     debug(f'{_PREFIX} {msg}', fg='cyan')
+
+
+def _write_cn_mirrorlist(path: Path) -> None:
+    """Write hardcoded CN official mirrors to the given mirrorlist path.
+
+    Bypasses archinstall's mirror speed-testing entirely for CN region.
+    CERNET CDN is listed first (smart-routes to nearest edu mirror),
+    followed by TUNA and USTC as fallbacks.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(format_cn_mirrorlist())
+    _info(f'CN mirrorlist written to {path}')
 
 
 # =============================================================================
@@ -215,61 +228,38 @@ def _install_paru(
 def _setup_archlinuxcn(chroot_dir: Path) -> None:
     """Configure archlinuxcn repository and install keyring in the chroot.
 
-    Uses a two-phase approach to solve the keyring chicken-and-egg problem:
-
-    **Bootstrap phase**: Append ``[archlinuxcn]`` with ``SigLevel = Never``
-    and multiple bootstrap mirrors so that ``archlinuxcn-keyring`` and
-    ``archlinuxcn-mirrorlist-git`` can be installed without signature
-    verification.
-
-    **Final phase**: Replace the entire ``[archlinuxcn]`` section with a
-    clean version that uses ``Include = /etc/pacman.d/archlinuxcn-mirrorlist``
-    (provided by ``archlinuxcn-mirrorlist-git``).  This delegates mirror
-    selection to the community-maintained mirrorlist instead of hardcoding
-    a single server.
+    Uses CERNET smart-routing CDN which redirects to the nearest Chinese
+    educational mirror.  A temporary ``SigLevel = Never`` is used to
+    bootstrap ``archlinuxcn-keyring`` and then removed.
     """
     _info('Configuring archlinuxcn repository...')
-
     pacman_conf = chroot_dir / 'etc' / 'pacman.conf'
 
-    # Bootstrap phase: add [archlinuxcn] with SigLevel = Never and multiple
-    # mirrors so the keyring package can be fetched without PGP verification.
-    server_lines = '\n'.join(
-        f'Server = {url}' for url in ARCHLINUXCN_BOOTSTRAP_MIRRORS
-    )
+    # Add [archlinuxcn] with SigLevel = Never so the keyring can be installed
     with open(pacman_conf, 'a') as f:
         f.write(
             f'\n[archlinuxcn]\n'
             f'SigLevel = Never\n'
-            f'{server_lines}\n\n'
+            f'Server = {ARCHLINUXCN_URL}\n\n'
         )
 
-    # Install keyring and mirrorlist (no PGP prompt, no signature failure)
+    # Install keyring
     _info('Installing archlinuxcn-keyring...')
     result = subprocess.run(
         ['arch-chroot', str(chroot_dir),
          'pacman', '-Syu', '--noconfirm', '--needed',
-         'archlinuxcn-keyring', 'archlinuxcn-mirrorlist-git'],
+         'archlinuxcn-keyring'],
         check=False,
     )
     if result.returncode != 0:
         _info(f'archlinuxcn-keyring installation failed (exit {result.returncode})')
-        _info('Leaving bootstrap mirror configuration intact. '
-              'Please manually install archlinuxcn-keyring and configure '
-              'mirrors later.')
+        _info('Leaving bootstrap configuration intact. '
+              'Please manually install archlinuxcn-keyring later.')
         return
 
-    # Final phase: replace the entire [archlinuxcn] bootstrap section with a
-    # clean Include-based configuration.  The mirrorlist provided by
-    # archlinuxcn-mirrorlist-git handles mirror selection from now on.
+    # Remove temporary SigLevel override, keeping the CERNET server
     content = pacman_conf.read_text()
-    content = re.sub(
-        r'\n?\[archlinuxcn\]\n(?:(?!\[).)*',
-        '\n[archlinuxcn]\n'
-        'Include = /etc/pacman.d/archlinuxcn-mirrorlist\n\n',
-        content,
-        flags=re.DOTALL,
-    )
+    content = content.replace('SigLevel = Never\n', '')
     pacman_conf.write_text(content)
 
 
@@ -388,7 +378,11 @@ def perform_installation(
 
         installation.sanity_check(offline=False, skip_ntp=False, skip_wkd=False)
 
-        if mirror_config := config.mirror_config:
+        if country == 'CN':
+            # CN live ISO mirrorlist was already written by
+            # apply_mirrors_to_live_iso() during the wizard phase — skip.
+            pass
+        elif mirror_config := config.mirror_config:
             installation.set_mirrors(mirror_list_handler, mirror_config, on_target=False)
 
         installation.minimal_installation(
@@ -398,7 +392,9 @@ def perform_installation(
             locale_config=locale_config,
         )
 
-        if mirror_config := config.mirror_config:
+        if country == 'CN':
+            _write_cn_mirrorlist(mountpoint / 'etc' / 'pacman.d' / 'mirrorlist')
+        elif mirror_config := config.mirror_config:
             installation.set_mirrors(mirror_list_handler, mirror_config, on_target=True)
 
         if config.swap and config.swap.enabled:

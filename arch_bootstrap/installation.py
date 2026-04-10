@@ -549,6 +549,7 @@ def perform_installation(
             compositor=dms_compositor,
             terminal=dms_terminal,
             country=country,
+            gpu_vendors=gpu_vendors,
         )
 
     # Post-install: AUR browsers (requires paru)

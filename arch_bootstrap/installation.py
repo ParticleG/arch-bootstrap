@@ -186,7 +186,7 @@ def _install_paru(
         'set -e; '
         'cd /tmp; '
         'rm -rf paru-bin; '
-        'git clone https://aur.archlinux.org/paru-bin.git; '
+        'curl -fsSL "https://aur.archlinux.org/cgit/aur.git/snapshot/paru-bin.tar.gz" | tar xz; '
         'cd paru-bin; '
         'makepkg -si --noconfirm --needed'
     )

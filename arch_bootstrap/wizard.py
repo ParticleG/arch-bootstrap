@@ -627,7 +627,7 @@ async def step_confirm(
         _row('Swap', 'zram (lzo-rle)'),
     ]
     if state.desktop_env == 'dms':
-        fixed_rows.append(_row(t('confirm.desktop'), 'DMS (DankMaterialShell)'))
+        fixed_rows.append(_row(t('confirm.desktop'), 'DankMaterialShell (DankInstall)'))
         fixed_rows.append(_row(t('confirm.compositor'), state.dms_compositor, indent=2))
         fixed_rows.append(_row(t('confirm.terminal'), state.dms_terminal, indent=2))
     else:

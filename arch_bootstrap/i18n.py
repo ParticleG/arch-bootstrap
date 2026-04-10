@@ -108,7 +108,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'opt.net.nm': 'NetworkManager + wpa_supplicant  (legacy)',
         # -- DMS desktop --
         'step.desktop.title': 'Desktop Environment',
-        'step.desktop.dms': 'DMS (DankMaterialShell)',
+        'step.desktop.dms': 'DankMaterialShell (DankInstall)',
         'step.desktop.minimal': 'Minimal (no desktop)',
         'step.compositor.title': 'DMS Compositor',
         'step.compositor.niri': 'niri (scrolling tiling, Recommended)',
@@ -238,7 +238,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'opt.net.nm': 'NetworkManager + wpa_supplicant  (传统)',
         # -- DMS 桌面 --
         'step.desktop.title': '桌面环境',
-        'step.desktop.dms': 'DMS (DankMaterialShell)',
+        'step.desktop.dms': 'DankMaterialShell (DankInstall)',
         'step.desktop.minimal': '最小安装（无桌面）',
         'step.compositor.title': 'DMS 合成器',
         'step.compositor.niri': 'niri（滚动平铺，推荐）',
@@ -368,7 +368,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'opt.net.nm': 'NetworkManager + wpa_supplicant  (レガシー)',
         # -- DMS デスクトップ --
         'step.desktop.title': 'デスクトップ環境',
-        'step.desktop.dms': 'DMS (DankMaterialShell)',
+        'step.desktop.dms': 'DankMaterialShell (DankInstall)',
         'step.desktop.minimal': '最小構成（デスクトップなし）',
         'step.compositor.title': 'DMS コンポジター',
         'step.compositor.niri': 'niri（スクロールタイル、推奨）',

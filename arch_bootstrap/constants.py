@@ -91,7 +91,16 @@ REGION_MENU_COUNTRIES: list[str] = [
     'CN', 'US', 'JP', 'DE', 'GB', 'FR', 'KR', 'AU', 'CA', 'SG', 'TW', 'HK',
 ]
 
-ARCHLINUXCN_URL = 'https://mirrors.tuna.tsinghua.edu.cn/archlinuxcn/$arch'
+# Bootstrap mirrors for archlinuxcn repo (used before archlinuxcn-mirrorlist-git
+# is installed).  After keyring + mirrorlist are in place the section is
+# rewritten to use Include = /etc/pacman.d/archlinuxcn-mirrorlist instead.
+ARCHLINUXCN_BOOTSTRAP_MIRRORS: list[str] = [
+    'https://mirrors.cernet.edu.cn/archlinuxcn/$arch',
+    'https://mirrors.tuna.tsinghua.edu.cn/archlinuxcn/$arch',
+    'https://mirrors.ustc.edu.cn/archlinuxcn/$arch',
+    'https://mirrors.bfsu.edu.cn/archlinuxcn/$arch',
+    'https://mirrors.aliyun.com/archlinuxcn/$arch',
+]
 
 # oh-my-zsh
 OMZ_INSTALL_URL = 'https://install.ohmyz.sh'

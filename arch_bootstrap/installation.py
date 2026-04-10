@@ -28,7 +28,7 @@ from archinstall.tui.ui.components import tui
 
 from .config import generate_fontconfig, generate_kmscon_config
 from .constants import (
-    ARCHLINUXCN_URL,
+    ARCHLINUXCN_BOOTSTRAP_MIRRORS,
     BROWSER_OPTIONS,
     GHPROXY_CHUNK_URL,
     GHPROXY_FALLBACK,
@@ -215,31 +215,36 @@ def _install_paru(
 def _setup_archlinuxcn(chroot_dir: Path) -> None:
     """Configure archlinuxcn repository and install keyring in the chroot.
 
-    This runs as a late post-install step so that the base system (with the
-    default Arch keyring) is fully set up first.
+    Uses a two-phase approach to solve the keyring chicken-and-egg problem:
 
-    The keyring bootstrap is a chicken-and-egg problem: packages from
-    archlinuxcn are signed by keys that only become trusted *after*
-    archlinuxcn-keyring is installed.  We solve this by temporarily
-    setting ``SigLevel = Optional TrustAll`` for the repo, installing
-    the keyring (which runs ``pacman-key --populate archlinuxcn``
-    automatically), then removing the override so the global default
-    (``Required DatabaseOptional``) takes effect for all future
-    operations.
+    **Bootstrap phase**: Append ``[archlinuxcn]`` with ``SigLevel = Never``
+    and multiple bootstrap mirrors so that ``archlinuxcn-keyring`` and
+    ``archlinuxcn-mirrorlist-git`` can be installed without signature
+    verification.
+
+    **Final phase**: Replace the entire ``[archlinuxcn]`` section with a
+    clean version that uses ``Include = /etc/pacman.d/archlinuxcn-mirrorlist``
+    (provided by ``archlinuxcn-mirrorlist-git``).  This delegates mirror
+    selection to the community-maintained mirrorlist instead of hardcoding
+    a single server.
     """
     _info('Configuring archlinuxcn repository...')
 
     pacman_conf = chroot_dir / 'etc' / 'pacman.conf'
 
-    # Step 1: add [archlinuxcn] with SigLevel = Never for keyring bootstrap
+    # Bootstrap phase: add [archlinuxcn] with SigLevel = Never and multiple
+    # mirrors so the keyring package can be fetched without PGP verification.
+    server_lines = '\n'.join(
+        f'Server = {url}' for url in ARCHLINUXCN_BOOTSTRAP_MIRRORS
+    )
     with open(pacman_conf, 'a') as f:
         f.write(
             f'\n[archlinuxcn]\n'
             f'SigLevel = Never\n'
-            f'Server = {ARCHLINUXCN_URL}\n\n'
+            f'{server_lines}\n\n'
         )
 
-    # Step 2: install keyring (no PGP prompt, no signature failure)
+    # Install keyring and mirrorlist (no PGP prompt, no signature failure)
     _info('Installing archlinuxcn-keyring...')
     result = subprocess.run(
         ['arch-chroot', str(chroot_dir),
@@ -249,12 +254,22 @@ def _setup_archlinuxcn(chroot_dir: Path) -> None:
     )
     if result.returncode != 0:
         _info(f'archlinuxcn-keyring installation failed (exit {result.returncode})')
+        _info('Leaving bootstrap mirror configuration intact. '
+              'Please manually install archlinuxcn-keyring and configure '
+              'mirrors later.')
+        return
 
-    # Step 3: remove the temporary SigLevel override; the global default
-    # (Required DatabaseOptional) will verify signatures for future installs
-    # now that archlinuxcn-keyring has populated the trust chain.
+    # Final phase: replace the entire [archlinuxcn] bootstrap section with a
+    # clean Include-based configuration.  The mirrorlist provided by
+    # archlinuxcn-mirrorlist-git handles mirror selection from now on.
     content = pacman_conf.read_text()
-    content = content.replace('SigLevel = Never\n', '')
+    content = re.sub(
+        r'\n?\[archlinuxcn\]\n(?:(?!\[).)*',
+        '\n[archlinuxcn]\n'
+        'Include = /etc/pacman.d/archlinuxcn-mirrorlist\n\n',
+        content,
+        flags=re.DOTALL,
+    )
     pacman_conf.write_text(content)
 
 

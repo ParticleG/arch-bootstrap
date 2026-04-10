@@ -211,7 +211,7 @@ def _upgrade_archinstall() -> None:
     """Upgrade archinstall via pacman and flush module caches in-process."""
     print('arch-bootstrap: ISO detected with archinstall < 4.x — upgrading...')
     result = subprocess.run(
-        ['pacman', '-Syu', '--noconfirm', 'archinstall'],
+        ['pacman', '-Sy', '--noconfirm', 'archinstall'],
         stderr=subprocess.PIPE, text=True,
     )
     if result.returncode != 0:

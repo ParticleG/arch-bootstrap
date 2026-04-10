@@ -574,6 +574,19 @@ def perform_installation(
                 gpu_vendors=gpu_vendors,
             )
 
+        # Post-install: DMS Manual desktop environment
+        if desktop_env == 'dms_manual' and username:
+            from .dms_manual import install_dms_manual
+            _info('Setting up DMS Manual desktop environment...')
+            install_dms_manual(
+                chroot_dir=chroot_dir,
+                username=username,
+                compositor=dms_compositor,
+                terminal=dms_terminal,
+                country=country,
+                gpu_vendors=gpu_vendors,
+            )
+
         # Post-install: Exo desktop environment
         if desktop_env == 'exo' and username:
             from .exo import install_exo

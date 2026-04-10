@@ -312,7 +312,7 @@ def apply_wizard_state_to_config(
             if pkg and pkg not in all_packages:
                 all_packages.append(pkg)
     # upower for desktop environments that require it
-    if state.desktop_env in ('dms', 'exo') and 'upower' not in all_packages:
+    if state.desktop_env in ('dms', 'dms_manual', 'exo') and 'upower' not in all_packages:
         all_packages.append('upower')
     config.packages = all_packages
 

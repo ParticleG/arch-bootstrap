@@ -89,7 +89,7 @@ class WizardState:
         self.kmscon_font_package: str = ''
         self.screen_resolution: tuple[int, int] | None = None
         # DMS desktop environment
-        self.desktop_env: str = 'minimal'      # 'minimal' | 'dms' | 'exo'
+        self.desktop_env: str = 'minimal'      # 'minimal' | 'dms' | 'dms_manual' | 'exo'
         self.dms_compositor: str = 'niri'       # 'niri' | 'hyprland'
         self.dms_terminal: str = 'ghostty'      # 'ghostty' | 'kitty' | 'alacritty'
         # Browser selection
@@ -411,6 +411,7 @@ async def step_desktop_env(state: WizardState) -> str:
     items = [
         MenuItem(t('step.desktop.minimal'), value='minimal'),
         MenuItem(t('step.desktop.dms'), value='dms'),
+        MenuItem(t('step.desktop.dms_manual'), value='dms_manual'),
         MenuItem(t('step.desktop.exo'), value='exo'),
     ]
     group = MenuItemGroup(items)
@@ -428,7 +429,7 @@ async def step_desktop_env(state: WizardState) -> str:
         case ResultType.Selection:
             state.desktop_env = result.get_value()
             # Clear stale DMS state when switching away from DMS
-            if state.desktop_env != 'dms':
+            if state.desktop_env not in ('dms', 'dms_manual'):
                 state.dms_compositor = 'niri'
                 state.dms_terminal = 'ghostty'
             return 'next'
@@ -438,7 +439,7 @@ async def step_desktop_env(state: WizardState) -> str:
 
 async def step_dms_compositor(state: WizardState) -> str:
     """Select DMS compositor (only shown if DMS selected)."""
-    if state.desktop_env != 'dms':
+    if state.desktop_env not in ('dms', 'dms_manual'):
         return 'next'
 
     items = [
@@ -466,7 +467,7 @@ async def step_dms_compositor(state: WizardState) -> str:
 
 async def step_dms_terminal(state: WizardState) -> str:
     """Select DMS terminal emulator (only shown if DMS selected)."""
-    if state.desktop_env != 'dms':
+    if state.desktop_env not in ('dms', 'dms_manual'):
         return 'next'
 
     items = [
@@ -665,6 +666,10 @@ async def step_confirm(
     ]
     if state.desktop_env == 'dms':
         fixed_rows.append(_row(t('confirm.desktop'), 'DankMaterialShell (DankInstall)'))
+        fixed_rows.append(_row(t('confirm.compositor'), state.dms_compositor, indent=2))
+        fixed_rows.append(_row(t('confirm.terminal'), state.dms_terminal, indent=2))
+    elif state.desktop_env == 'dms_manual':
+        fixed_rows.append(_row(t('confirm.desktop'), 'DankMaterialShell (Manual)'))
         fixed_rows.append(_row(t('confirm.compositor'), state.dms_compositor, indent=2))
         fixed_rows.append(_row(t('confirm.terminal'), state.dms_terminal, indent=2))
     elif state.desktop_env == 'exo':

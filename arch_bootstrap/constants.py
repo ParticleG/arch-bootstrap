@@ -278,6 +278,37 @@ EXO_SYSTEM_PACKAGES: list[str] = [
 ]
 
 # ---------------------------------------------------------------------------
+# DMS Manual installation (without dankinstall binary)
+# ---------------------------------------------------------------------------
+
+# DMS Manual installation packages
+DMS_MANUAL_PREREQ_PACKAGES: list[str] = [
+    'quickshell-git',               # Must be installed first to avoid dependency conflicts
+]
+
+DMS_MANUAL_AUR_PACKAGES: list[str] = [
+    'greetd-dms-greeter-git',
+]
+
+DMS_MANUAL_SYSTEM_PACKAGES: list[str] = [
+    'greetd', 'xdg-desktop-portal-gtk',
+    'accountsservice', 'xwayland-satellite', 'matugen',
+    'dgop', 'cava', 'cups-pk-helper', 'kimageformats',
+    'libavif', 'libheif', 'libjxl', 'qt6ct',
+]
+
+DMS_MANUAL_COMPOSITOR_PACKAGES: dict[str, list[str]] = {
+    'niri': ['niri', 'dms-shell-niri'],
+    'hyprland': ['hyprland', 'dms-shell-hyprland'],
+}
+
+DMS_MANUAL_TERMINAL_PACKAGES: dict[str, str] = {
+    'ghostty': 'ghostty',
+    'kitty': 'kitty',
+    'alacritty': 'alacritty',
+}
+
+# ---------------------------------------------------------------------------
 # Browser options
 # ---------------------------------------------------------------------------
 

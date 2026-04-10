@@ -507,54 +507,68 @@ def perform_installation(
         _setup_cn_git_proxy(chroot_dir)
         _setup_archlinuxcn(chroot_dir)
 
-    # Post-install: install paru AUR helper
-    has_paru = False
+    # Post-install: grant temporary NOPASSWD sudo for AUR operations
+    sudoers_aur = None
     if username:
-        has_paru = _install_paru(chroot_dir, username, country)
+        sudoers_aur = chroot_dir / 'etc' / 'sudoers.d' / 'aur-tmp'
+        sudoers_aur.write_text(f'{username} ALL=(ALL) NOPASSWD: ALL\n')
+        sudoers_aur.chmod(0o440)
+        _debug('Temporary NOPASSWD sudoers rule created for AUR operations')
 
-    # Post-install: set default shell to zsh and install oh-my-zsh
-    if username:
-        subprocess.run(
-            ['arch-chroot', str(chroot_dir), 'chsh', '-s', '/bin/zsh', username],
-            check=False,
-        )
+    try:
+        # Post-install: install paru AUR helper
+        has_paru = False
+        if username:
+            has_paru = _install_paru(chroot_dir, username, country)
 
-        omz_remote = _resolve_omz_remote(country)
-        if omz_remote:
-            omz_cmd = (
-                f'REMOTE={shlex.quote(omz_remote)} '
-                f'sh -c "$(curl -fsSL {OMZ_INSTALL_URL})" "" --unattended --skip-chsh'
+        # Post-install: set default shell to zsh and install oh-my-zsh
+        if username:
+            subprocess.run(
+                ['arch-chroot', str(chroot_dir), 'chsh', '-s', '/bin/zsh', username],
+                check=False,
             )
-        else:
-            omz_cmd = f'sh -c "$(curl -fsSL {OMZ_INSTALL_URL})" "" --unattended --skip-chsh'
 
-        result = subprocess.run(
-            ['arch-chroot', str(chroot_dir),
-             'runuser', '-l', username, '-c', omz_cmd],
-            check=False,
-            timeout=120,
-        )
-        if result.returncode == 0:
-            _info(f'Installed oh-my-zsh for user {username}')
-        else:
-            _info(f'oh-my-zsh installation failed (exit {result.returncode}), skipping')
+            omz_remote = _resolve_omz_remote(country)
+            if omz_remote:
+                omz_cmd = (
+                    f'REMOTE={shlex.quote(omz_remote)} '
+                    f'sh -c "$(curl -fsSL {OMZ_INSTALL_URL})" "" --unattended --skip-chsh'
+                )
+            else:
+                omz_cmd = f'sh -c "$(curl -fsSL {OMZ_INSTALL_URL})" "" --unattended --skip-chsh'
 
-    # Post-install: DMS desktop environment
-    if desktop_env == 'dms' and username:
-        from .dms import install_dms
-        _info('Setting up DMS desktop environment...')
-        install_dms(
-            chroot_dir=chroot_dir,
-            username=username,
-            compositor=dms_compositor,
-            terminal=dms_terminal,
-            country=country,
-            gpu_vendors=gpu_vendors,
-        )
+            result = subprocess.run(
+                ['arch-chroot', str(chroot_dir),
+                 'runuser', '-l', username, '-c', omz_cmd],
+                check=False,
+                timeout=120,
+            )
+            if result.returncode == 0:
+                _info(f'Installed oh-my-zsh for user {username}')
+            else:
+                _info(f'oh-my-zsh installation failed (exit {result.returncode}), skipping')
 
-    # Post-install: AUR browsers (requires paru)
-    if has_paru and browsers:
-        _install_aur_browsers(chroot_dir, username, browsers)
+        # Post-install: DMS desktop environment
+        if desktop_env == 'dms' and username:
+            from .dms import install_dms
+            _info('Setting up DMS desktop environment...')
+            install_dms(
+                chroot_dir=chroot_dir,
+                username=username,
+                compositor=dms_compositor,
+                terminal=dms_terminal,
+                country=country,
+                gpu_vendors=gpu_vendors,
+            )
+
+        # Post-install: AUR browsers (requires paru)
+        if has_paru and browsers:
+            _install_aur_browsers(chroot_dir, username, browsers)
+    finally:
+        # Post-install: remove temporary NOPASSWD sudo rule
+        if sudoers_aur is not None and sudoers_aur.exists():
+            sudoers_aur.unlink()
+        _debug('Removed temporary NOPASSWD sudoers rule')
 
     elapsed_time = time.monotonic() - start_time
     _info(f'Installation completed in {elapsed_time:.0f} seconds.')

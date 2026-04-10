@@ -260,6 +260,75 @@ def _install_niri_drm_wait(chroot_dir: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Post-install extras (packages & environment)
+# ---------------------------------------------------------------------------
+
+_DMS_EXTRA_PACKAGES = [
+    'cups-pk-helper',   # printer management
+    'kimageformats',    # KDE image format plugins
+    'libavif',          # AVIF support for kimageformats
+    'libheif',          # HEIF support for kimageformats
+    'libjxl',           # JPEG XL support for kimageformats
+    'cava',             # audio visualizer
+    'qt6ct',            # Qt6 platform theme configuration
+]
+
+
+def _install_dms_extras(chroot_dir: Path) -> None:
+    """Install extra packages that dankinstall does not include.
+
+    These satisfy the warnings reported by ``dms doctor`` after a
+    headless dankinstall run (cups-pk-helper, kimageformats optional
+    deps, cava, qt6ct).
+    """
+    _info('Installing DMS extra packages...')
+    _debug(f'Packages: {", ".join(_DMS_EXTRA_PACKAGES)}')
+
+    result = subprocess.run(
+        ['arch-chroot', str(chroot_dir),
+         'pacman', '-S', '--noconfirm', '--needed', *_DMS_EXTRA_PACKAGES],
+        check=False,
+    )
+
+    if result.returncode == 0:
+        _info('DMS extra packages installed')
+    else:
+        _info(f'DMS extra packages installation failed (exit {result.returncode}), some dms-doctor warnings may persist')
+
+
+def _configure_dms_environment(chroot_dir: Path) -> None:
+    """Write environment variables required by DMS into /etc/environment.
+
+    Sets ``QT_QPA_PLATFORMTHEME=qt6ct`` and ``QS_ICON_THEME=adwaita``
+    so that ``dms doctor`` no longer reports them as missing.
+    """
+    _info('Configuring DMS environment variables...')
+
+    env_file = chroot_dir / 'etc' / 'environment'
+
+    existing = env_file.read_text() if env_file.exists() else ''
+
+    lines_to_add: list[str] = []
+
+    if 'QT_QPA_PLATFORMTHEME=' not in existing:
+        lines_to_add.append('QT_QPA_PLATFORMTHEME=qt6ct')
+    if 'QS_ICON_THEME=' not in existing:
+        lines_to_add.append('QS_ICON_THEME=adwaita')
+
+    if lines_to_add:
+        # Ensure existing content ends with a newline before appending
+        if existing and not existing.endswith('\n'):
+            existing += '\n'
+        env_file.write_text(existing + '\n'.join(lines_to_add) + '\n')
+        for line in lines_to_add:
+            _debug(f'Added to /etc/environment: {line}')
+    else:
+        _debug('Environment variables already set, skipping')
+
+    _info('DMS environment variables configured')
+
+
+# ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
 
@@ -335,3 +404,9 @@ def install_dms(
         has_nvidia = any(v in ('nvidia_open', 'nouveau') for v in gpu_vendors)
         if has_nvidia:
             _install_niri_drm_wait(chroot_dir)
+
+    # 7. Install DMS extras (cups-pk-helper, kimageformats, cava, qt6ct)
+    _install_dms_extras(chroot_dir)
+
+    # 8. Configure environment variables for DMS
+    _configure_dms_environment(chroot_dir)

@@ -59,7 +59,7 @@ while pgrep -u "$GREETER_USER" > /dev/null 2>&1; do
 done
 
 if (( i > 0 )); then
-    elapsed=$(awk "BEGIN {printf \"%.1f\", $i / 10}")
+    elapsed=$(awk -v n="$i" 'BEGIN {printf "%.1f", n / 10}')
     echo "niri-drm-wait: greeter exited after ${elapsed}s, settling ${SETTLE_TIME}s" >&2
     sleep "$SETTLE_TIME"
 fi

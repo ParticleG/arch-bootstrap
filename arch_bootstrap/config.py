@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+from xml.sax.saxutils import escape as xml_escape
 
 from archinstall.lib.args import ArchConfig
 from archinstall.lib.mirror.mirror_handler import MirrorListHandler
@@ -147,13 +148,15 @@ def generate_kmscon_config(
 
 def _fontconfig_match_alias(from_name: str, to_name: str) -> str:
     """Generate a fontconfig <match> block that aliases one font family to another."""
+    escaped_from = xml_escape(from_name)
+    escaped_to = xml_escape(to_name)
     return (
         '  <match target="pattern">\n'
         '    <test qual="any" name="family">\n'
-        f'      <string>{from_name}</string>\n'
+        f'      <string>{escaped_from}</string>\n'
         '    </test>\n'
         '    <edit name="family" mode="assign" binding="same">\n'
-        f'      <string>{to_name}</string>\n'
+        f'      <string>{escaped_to}</string>\n'
         '    </edit>\n'
         '  </match>'
     )
@@ -287,7 +290,7 @@ def apply_wizard_state_to_config(
     config.network_config = NetworkConfiguration(type=state.network_type)
 
     # GPU packages
-    gpu_packages = list(GPU_PACKAGES['common'])  # always include mesa
+    gpu_packages = list(GPU_PACKAGES.get('common', []))  # always include mesa
     for vendor in state.gpu_vendors:
         gpu_packages.extend(GPU_PACKAGES.get(vendor, []))
     # Merge with base packages (avoid duplicates)
@@ -303,9 +306,9 @@ def apply_wizard_state_to_config(
         all_packages.append(state.kmscon_font_package)
     # Browser packages (pacman only; AUR browsers handled in post-install)
     for browser_key in state.browsers:
-        info = BROWSER_OPTIONS.get(browser_key, {})
-        if not info.get('aur', False):
-            pkg = info.get('package', '')
+        browser_info = BROWSER_OPTIONS.get(browser_key, {})
+        if not browser_info.get('aur', False):
+            pkg = browser_info.get('package', '')
             if pkg and pkg not in all_packages:
                 all_packages.append(pkg)
     # upower for desktop environments that require it

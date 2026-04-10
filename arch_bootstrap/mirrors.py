@@ -1,11 +1,21 @@
 from __future__ import annotations
 
+import os
+import shutil
 from pathlib import Path
 
 from archinstall.lib.mirror.mirror_handler import MirrorListHandler
 from archinstall.lib.models.mirrors import CustomServer, MirrorConfiguration, MirrorRegion
+from archinstall.lib.output import debug
 
 from .constants import CN_OFFICIAL_MIRRORS, COUNTRY_NAMES, FALLBACK_MIRRORS
+
+_PREFIX = '[arch-bootstrap]'
+
+
+def _debug(msg: str) -> None:
+    """Log a debug message with a colored [arch-bootstrap] prefix."""
+    debug(f'{_PREFIX} {msg}', fg='cyan')
 
 
 # =============================================================================
@@ -96,12 +106,19 @@ def apply_mirrors_to_live_iso(
 
     mirrorlist = Path('/etc/pacman.d/mirrorlist')
 
+    # Backup existing mirrorlist before any modification
+    backup = mirrorlist.with_suffix('.bak')
+    if mirrorlist.exists():
+        shutil.copy2(str(mirrorlist), str(backup))
+
     # CN: skip online mirror fetching — write hardcoded mirrorlist directly
     if country == 'CN':
         info('[arch-bootstrap] CN region: writing hardcoded mirrorlist '
              '(CERNET CDN + TUNA/USTC)')
         mirrorlist.parent.mkdir(parents=True, exist_ok=True)
-        mirrorlist.write_text(format_cn_mirrorlist())
+        tmp = mirrorlist.with_suffix('.tmp')
+        tmp.write_text(format_cn_mirrorlist())
+        os.replace(str(tmp), str(mirrorlist))
         return len(CN_OFFICIAL_MIRRORS)
 
     config = build_mirror_config(country, handler)
@@ -116,15 +133,25 @@ def apply_mirrors_to_live_iso(
 
     # Region servers (score-sorted, no speed test)
     if config.mirror_regions:
-        regions = config.regions_config(handler, speed_sort=False)
-        if regions.strip():
-            parts.append(regions)
+        try:
+            regions = config.regions_config(handler, speed_sort=False)
+            if regions.strip():
+                parts.append(regions)
+        except Exception as e:
+            _debug(f'Mirror region config failed: {e}, using fallback servers')
+            config.custom_servers = get_fallback_servers(country)
+            custom = config.custom_servers_config()
+            if custom:
+                parts.append(custom)
 
     content = '\n\n'.join(parts)
     if not content.strip():
         return 0
 
-    mirrorlist.write_text(content + '\n')
+    # Atomic write: write to temp file, then rename
+    tmp = mirrorlist.with_suffix('.tmp')
+    tmp.write_text(content + '\n')
+    os.replace(str(tmp), str(mirrorlist))
 
     # Count Server = lines
     return content.count('Server = ')

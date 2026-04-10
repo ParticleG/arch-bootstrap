@@ -8,7 +8,10 @@ from pathlib import Path
 from archinstall.lib.disk.device_handler import device_handler
 from archinstall.lib.models.device import BDevice, Unit
 
+from archinstall.lib.output import debug
+
 from .constants import (
+    COUNTRY_NAMES,
     GPU_DETECT_PATTERNS,
     GEO_ENDPOINTS,
     KMSCON_DEFAULT_FONT_SIZE,
@@ -20,6 +23,14 @@ from .constants import (
 # =============================================================================
 # Detection helpers
 # =============================================================================
+
+_PREFIX = '[arch-bootstrap]'
+
+
+def _debug(msg: str) -> None:
+    """Log a debug message with a colored [arch-bootstrap] prefix."""
+    debug(f'{_PREFIX} {msg}', fg='cyan')
+
 
 def detect_country() -> str | None:
     """Detect country via IP geolocation. Returns ISO 3166-1 alpha-2 code or None."""
@@ -40,7 +51,10 @@ def detect_country() -> str | None:
                     code = body.upper()
 
                 if re.match(r'^[A-Z]{2}$', code):
-                    return code
+                    if code in COUNTRY_NAMES:
+                        return code
+                    _debug(f'Geo-detection returned unrecognized country code: {code}')
+                    return None
         except Exception:
             continue
 
@@ -69,8 +83,12 @@ def detect_gpu() -> list[str]:
 
     # Check NVIDIA with Turing+ logic
     if re.search(GPU_DETECT_PATTERNS['nvidia_open'], lspci_output):
+        # Filter to only VGA/3D/Display lines to avoid matching audio controllers etc.
+        gpu_lines = [line for line in lspci_output.splitlines()
+                     if re.search(r'(VGA|3D|Display)', line)]
+        gpu_output = '\n'.join(gpu_lines)
         # Extract NVIDIA PCI Device IDs: [10de:XXXX]
-        nvidia_ids = re.findall(r'\[10de:([0-9a-fA-F]{4})\]', lspci_output)
+        nvidia_ids = re.findall(r'\[10de:([0-9a-fA-F]{4})\]', gpu_output)
         has_turing = any(int(did, 16) >= NVIDIA_TURING_THRESHOLD for did in nvidia_ids)
         detected.append('nvidia_open' if has_turing else 'nouveau')
 
@@ -215,7 +233,13 @@ def cleanup_disk_locks() -> None:
     """Release disk locks: swap, LVM volume groups, LUKS containers.
 
     Must be called before filesystem operations to avoid 'Device busy' errors.
+    Only performs aggressive cleanup when running on the Arch ISO to avoid
+    closing unrelated LUKS containers on non-ISO systems.
     """
+    if not Path('/run/archiso').exists():
+        _debug('Not running on ISO, skipping aggressive disk cleanup')
+        return
+
     # Deactivate swap on all devices
     subprocess.run(['swapoff', '--all'], stderr=subprocess.DEVNULL, check=False)
 

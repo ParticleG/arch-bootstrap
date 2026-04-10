@@ -17,6 +17,7 @@ from archinstall.tui.ui.menu_item import MenuItem, MenuItemGroup
 from archinstall.tui.ui.result import ResultType
 
 from .config import apply_wizard_state_to_config
+from .disk import EFI_PARTITION_MIB, GPT_BACKUP_MIB, MIN_DISK_SIZE_MIB
 from .constants import (
     BROWSER_OPTIONS,
     COUNTRY_NAMES,
@@ -96,7 +97,7 @@ class WizardState:
 
 
 async def step_language(state: WizardState) -> str:
-    """Step 1: Select system language."""
+    """Select system language."""
     raw_tty = is_raw_tty()
 
     items = [
@@ -137,7 +138,7 @@ async def step_language(state: WizardState) -> str:
 
 
 async def step_kmscon_font(state: WizardState) -> str:
-    """Step 1.5: Select kmscon font (only shown for non-English locales).
+    """Select kmscon font (only shown for non-English locales).
 
     This step is conditionally inserted after language selection when kmscon
     is needed for CJK console rendering.
@@ -195,7 +196,7 @@ async def step_kmscon_font(state: WizardState) -> str:
 
 
 async def step_region(state: WizardState) -> str:
-    """Step 2: Select country/region."""
+    """Select country/region."""
     items = [
         MenuItem(f'{COUNTRY_NAMES[code]} ({code})', value=code)
         for code in REGION_MENU_COUNTRIES
@@ -228,7 +229,7 @@ async def step_region(state: WizardState) -> str:
 
 
 async def step_disk(state: WizardState) -> str:
-    """Step 3: Select target disk."""
+    """Select target disk."""
     try:
         devices = [
             d for d in device_handler.devices
@@ -247,73 +248,89 @@ async def step_disk(state: WizardState) -> str:
         ).show()
         return 'abort'
 
-    items = []
-    for dev in devices:
-        di = dev.device_info
-        size_str = di.total_size.format_highest()
-        part_count = len(dev.partition_infos)
-        label = f'{di.path}  {di.model}  {size_str}  ({part_count} partitions)'
-        items.append(MenuItem(label, value=dev))
+    # Filter out disks that are too small
+    usable_devices = [
+        d for d in devices
+        if (d.device_info.total_size.convert(Unit.B, None).value // (1024 * 1024))
+        >= MIN_DISK_SIZE_MIB
+    ]
 
-    group = MenuItemGroup(items)
+    if not usable_devices:
+        await Confirmation(
+            header=f'No disks with at least {MIN_DISK_SIZE_MIB // 1024} GiB found. Cannot proceed.',
+            allow_skip=False,
+            preset=True,
+        ).show()
+        return 'abort'
 
-    # Try to preselect preferred disk
-    if state.preferred_disk:
-        for dev in devices:
-            if dev.device_info.path == state.preferred_disk:
-                group.set_default_by_value(dev)
-                group.set_focus_by_value(dev)
-                break
+    while True:
+        items = []
+        for dev in usable_devices:
+            di = dev.device_info
+            size_str = di.total_size.format_highest()
+            part_count = len(dev.partition_infos)
+            label = f'{di.path}  {di.model}  {size_str}  ({part_count} partitions)'
+            items.append(MenuItem(label, value=dev))
 
-    result = await Selection[BDevice](
-        group,
-        header=t('step.disk.title'),
-        allow_skip=True,
-    ).show()
+        group = MenuItemGroup(items)
 
-    match result.type_:
-        case ResultType.Skip:
-            return 'back'
-        case ResultType.Selection:
-            selected = result.get_value()
+        # Try to preselect preferred disk
+        if state.preferred_disk:
+            for dev in usable_devices:
+                if dev.device_info.path == state.preferred_disk:
+                    group.set_default_by_value(dev)
+                    group.set_focus_by_value(dev)
+                    break
 
-            # Calculate partition sizes (must match disk.py logic)
-            total_bytes = selected.device_info.total_size.convert(Unit.B, None).value
-            total_mib = total_bytes // (1024 * 1024)
-            root_mib = total_mib - 1025 - 1  # EFI start+size + GPT backup
-            root_gib = root_mib / 1024
+        result = await Selection[BDevice](
+            group,
+            header=t('step.disk.title'),
+            allow_skip=True,
+        ).show()
 
-            total_display = selected.device_info.total_size.format_highest()
-            preview = (
-                f'Partition layout for {selected.device_info.path} ({total_display}):\n'
-                f'\n'
-                f'  EFI     1 GiB        FAT32    /boot\n'
-                f'  Btrfs   {root_gib:.0f} GiB      zstd     subvols: @ @home @log @pkg\n'
-                f'\n'
-                f'ALL DATA ON THIS DISK WILL BE ERASED.'
-            )
+        match result.type_:
+            case ResultType.Skip:
+                return 'back'
+            case ResultType.Selection:
+                selected = result.get_value()
 
-            confirm_result = await Confirmation(
-                header=preview,
-                allow_skip=True,
-                preset=True,
-            ).show()
+                # Calculate partition sizes using shared constants from disk.py
+                total_bytes = selected.device_info.total_size.convert(Unit.B, None).value
+                total_mib = total_bytes // (1024 * 1024)
+                root_mib = total_mib - EFI_PARTITION_MIB - GPT_BACKUP_MIB
+                root_gib = root_mib / 1024
 
-            match confirm_result.type_:
-                case ResultType.Selection:
-                    if confirm_result.item() == MenuItem.yes():
-                        state.disk_device = selected
-                        return 'next'
-                    # User said No -> return to disk selection (re-enter this step)
-                    return await step_disk(state)
-                case _:
-                    return 'back'
-        case _:
-            return 'back'
+                total_display = selected.device_info.total_size.format_highest()
+                preview = (
+                    f'Partition layout for {selected.device_info.path} ({total_display}):\n'
+                    f'\n'
+                    f'  EFI     1 GiB        FAT32    /boot\n'
+                    f'  Btrfs   {root_gib:.0f} GiB      zstd     subvols: @ @home @log @pkg\n'
+                    f'\n'
+                    f'ALL DATA ON THIS DISK WILL BE ERASED.'
+                )
+
+                confirm_result = await Confirmation(
+                    header=preview,
+                    allow_skip=True,
+                    preset=True,
+                ).show()
+
+                match confirm_result.type_:
+                    case ResultType.Selection:
+                        if confirm_result.item() == MenuItem.yes():
+                            state.disk_device = selected
+                            return 'next'
+                        # User said No -> loop back to disk selection
+                        continue
+                    case _:
+                        return 'back'
+            case _:
+                return 'back'
 
 
 async def step_network(state: WizardState) -> str:
-    """Step 4: Select network backend."""
+    """Select network backend."""
     items = [
         MenuItem(label, value=key)
         for key, label in NETWORK_BACKENDS.items()
@@ -342,7 +359,7 @@ async def step_network(state: WizardState) -> str:
 
 
 async def step_repos(state: WizardState) -> str:
-    """Step 5: Enable multilib repository."""
+    """Enable multilib repository."""
     result = await Confirmation(
         header=t('step.repos.confirm'),
         allow_skip=True,
@@ -360,7 +377,7 @@ async def step_repos(state: WizardState) -> str:
 
 
 async def step_gpu_drivers(state: WizardState) -> str:
-    """Step 6: Select GPU drivers."""
+    """Select GPU drivers."""
     items = [
         MenuItem(GPU_LABELS[vendor], value=vendor)
         for vendor in GPU_VENDORS
@@ -390,7 +407,7 @@ async def step_gpu_drivers(state: WizardState) -> str:
 
 
 async def step_desktop_env(state: WizardState) -> str:
-    """Step 7: Select desktop environment."""
+    """Select desktop environment."""
     items = [
         MenuItem(t('step.desktop.minimal'), value='minimal'),
         MenuItem(t('step.desktop.dms'), value='dms'),
@@ -410,13 +427,17 @@ async def step_desktop_env(state: WizardState) -> str:
             return 'back'
         case ResultType.Selection:
             state.desktop_env = result.get_value()
+            # Clear stale DMS state when switching away from DMS
+            if state.desktop_env != 'dms':
+                state.dms_compositor = 'niri'
+                state.dms_terminal = 'ghostty'
             return 'next'
         case _:
             return 'back'
 
 
 async def step_dms_compositor(state: WizardState) -> str:
-    """Step 8: Select DMS compositor (only shown if DMS selected)."""
+    """Select DMS compositor (only shown if DMS selected)."""
     if state.desktop_env != 'dms':
         return 'next'
 
@@ -444,7 +465,7 @@ async def step_dms_compositor(state: WizardState) -> str:
 
 
 async def step_dms_terminal(state: WizardState) -> str:
-    """Step 9: Select DMS terminal emulator (only shown if DMS selected)."""
+    """Select DMS terminal emulator (only shown if DMS selected)."""
     if state.desktop_env != 'dms':
         return 'next'
 
@@ -473,7 +494,7 @@ async def step_dms_terminal(state: WizardState) -> str:
 
 
 async def step_browser(state: WizardState) -> str:
-    """Step: Select web browsers to install (multi-select, optional)."""
+    """Select web browsers to install (multi-select, optional)."""
     items = [
         MenuItem(info['label'], value=key)
         for key, info in BROWSER_OPTIONS.items()
@@ -502,7 +523,7 @@ async def step_browser(state: WizardState) -> str:
 
 
 async def step_username(state: WizardState) -> str:
-    """Step 10: Enter username."""
+    """Enter username."""
     default = state.username or os.environ.get('SUDO_USER', '') or os.environ.get('USER', '')
     # Filter out 'root' — not a useful default
     if default == 'root':
@@ -538,21 +559,36 @@ async def step_username(state: WizardState) -> str:
 
 
 async def step_user_password(state: WizardState) -> str:
-    """Step 8: Enter user password."""
-    password = await get_password(
-        header=t('step.passwd.title'),
-        allow_skip=True,
-    )
+    """Enter user password."""
+    while True:
+        password = await get_password(
+            header=t('step.passwd.title'),
+            allow_skip=True,
+        )
 
-    if password is None:
-        return 'back'
+        if password is None:
+            return 'back'
 
-    state.user_password = password
-    return 'next'
+        # Warn on empty password
+        if not password.plain_text:
+            confirm_empty = await Confirmation(
+                header='No password set. Continue with empty password?',
+                allow_skip=True,
+                preset=False,
+            ).show()
+            if (confirm_empty.type_ == ResultType.Selection
+                    and confirm_empty.item() == MenuItem.yes()):
+                state.user_password = password
+                return 'next'
+            # User declined empty password -> re-prompt
+            continue
+
+        state.user_password = password
+        return 'next'
 
 
 async def step_root_password(state: WizardState) -> str:
-    """Step 9: Enter root password (optional)."""
+    """Enter root password (optional)."""
     result = await Confirmation(
         header=t('step.root.title'),
         allow_skip=True,
@@ -712,7 +748,17 @@ async def run_wizard(
         elif result == 'back':
             if current > 0:
                 current -= 1
-            # If at first step, stay there (can't go further back)
+            else:
+                # At first step: confirm abort instead of looping
+                abort_result = await Confirmation(
+                    header='Abort installation?',
+                    allow_skip=True,
+                    preset=False,
+                ).show()
+                if (abort_result.type_ == ResultType.Selection
+                        and abort_result.item() == MenuItem.yes()):
+                    return 'abort'
+                # User said No or skipped -> re-show first step
         elif result == 'abort':
             return 'abort'
 

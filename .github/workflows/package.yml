@@ -2,18 +2,17 @@ name: Package
 
 on:
   push:
-    branches: ["*"]
+    branches: [main]
     tags: ["v*"]
 
-permissions:
-  contents: write
-
 jobs:
-  package:
+  build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v6
         with:
           # Fetch main branch so we can push the version bump back to it
           fetch-depth: 0
@@ -29,10 +28,14 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "Version: ${VERSION}"
 
-      - name: Stamp __version__ on tag builds
+      - name: Validate and stamp version
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           VERSION="${{ steps.version.outputs.version }}"
+          if ! echo "$VERSION" | grep -qP '^[0-9]+\.[0-9]+\.[0-9]+(-[a-z0-9.]+)?$'; then
+            echo "::error::Invalid version format: $VERSION"
+            exit 1
+          fi
           sed -i "s/^__version__ = .*/__version__ = '${VERSION}'/" \
             arch_bootstrap/__init__.py
           echo "Stamped __version__ = '${VERSION}'"
@@ -50,16 +53,44 @@ jobs:
           rm -rf _zipapp_staging
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: arch-bootstrap-${{ steps.version.outputs.version }}
           path: |
             arch_bootstrap.pyz
             install.py
 
+  release:
+    runs-on: ubuntu-latest
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v6
+        with:
+          fetch-depth: 0
+
+      - name: Determine version
+        id: version
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          if ! echo "$VERSION" | grep -qP '^[0-9]+\.[0-9]+\.[0-9]+(-[a-z0-9.]+)?$'; then
+            echo "::error::Invalid version format: $VERSION"
+            exit 1
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Version: ${VERSION}"
+
+      - name: Download artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: arch-bootstrap-${{ steps.version.outputs.version }}
+
       - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v') && contains(github.ref_name, '.')
-        uses: softprops/action-gh-release@v2
+        if: contains(github.ref_name, '.')
+        uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2
         with:
           files: |
             arch_bootstrap.pyz
@@ -67,9 +98,13 @@ jobs:
           generate_release_notes: true
 
       - name: Push __version__ to main
-        if: startsWith(github.ref, 'refs/tags/v')
         run: |
+          set -e
           VERSION="${{ steps.version.outputs.version }}"
+          if ! echo "$VERSION" | grep -qP '^[0-9]+\.[0-9]+\.[0-9]+(-[a-z0-9.]+)?$'; then
+            echo "::error::Invalid version format: $VERSION"
+            exit 1
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout main
@@ -78,4 +113,7 @@ jobs:
           git add arch_bootstrap/__init__.py
           git diff --cached --quiet && exit 0
           git commit -m "chore: bump __version__ to ${VERSION} [skip ci]"
-          git push origin main
+          git push origin main || {
+            echo "::error::Failed to push version bump to main"
+            exit 1
+          }

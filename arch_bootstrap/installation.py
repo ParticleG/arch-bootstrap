@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import os
-import re
 import shlex
 import shutil
 import subprocess
 import time
-import urllib.request
 from pathlib import Path
 
 from archinstall.lib.applications.application_handler import ApplicationHandler
@@ -22,7 +20,7 @@ from archinstall.lib.models.bootloader import Bootloader
 from archinstall.lib.models.device import DiskLayoutType
 from archinstall.lib.models.users import User
 from archinstall.lib.network.network_handler import install_network_config
-from archinstall.lib.output import Font, debug, error, info
+from archinstall.lib.output import Font, debug, info
 from archinstall.lib.profile.profiles_handler import profile_handler
 from archinstall.tui.ui.components import tui
 
@@ -30,14 +28,13 @@ from .config import generate_fontconfig, generate_kmscon_config
 from .constants import (
     ARCHLINUXCN_URL,
     BROWSER_OPTIONS,
-    GHPROXY_CHUNK_URL,
-    GHPROXY_FALLBACK,
     OMZ_INSTALL_URL,
     OMZ_REMOTE_GITHUB,
 )
 from .detection import calculate_kmscon_font_size, needs_kmscon
 from .i18n import t
 from .mirrors import format_cn_mirrorlist
+from .utils import resolve_github_proxy
 
 
 # =============================================================================
@@ -97,33 +94,18 @@ def _resolve_omz_remote(country: str | None) -> str | None:
 
     For non-CN: returns None (use default upstream).
     For CN: resolves GitHub proxy and returns proxied git URL.
-
-    ghproxy.link is a Vue SPA; available proxy domains are embedded in a
-    webpack JS chunk as href="https://gh<word>.<tld>".  We parse the chunk
-    to extract the first available domain, then wrap the git URL with it.
     """
     if country != 'CN':
         return None
 
     _info('China detected, resolving GitHub proxy for oh-my-zsh...')
 
-    # Try ghproxy.link — parse JS chunk for available proxy domain
-    try:
-        req = urllib.request.Request(GHPROXY_CHUNK_URL)
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            content = resp.read().decode('utf-8', errors='ignore')
-        matches = re.findall(r'href=.{0,5}(https://gh[a-z0-9]+\.[a-z]+)', content)
-        if matches:
-            proxy = matches[0]
-            _info(f'Found proxy: {proxy}')
-            return f'{proxy}/{OMZ_REMOTE_GITHUB}'
-    except Exception:
-        pass
+    proxy = resolve_github_proxy(is_cn=True)
+    if proxy:
+        _info(f'Using proxy: {proxy}')
+        return f'{proxy}/{OMZ_REMOTE_GITHUB}'
 
-    # Use fallback proxy directly (don't test with HEAD — many proxies reject it,
-    # which caused the previous code to silently fall through to direct GitHub)
-    _info(f'Using fallback proxy: {GHPROXY_FALLBACK}')
-    return f'{GHPROXY_FALLBACK}/{OMZ_REMOTE_GITHUB}'
+    return None
 
 
 # =============================================================================
@@ -257,10 +239,21 @@ def _setup_archlinuxcn(chroot_dir: Path) -> None:
               'Please manually install archlinuxcn-keyring later.')
         return
 
-    # Remove temporary SigLevel override, keeping the CERNET server
+    # Remove temporary SigLevel override only from the [archlinuxcn] section
     content = pacman_conf.read_text()
-    content = content.replace('SigLevel = Never\n', '')
-    pacman_conf.write_text(content)
+    lines = content.splitlines(keepends=True)
+    new_lines: list[str] = []
+    in_archlinuxcn = False
+    for line in lines:
+        stripped = line.strip()
+        # Detect section headers
+        if stripped.startswith('[') and stripped.endswith(']'):
+            in_archlinuxcn = stripped == '[archlinuxcn]'
+        # Skip SigLevel only inside [archlinuxcn]
+        if in_archlinuxcn and stripped == 'SigLevel = Never':
+            continue
+        new_lines.append(line)
+    pacman_conf.write_text(''.join(new_lines))
 
 
 # =============================================================================
@@ -275,20 +268,10 @@ def _setup_cn_git_proxy(chroot_dir: Path) -> None:
     config) which is read by all git invocations, including those from
     makepkg (which nullifies GIT_CONFIG_GLOBAL but NOT GIT_CONFIG_SYSTEM).
     """
-    # Resolve proxy URL (reuse logic from dms.py)
-    proxy = None
-    try:
-        req = urllib.request.Request(GHPROXY_CHUNK_URL)
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            content = resp.read().decode('utf-8', errors='ignore')
-        matches = re.findall(r'href=.{0,5}(https://gh[a-z0-9]+\.[a-z]+)', content)
-        if matches:
-            proxy = matches[0]
-    except Exception:
-        pass
-
+    proxy = resolve_github_proxy(is_cn=True)
     if not proxy:
-        proxy = GHPROXY_FALLBACK
+        _info('CN: no GitHub proxy resolved, skipping git proxy setup')
+        return
 
     _info(f'CN: GitHub proxy for git → {proxy}')
     gitconfig = chroot_dir / 'etc' / 'gitconfig'
@@ -313,9 +296,9 @@ def _install_aur_browsers(
     """
     aur_packages = []
     for key in browsers:
-        info = BROWSER_OPTIONS.get(key, {})
-        if info.get('aur', False):
-            aur_packages.append(info['package'])
+        browser_info = BROWSER_OPTIONS.get(key, {})
+        if browser_info.get('aur', False):
+            aur_packages.append(browser_info['package'])
 
     if not aur_packages:
         return
@@ -358,8 +341,7 @@ def perform_installation(
     application_handler = ApplicationHandler()
 
     if not config.disk_config:
-        error('No disk configuration provided')
-        return
+        raise ValueError('No disk configuration provided — cannot proceed with installation')
 
     disk_config = config.disk_config
     run_mkinitcpio = not config.bootloader_config or not config.bootloader_config.uki
@@ -462,7 +444,7 @@ def perform_installation(
     # Post-install: write keyboard layout to vconsole.conf
     chroot_dir = mountpoint
     if not (chroot_dir / 'etc').exists():
-        chroot_dir = Path('/mnt')
+        raise RuntimeError(f'Installation target {chroot_dir} appears incomplete: /etc not found')
 
     vconsole = chroot_dir / 'etc' / 'vconsole.conf'
     vconsole.write_text('KEYMAP=us\n')
@@ -495,11 +477,15 @@ def perform_installation(
             passwd_file = chroot_dir / 'etc' / 'passwd'
             uid = gid = 1000  # fallback for first non-root user
             if passwd_file.exists():
+                found = False
                 for line in passwd_file.read_text().splitlines():
                     fields = line.split(':')
                     if len(fields) >= 4 and fields[0] == username:
                         uid, gid = int(fields[2]), int(fields[3])
+                        found = True
                         break
+                if not found:
+                    _debug(f'Warning: user {username} not found in passwd, using UID/GID 1000 as fallback')
 
             # chown the entire .config/fontconfig tree
             for path in [user_home / '.config', fontconfig_dir, fontconfig_file]:
@@ -522,7 +508,9 @@ def perform_installation(
     sudoers_aur = None
     if username:
         sudoers_aur = chroot_dir / 'etc' / 'sudoers.d' / 'aur-tmp'
-        sudoers_aur.write_text(f'{username} ALL=(ALL) NOPASSWD: ALL\n')
+        sudoers_aur.write_text(
+            f'{username} ALL=(ALL) NOPASSWD: /usr/bin/pacman, /usr/bin/makepkg, /usr/bin/paru\n'
+        )
         sudoers_aur.chmod(0o440)
         _debug('Temporary NOPASSWD sudoers rule created for AUR operations')
 
@@ -548,16 +536,19 @@ def perform_installation(
             else:
                 omz_cmd = f'sh -c "$(curl -fsSL {OMZ_INSTALL_URL})" "" --unattended --skip-chsh'
 
-            result = subprocess.run(
-                ['arch-chroot', str(chroot_dir),
-                 'runuser', '-l', username, '-c', omz_cmd],
-                check=False,
-                timeout=120,
-            )
-            if result.returncode == 0:
-                _info(f'Installed oh-my-zsh for user {username}')
-            else:
-                _info(f'oh-my-zsh installation failed (exit {result.returncode}), skipping')
+            try:
+                result = subprocess.run(
+                    ['arch-chroot', str(chroot_dir),
+                     'runuser', '-l', username, '-c', omz_cmd],
+                    check=False,
+                    timeout=120,
+                )
+                if result.returncode == 0:
+                    _info(f'Installed oh-my-zsh for user {username}')
+                else:
+                    _info(f'oh-my-zsh installation failed (exit {result.returncode}), skipping')
+            except subprocess.TimeoutExpired:
+                _debug('oh-my-zsh installation timed out after 120s, skipping')
 
         # Post-install: DMS desktop environment
         if desktop_env == 'dms' and username:
@@ -590,7 +581,7 @@ def perform_installation(
         # Post-install: remove temporary NOPASSWD sudo rule
         if sudoers_aur is not None and sudoers_aur.exists():
             sudoers_aur.unlink()
-        _debug('Removed temporary NOPASSWD sudoers rule')
+            _debug('Removed temporary NOPASSWD sudoers rule')
 
     elapsed_time = time.monotonic() - start_time
     _info(f'Installation completed in {elapsed_time:.0f} seconds.')
@@ -601,6 +592,6 @@ def perform_installation(
         case PostInstallationAction.EXIT:
             pass
         case PostInstallationAction.REBOOT:
-            os.system('reboot')
+            subprocess.run(['reboot'])
         case PostInstallationAction.CHROOT:
-            os.system(f'arch-chroot {chroot_dir}')
+            subprocess.run(['arch-chroot', str(chroot_dir)])

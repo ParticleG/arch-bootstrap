@@ -14,6 +14,7 @@ Or with the source tree (development):
 
 from __future__ import annotations
 
+import hashlib
 import importlib
 import os
 import re
@@ -101,7 +102,10 @@ def _reopen_stdin() -> None:
             os.close(tty_fd)
             sys.stdin = open(0, closefd=False)
         except OSError:
-            pass  # no controlling terminal (e.g. headless CI)
+            print(
+                '[WARN] Could not reopen /dev/tty — interactive prompts may not work',
+                file=sys.stderr,
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -171,12 +175,15 @@ def _apply_fast_mirrors() -> str | None:
     # Prepend to existing mirrorlist (keep originals as fallback)
     try:
         original = mirrorlist.read_text()
-        mirrorlist.write_text(
+        content = (
             '# Fast mirrors applied by arch-bootstrap\n'
             + ''.join(lines)
             + '\n# Original mirrors\n'
-            + original,
+            + original
         )
+        tmp = mirrorlist.with_suffix('.tmp')
+        tmp.write_text(content)
+        os.replace(str(tmp), str(mirrorlist))
     except OSError as exc:
         print(f'  WARNING: Could not write mirrorlist: {exc}', file=sys.stderr)
 
@@ -204,7 +211,7 @@ def _upgrade_archinstall() -> None:
     """Upgrade archinstall via pacman and flush module caches in-process."""
     print('arch-bootstrap: ISO detected with archinstall < 4.x — upgrading...')
     result = subprocess.run(
-        ['pacman', '-Sy', '--noconfirm', 'archinstall'],
+        ['pacman', '-Syu', '--noconfirm', 'archinstall'],
         stderr=subprocess.PIPE, text=True,
     )
     if result.returncode != 0:
@@ -261,7 +268,18 @@ def _resolve_ghproxy() -> str | None:
 
     # Match href=...https://gh<word>.<tld> (escaped quotes in the bundle)
     matches = re.findall(r'href=.{0,5}(https://gh[a-z0-9]+\.[a-z]+)', content)
-    return matches[0] if matches else None
+
+    # Validate against known proxy domain patterns: must start with 'gh',
+    # be a short domain, and look like a legitimate proxy host.
+    for candidate in matches:
+        # Extract domain from URL
+        domain = candidate.split('//')[1] if '//' in candidate else ''
+        parts = domain.split('.')
+        # Must be a short two-part domain (e.g. ghfast.top, ghproxy.link)
+        if len(parts) == 2 and parts[0].startswith('gh') and len(domain) <= 30:
+            return candidate
+
+    return None
 
 
 def _test_proxy(proxy: str) -> bool:
@@ -314,6 +332,56 @@ def _resolve_download_url(country: str | None) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Checksum verification
+# ---------------------------------------------------------------------------
+
+SHASUMS_URL = f'https://github.com/{REPO}/releases/latest/download/SHA256SUMS'
+
+
+def _verify_checksum(pyz_path: Path, is_cn: bool) -> bool | None:
+    """Download SHA256SUMS from the release and verify the .pyz file.
+
+    Returns True if checksum matches, False if mismatch, None if the
+    SHA256SUMS file could not be downloaded (best-effort).
+    """
+    # Build URL for SHA256SUMS (apply same proxy logic for CN)
+    sums_url = SHASUMS_URL
+    if is_cn:
+        proxy = _resolve_ghproxy()
+        if proxy and _test_proxy(proxy):
+            sums_url = f'{proxy}/{SHASUMS_URL}'
+        elif _test_proxy(FALLBACK_PROXY):
+            sums_url = f'{FALLBACK_PROXY}/{SHASUMS_URL}'
+
+    try:
+        req = urllib.request.Request(sums_url, headers={'User-Agent': 'curl/8.0'})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            sums_text = resp.read().decode('utf-8', errors='ignore')
+    except Exception:
+        return None  # SHA256SUMS not available — best-effort skip
+
+    # Parse expected hash for arch_bootstrap.pyz
+    expected_hash = None
+    for line in sums_text.strip().splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[1].lstrip('*') == 'arch_bootstrap.pyz':
+            expected_hash = parts[0].lower()
+            break
+
+    if expected_hash is None:
+        return None  # file not listed in SHA256SUMS
+
+    # Compute actual hash
+    sha256 = hashlib.sha256()
+    with open(pyz_path, 'rb') as f:
+        for chunk in iter(lambda: f.read(65536), b''):
+            sha256.update(chunk)
+    actual_hash = sha256.hexdigest().lower()
+
+    return actual_hash == expected_hash
+
+
+# ---------------------------------------------------------------------------
 # Self-bootstrap: download .pyz if the package isn't available locally.
 # ---------------------------------------------------------------------------
 
@@ -327,11 +395,29 @@ def _download_pyz(dest: Path, country: str | None) -> bool:
     try:
         urllib.request.urlretrieve(url, dest)
         print(f'arch-bootstrap: Saved to {dest}')
-        return True
     except Exception as exc:
         print(f'ERROR: Failed to download .pyz: {exc}', file=sys.stderr)
         print(f'Download manually: {GITHUB_URL}', file=sys.stderr)
         return False
+
+    # Best-effort checksum verification
+    is_cn = (country == 'CN')
+    verified = _verify_checksum(dest, is_cn)
+    if verified is None:
+        print('arch-bootstrap: [WARN] Could not download SHA256SUMS — skipping integrity check.',
+              file=sys.stderr)
+    elif not verified:
+        print('ERROR: SHA256 checksum mismatch! The downloaded file may be corrupted or tampered with.',
+              file=sys.stderr)
+        try:
+            dest.unlink()
+        except OSError:
+            pass
+        return False
+    else:
+        print('arch-bootstrap: SHA256 checksum verified.')
+
+    return True
 
 
 def _exec_pyz(pyz_path: Path) -> None:
@@ -369,8 +455,15 @@ def _main() -> None:
         pass
 
     # Package not available — download .pyz and exec it
-    pyz_path = Path(tempfile.gettempdir()) / 'arch_bootstrap.pyz'
+    fd, tmp_path_str = tempfile.mkstemp(suffix='.pyz')
+    os.close(fd)
+    pyz_path = Path(tmp_path_str)
+    os.chmod(pyz_path, 0o700)
     if not _download_pyz(pyz_path, country):
+        try:
+            pyz_path.unlink()
+        except OSError:
+            pass
         sys.exit(1)
 
     _exec_pyz(pyz_path)

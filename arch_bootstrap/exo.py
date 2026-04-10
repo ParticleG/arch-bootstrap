@@ -11,9 +11,9 @@ Source: https://github.com/debuggyo/Exo
 
 from __future__ import annotations
 
-import re
+import shlex
+import shutil
 import subprocess
-import urllib.request
 from pathlib import Path
 
 from archinstall.lib.output import Font, debug, info
@@ -22,11 +22,10 @@ from .constants import (
     EXO_AUR_PACKAGES,
     EXO_REPO_URL,
     EXO_SYSTEM_PACKAGES,
-    GHPROXY_CHUNK_URL,
-    GHPROXY_FALLBACK,
 )
 from .i18n import t
 from .nvidia import install_niri_drm_wait
+from .utils import get_clone_url
 
 _PREFIX = '[Exo]'
 
@@ -56,45 +55,6 @@ def _debug(msg: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# GitHub proxy resolution (for CN users)
-# ---------------------------------------------------------------------------
-
-def _resolve_ghproxy() -> str | None:
-    """Resolve a working GitHub proxy URL from ghproxy.link.
-
-    ghproxy.link is a Vue SPA; the available proxy domains are embedded in
-    a webpack JS chunk as href="https://gh<word>.<tld>" links.  We fetch
-    the chunk and extract the first available domain.
-
-    Returns proxy base URL (e.g. 'https://ghfast.top') or None.
-    """
-    try:
-        req = urllib.request.Request(GHPROXY_CHUNK_URL)
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            content = resp.read().decode('utf-8', errors='ignore')
-    except Exception:
-        return None
-
-    matches = re.findall(r'href=.{0,5}(https://gh[a-z0-9]+\.[a-z]+)', content)
-    return matches[0] if matches else None
-
-
-def _get_clone_url(country: str | None) -> str:
-    """Return the Exo git clone URL, proxied for CN users."""
-    if country != 'CN':
-        return EXO_REPO_URL
-
-    _info('China detected, resolving GitHub proxy...')
-    proxy = _resolve_ghproxy()
-    if proxy:
-        _info(f'Using proxy: {proxy}')
-        return f'{proxy}/{EXO_REPO_URL}'
-
-    _info(f'Using fallback proxy: {GHPROXY_FALLBACK}')
-    return f'{GHPROXY_FALLBACK}/{EXO_REPO_URL}'
-
-
-# ---------------------------------------------------------------------------
 # Installation steps
 # ---------------------------------------------------------------------------
 
@@ -120,7 +80,7 @@ def _install_aur_packages(chroot_dir: Path, username: str) -> bool:
     )
 
     if result.returncode != 0:
-        _info(t('exo.failed') % result.returncode)
+        _info(t('exo.failed') % (result.returncode or -1))
         return False
 
     return True
@@ -137,7 +97,7 @@ def _clone_and_copy_configs(
     """
     _info(t('exo.cloning_repo'))
 
-    clone_url = _get_clone_url(country)
+    clone_url = get_clone_url(EXO_REPO_URL, is_cn=(country == 'CN'))
     repo_path = '/var/tmp/exo-shell'
 
     # Clone into chroot /var/tmp
@@ -154,22 +114,22 @@ def _clone_and_copy_configs(
     # Copy configs as user
     _info(t('exo.copying_configs'))
 
-    home = f'/home/{username}'
+    quoted_home = shlex.quote(f'/home/{username}')
     copy_cmds = ' && '.join([
         # Create target directories
-        f'mkdir -p {home}/.config/ignis',
-        f'mkdir -p {home}/.config/matugen',
-        f'mkdir -p {home}/.config/niri',
-        f'mkdir -p {home}/Pictures/Wallpapers',
+        f'mkdir -p {quoted_home}/.config/ignis',
+        f'mkdir -p {quoted_home}/.config/matugen',
+        f'mkdir -p {quoted_home}/.config/niri',
+        f'mkdir -p {quoted_home}/Pictures/Wallpapers',
         # Copy config trees
-        f'cp -r {repo_path}/ignis/. {home}/.config/ignis/',
-        f'cp -r {repo_path}/matugen/. {home}/.config/matugen/',
+        f'cp -r {repo_path}/ignis/. {quoted_home}/.config/ignis/',
+        f'cp -r {repo_path}/matugen/. {quoted_home}/.config/matugen/',
         # Copy individual files
-        f'cp {repo_path}/exodefaults/config.kdl {home}/.config/niri/config.kdl',
-        f'cp {repo_path}/exodefaults/default_wallpaper.png {home}/Pictures/Wallpapers/default.png',
-        f'cp {repo_path}/exodefaults/preview-colors.scss {home}/.config/ignis/styles/preview-colors.scss',
+        f'cp {repo_path}/exodefaults/config.kdl {quoted_home}/.config/niri/config.kdl',
+        f'cp {repo_path}/exodefaults/default_wallpaper.png {quoted_home}/Pictures/Wallpapers/default.png',
+        f'cp {repo_path}/exodefaults/preview-colors.scss {quoted_home}/.config/ignis/styles/preview-colors.scss',
         # Create empty user settings
-        f'echo \'{{}}\' > {home}/.config/ignis/user_settings.json',
+        f'echo \'{{}}\' > {quoted_home}/.config/ignis/user_settings.json',
     ])
 
     result = subprocess.run(
@@ -189,11 +149,11 @@ def _run_matugen(chroot_dir: Path, username: str) -> None:
     """Run matugen for initial Material You color generation."""
     _info(t('exo.running_matugen'))
 
-    home = f'/home/{username}'
+    quoted_home = shlex.quote(f'/home/{username}')
     result = subprocess.run(
         ['arch-chroot', str(chroot_dir),
          'runuser', '-l', username, '-c',
-         f'matugen image {home}/Pictures/Wallpapers/default.png'],
+         f'matugen image {quoted_home}/Pictures/Wallpapers/default.png'],
         check=False,
     )
 
@@ -227,7 +187,9 @@ def _configure_greetd(chroot_dir: Path, username: str) -> None:
     config_dir = chroot_dir / 'etc' / 'greetd'
     config_dir.mkdir(parents=True, exist_ok=True)
     config_path = config_dir / 'config.toml'
-    config_path.write_text(_GREETD_CONFIG.format(username=username))
+    # Escape TOML special characters in username by wrapping in quotes
+    safe_username = username.replace('\\', '\\\\').replace('"', '\\"')
+    config_path.write_text(_GREETD_CONFIG.format(username=safe_username))
     _debug(f'Wrote {config_path}')
 
 
@@ -279,28 +241,26 @@ def _install_exoupdate(chroot_dir: Path) -> None:
 
 def _cleanup_repo(chroot_dir: Path) -> None:
     """Remove the cloned Exo repository from /var/tmp."""
-    repo_dir = chroot_dir / 'var' / 'tmp' / 'exo-shell'
-    if repo_dir.exists():
-        subprocess.run(
-            ['arch-chroot', str(chroot_dir), 'rm', '-rf', '/var/tmp/exo-shell'],
-            check=False,
-        )
+    repo_path = chroot_dir / 'var' / 'tmp' / 'exo-shell'
+    if repo_path.exists():
+        shutil.rmtree(repo_path)
         _debug('Removed /var/tmp/exo-shell')
 
 
 def _fix_ownership(chroot_dir: Path, username: str) -> None:
     """Fix file ownership for all Exo config directories."""
-    home = f'/home/{username}'
+    quoted_home = shlex.quote(f'/home/{username}')
     dirs = [
-        f'{home}/.config/ignis',
-        f'{home}/.config/matugen',
-        f'{home}/.config/niri',
-        f'{home}/Pictures',
+        f'{quoted_home}/.config/ignis',
+        f'{quoted_home}/.config/matugen',
+        f'{quoted_home}/.config/niri',
+        f'{quoted_home}/Pictures',
     ]
 
+    quoted_user = shlex.quote(username)
     subprocess.run(
         ['arch-chroot', str(chroot_dir), 'chown', '-R',
-         f'{username}:{username}', *dirs],
+         f'{quoted_user}:{quoted_user}', *dirs],
         check=False,
     )
     _debug(f'Fixed ownership of Exo config directories for {username}')
@@ -333,38 +293,50 @@ def install_exo(
         country: User's country code (for CN proxy resolution).
         gpu_vendors: List of GPU vendor identifiers (e.g. ['nvidia_open', 'amd']).
     """
-    # 1. Install AUR dependencies via paru
-    if not _install_aur_packages(chroot_dir, username):
-        return
+    # Set up temporary NOPASSWD sudoers (paru needs sudo for pacman/makepkg)
+    sudoers_file = chroot_dir / 'etc' / 'sudoers.d' / f'99-{username}-temp'
+    sudoers_file.write_text(
+        f'{username} ALL=(ALL) NOPASSWD: /usr/bin/pacman, /usr/bin/makepkg, /usr/bin/paru\n',
+    )
+    sudoers_file.chmod(0o440)
+    _debug('Temporary NOPASSWD sudoers rule created')
 
-    # 2. Clone Exo repo and copy config files
-    if not _clone_and_copy_configs(chroot_dir, username, country):
+    try:
+        # 1. Install AUR dependencies via paru
+        if not _install_aur_packages(chroot_dir, username):
+            return
+
+        # 2. Clone Exo repo and copy config files
+        if not _clone_and_copy_configs(chroot_dir, username, country):
+            _cleanup_repo(chroot_dir)
+            return
+
+        # 3. Run matugen for initial color generation
+        _run_matugen(chroot_dir, username)
+
+        # 4. Set GTK theme
+        _set_gtk_theme(chroot_dir, username)
+
+        # 5. Install exoupdate command
+        _install_exoupdate(chroot_dir)
+
+        # 6. Cleanup cloned repo
         _cleanup_repo(chroot_dir)
-        return
+    finally:
+        sudoers_file.unlink(missing_ok=True)
+        _debug('Removed temporary NOPASSWD sudoers rule')
 
-    # 3. Run matugen for initial color generation
-    _run_matugen(chroot_dir, username)
-
-    # 4. Set GTK theme
-    _set_gtk_theme(chroot_dir, username)
-
-    # 5. Configure greetd for Niri autologin
+    # 7. Configure greetd for Niri autologin
     _configure_greetd(chroot_dir, username)
 
-    # 6. Enable systemd services (manual symlinks)
+    # 8. Enable systemd services (manual symlinks)
     _enable_services(chroot_dir)
 
-    # 7. NVIDIA DRM wait workaround
+    # 9. NVIDIA DRM wait workaround
     if gpu_vendors:
-        has_nvidia = any(v in ('nvidia_open', 'nouveau') for v in gpu_vendors)
+        has_nvidia = any(v == 'nvidia_open' for v in gpu_vendors)
         if has_nvidia:
             install_niri_drm_wait(chroot_dir)
-
-    # 8. Install exoupdate command
-    _install_exoupdate(chroot_dir)
-
-    # 9. Cleanup cloned repo
-    _cleanup_repo(chroot_dir)
 
     # 10. Fix file ownership
     _fix_ownership(chroot_dir, username)

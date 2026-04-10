@@ -13,22 +13,22 @@ drift from upstream.
 from __future__ import annotations
 
 import gzip
+import http.client
 import platform
-import re
-import stat
+import shlex
 import subprocess
+import urllib.error
 import urllib.request
 from pathlib import Path
 
-from archinstall.lib.output import Font, debug, info
+from archinstall.lib.output import Font, debug, error, info
 
 from .constants import (
     DANKINSTALL_RELEASE_BASE,
-    GHPROXY_CHUNK_URL,
-    GHPROXY_FALLBACK,
 )
 from .i18n import t
 from .nvidia import install_niri_drm_wait
+from .utils import resolve_github_proxy
 
 _PREFIX = '[DMS]'
 
@@ -41,30 +41,6 @@ def _info(msg: str) -> None:
 def _debug(msg: str) -> None:
     """Log a debug message with a colored [DMS] prefix."""
     debug(f'{_PREFIX} {msg}', fg='green')
-
-
-# ---------------------------------------------------------------------------
-# GitHub proxy resolution (for CN users)
-# ---------------------------------------------------------------------------
-
-def _resolve_ghproxy() -> str | None:
-    """Resolve a working GitHub proxy URL from ghproxy.link.
-
-    ghproxy.link is a Vue SPA; the available proxy domains are embedded in
-    a webpack JS chunk as href="https://gh<word>.<tld>" links.  We fetch
-    the chunk and extract the first available domain.
-
-    Returns proxy base URL (e.g. 'https://ghfast.top') or None.
-    """
-    try:
-        req = urllib.request.Request(GHPROXY_CHUNK_URL)
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            content = resp.read().decode('utf-8', errors='ignore')
-    except Exception:
-        return None
-
-    matches = re.findall(r'href=.{0,5}(https://gh[a-z0-9]+\.[a-z]+)', content)
-    return matches[0] if matches else None
 
 
 # ---------------------------------------------------------------------------
@@ -84,30 +60,32 @@ def _download_dankinstall(chroot_dir: Path, country: str | None) -> Path:
     url = f'{DANKINSTALL_RELEASE_BASE}/{filename}'
 
     # Apply GitHub proxy for CN users
-    if country == 'CN':
+    is_cn = country == 'CN'
+    if is_cn:
         _info('China detected, resolving GitHub proxy...')
-        proxy = _resolve_ghproxy()
+        proxy = resolve_github_proxy(is_cn)
         if proxy:
             _info(f'Using proxy: {proxy}')
             url = f'{proxy}/{url}'
-        else:
-            _info(f'Using fallback proxy: {GHPROXY_FALLBACK}')
-            url = f'{GHPROXY_FALLBACK}/{url}'
 
     _info(f'Downloading dankinstall ({arch})...')
     _debug(f'URL: {url}')
 
     # Download compressed binary
-    req = urllib.request.Request(url)
-    with urllib.request.urlopen(req, timeout=120) as resp:
-        compressed = resp.read()
+    try:
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            compressed = resp.read()
+    except (urllib.error.URLError, http.client.HTTPException, OSError) as e:
+        error(f'{_PREFIX} Failed to download dankinstall: {e}')
+        raise RuntimeError(f'Failed to download dankinstall: {e}') from e
 
     # Decompress and write to chroot /var/tmp (NOT /tmp — arch-chroot
     # mounts a fresh tmpfs over /tmp, hiding files written from outside)
     binary_data = gzip.decompress(compressed)
     target = chroot_dir / 'var' / 'tmp' / 'dankinstall'
     target.write_bytes(binary_data)
-    target.chmod(target.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    target.chmod(0o755)
 
     size_mb = len(binary_data) / 1024 / 1024
     _info(f'Downloaded dankinstall ({size_mb:.1f} MB)')
@@ -303,21 +281,21 @@ def install_dms(
         cmd = (
             f'GIT_CONFIG_SYSTEM=/etc/gitconfig '
             f'LANG=C.UTF-8 /var/tmp/dankinstall '
-            f'-c {compositor} -t {terminal} '
+            f'-c {shlex.quote(compositor)} -t {shlex.quote(terminal)} '
             f'--include-deps dms-greeter '
             f'--replace-configs-all -y'
         )
 
         result = subprocess.run(
             ['arch-chroot', str(chroot_dir),
-             'runuser', '-l', username, '-c', cmd],
+             'runuser', '-l', shlex.quote(username), '-c', cmd],
             check=False,
         )
 
         if result.returncode == 0:
             _info(t('dms.complete'))
         else:
-            _info(t('dms.failed') % result.returncode)
+            _info(t('dms.failed') % (result.returncode or -1))
             _debug('Check /var/tmp/dankinstall logs for details; '
                    'greeter and configs may need manual setup')
     finally:
@@ -334,7 +312,7 @@ def install_dms(
 
     # 6. NVIDIA DRM wait workaround (Optimus laptops with niri)
     if compositor == 'niri' and gpu_vendors:
-        has_nvidia = any(v in ('nvidia_open', 'nouveau') for v in gpu_vendors)
+        has_nvidia = any(v == 'nvidia_open' for v in gpu_vendors)
         if has_nvidia:
             install_niri_drm_wait(chroot_dir)
 

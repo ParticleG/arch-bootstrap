@@ -15,6 +15,7 @@ from .constants import (
     DMS_MANUAL_TERMINAL_PACKAGES,
 )
 from .i18n import t
+from .nvidia import install_niri_drm_wait
 
 
 _PREFIX = '[dms-manual]'
@@ -276,7 +277,6 @@ def install_dms_manual(
         gpu_vendors: List of GPU vendor identifiers (e.g. ['nvidia_open', 'amd']).
     """
     gpu_vendors = gpu_vendors or []
-    # gpu_vendors is accepted for interface consistency and future NVIDIA workaround support
     sudoers_path = chroot_dir / 'etc' / 'sudoers.d' / _SUDOERS_FILE
 
     try:
@@ -309,10 +309,16 @@ def install_dms_manual(
     # 6. Enable systemd services
     _enable_services(chroot_dir, username, compositor)
 
-    # 7. Configure environment variables
+    # 7. NVIDIA DRM wait workaround (Optimus laptops with niri)
+    if compositor == 'niri' and gpu_vendors:
+        has_nvidia = any(v == 'nvidia_open' for v in gpu_vendors)
+        if has_nvidia:
+            install_niri_drm_wait(chroot_dir)
+
+    # 8. Configure environment variables
     _configure_environment(chroot_dir)
 
-    # 8. Fix file ownership
+    # 9. Fix file ownership
     _fix_ownership(chroot_dir, username)
 
     _info(t('dms_manual.complete'))

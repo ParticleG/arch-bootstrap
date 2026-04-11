@@ -24,7 +24,6 @@ from .constants import (
     EXO_SYSTEM_PACKAGES,
 )
 from .i18n import t
-from .nvidia import install_niri_drm_wait
 from .utils import get_clone_url, run_with_retry
 
 _PREFIX = '[Exo]'
@@ -332,13 +331,7 @@ def install_exo(
     # 8. Enable systemd services (manual symlinks)
     _enable_services(chroot_dir)
 
-    # 9. NVIDIA DRM wait workaround
-    if gpu_vendors:
-        has_nvidia = any(v == 'nvidia_open' for v in gpu_vendors)
-        if has_nvidia:
-            install_niri_drm_wait(chroot_dir)
-
-    # 10. Fix file ownership
+    # 9. Fix file ownership
     _fix_ownership(chroot_dir, username)
 
     _info(t('exo.complete'))

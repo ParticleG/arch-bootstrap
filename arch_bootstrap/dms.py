@@ -27,7 +27,6 @@ from .constants import (
     DANKINSTALL_RELEASE_BASE,
 )
 from .i18n import t
-from .nvidia import install_niri_drm_wait
 from .utils import resolve_github_proxy, retry_on_failure, run_with_retry
 
 _PREFIX = '[DMS]'
@@ -165,10 +164,6 @@ def _enable_dms_services(
 
     _info('DMS services enabled successfully')
 
-
-# ---------------------------------------------------------------------------
-# NVIDIA DRM wait workaround for niri
-# ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
 # Post-install extras (packages & environment)
@@ -316,14 +311,8 @@ def install_dms(
     # 5. Enable DMS services (systemctl commands fail silently inside chroot)
     _enable_dms_services(chroot_dir, username, compositor)
 
-    # 6. NVIDIA DRM wait workaround (Optimus laptops with niri)
-    if compositor == 'niri' and gpu_vendors:
-        has_nvidia = any(v == 'nvidia_open' for v in gpu_vendors)
-        if has_nvidia:
-            install_niri_drm_wait(chroot_dir)
-
-    # 7. Install DMS extras (cups-pk-helper, kimageformats, cava, qt6ct)
+    # 6. Install DMS extras (cups-pk-helper, kimageformats, cava, qt6ct)
     _install_dms_extras(chroot_dir)
 
-    # 8. Configure environment variables for DMS
+    # 7. Configure environment variables for DMS
     _configure_dms_environment(chroot_dir)

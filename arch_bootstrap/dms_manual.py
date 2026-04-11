@@ -15,7 +15,6 @@ from .constants import (
     DMS_MANUAL_TERMINAL_PACKAGES,
 )
 from .i18n import t
-from .nvidia import install_niri_drm_wait
 from .utils import run_with_retry
 
 
@@ -313,16 +312,10 @@ def install_dms_manual(
     # 6. Enable systemd services
     _enable_services(chroot_dir, username, compositor)
 
-    # 7. NVIDIA DRM wait workaround (Optimus laptops with niri)
-    if compositor == 'niri' and gpu_vendors:
-        has_nvidia = any(v == 'nvidia_open' for v in gpu_vendors)
-        if has_nvidia:
-            install_niri_drm_wait(chroot_dir)
-
-    # 8. Configure environment variables
+    # 7. Configure environment variables
     _configure_environment(chroot_dir)
 
-    # 9. Fix file ownership
+    # 8. Fix file ownership
     _fix_ownership(chroot_dir, username)
 
     _info(t('dms_manual.complete'))

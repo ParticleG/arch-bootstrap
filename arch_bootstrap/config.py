@@ -331,10 +331,18 @@ def apply_wizard_state_to_config(
 
     # Custom commands for kmscon setup
     if needs_kmscon(state.locale):
-        config.custom_commands = [
-            'systemctl disable getty@tty1',
-            'systemctl enable kmsconvt@tty1',
-        ]
+        if state.desktop_env in ('dms', 'dms_manual', 'exo'):
+            # Graphical DEs use greetd on tty1; put kmscon on tty2 to avoid
+            # DRM master contention (kmscon holds /dev/dri/card* open).
+            config.custom_commands = [
+                'systemctl disable getty@tty2',
+                'systemctl enable kmsconvt@tty2',
+            ]
+        else:
+            config.custom_commands = [
+                'systemctl disable getty@tty1',
+                'systemctl enable kmsconvt@tty1',
+            ]
     else:
         config.custom_commands = []
 

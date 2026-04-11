@@ -282,16 +282,14 @@ EXO_SYSTEM_PACKAGES: list[str] = [
 # ---------------------------------------------------------------------------
 
 # DMS Manual installation packages
-DMS_MANUAL_PREREQ_PACKAGES: list[str] = [
-    'quickshell-git',               # Must be installed first to avoid dependency conflicts
-]
+DMS_MANUAL_PREREQ_PACKAGES: list[str] = []
 
 DMS_MANUAL_AUR_PACKAGES: list[str] = [
     'greetd-dms-greeter-git',
 ]
 
 DMS_MANUAL_SYSTEM_PACKAGES: list[str] = [
-    'greetd', 'xdg-desktop-portal-gtk',
+    'quickshell', 'greetd', 'xdg-desktop-portal-gtk',
     'accountsservice', 'xwayland-satellite', 'matugen',
     'dgop', 'cava', 'cups-pk-helper', 'kimageformats',
     'libavif', 'libheif', 'libjxl', 'qt6ct',

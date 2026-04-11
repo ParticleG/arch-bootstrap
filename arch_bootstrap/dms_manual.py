@@ -53,10 +53,13 @@ _DMS_SETUP_TERMINAL_MAP: dict[str, str] = {'ghostty': '1', 'kitty': '2', 'alacri
 # ---------------------------------------------------------------------------
 
 def _install_prereq_packages(chroot_dir: Path, username: str) -> bool:
-    """Install quickshell-git first to avoid dependency conflicts.
+    """Install prerequisite packages that must precede the main batch.
 
-    Returns True on success, False on failure.
+    Returns True on success (or if the list is empty), False on failure.
     """
+    if not DMS_MANUAL_PREREQ_PACKAGES:
+        return True
+
     _info(t('dms_manual.installing_prereqs'))
     _debug(f'Packages: {", ".join(DMS_MANUAL_PREREQ_PACKAGES)}')
 
@@ -260,8 +263,8 @@ def install_dms_manual(
 ) -> None:
     """Install DMS desktop environment manually (without dankinstall).
 
-    Installs DMS packages via paru in two phases (quickshell-git first
-    to avoid dependency conflicts, then everything else), runs ``dms setup``
+    Installs DMS packages via paru in two phases (prerequisite packages
+    first if any, then everything else), runs ``dms setup``
     with stdin piping for automation, configures greetd with dms-greeter,
     and enables systemd services via manual symlinks.
 
@@ -287,7 +290,7 @@ def install_dms_manual(
         sudoers_path.write_text(f'{username} ALL=(ALL) NOPASSWD: ALL\n')
         sudoers_path.chmod(0o440)
 
-        # 2. Install quickshell-git first (must precede other packages)
+        # 2. Install prerequisite packages (if any)
         if not _install_prereq_packages(chroot_dir, username):
             return
 

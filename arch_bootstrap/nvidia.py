@@ -5,7 +5,7 @@ greeter's compositor holds DRM devices open during close(), causing
 the user's niri session to get EBUSY.
 
 Uses a PATH-hijacking niri-session wrapper at /usr/local/bin/niri-session
-that waits for the greeter's niri to exit before starting the real
+that waits for the greeter to exit before starting the real
 /usr/bin/niri-session, combined with a systemd drop-in for
 defense-in-depth restart behavior.
 
@@ -32,17 +32,17 @@ def _debug(msg: str) -> None:
 
 
 # PATH-hijacking wrapper installed to /usr/local/bin/niri-session (takes
-# priority over /usr/bin/niri-session).  When the greeter's niri compositor
+# priority over /usr/bin/niri-session).  When the greeter's compositor
 # still holds the NVIDIA DRM master during the greeter-to-session transition,
-# the user's niri fails with EBUSY.  This wrapper polls until the greeter's
-# niri process exits, then starts the real niri-session.
+# the user's niri fails with EBUSY.  This wrapper polls until all greeter
+# processes exit, then starts the real niri-session.
 _NIRI_SESSION_WRAPPER = r'''#!/usr/bin/env bash
-# niri-session wrapper: wait for greeter's niri to release DRM before starting user session.
+# niri-session wrapper: wait for greeter to release DRM before starting user session.
 #
-# On NVIDIA Optimus systems, the greeter's niri compositor holds DRM master on the NVIDIA
+# On NVIDIA Optimus systems, the greeter's compositor holds DRM master on the NVIDIA
 # GPU (card1). greetd sends SIGTERM to the greeter when starting the user session, but
 # there is a race: the user's niri may try to open card1 before the greeter releases it,
-# causing EBUSY (errno 16). This wrapper polls until the greeter's niri process exits,
+# causing EBUSY (errno 16). This wrapper polls until all greeter-owned processes exit,
 # then starts the real niri-session.
 
 LOG_TAG="niri-session-wrapper"
@@ -50,23 +50,28 @@ log() { logger -t "$LOG_TAG" "$@"; }
 
 log "started (PID=$$, PPID=$PPID, UID=$(id -u), args=$*)"
 
-# Poll until greeter's niri compositor exits and releases DRM master.
+# Poll until all greeter-owned processes exit and release DRM master.
 # greetd has already sent SIGTERM to the greeter by the time we start; we just
 # need to wait for the process to actually terminate (usually < 1s).
-MAX_WAIT=5
+MAX_WAIT=10
 i=0
-while pgrep -u greeter -x niri >/dev/null 2>&1; do
+timed_out=0
+while pgrep -u greeter >/dev/null 2>&1; do
     if [ $i -ge $MAX_WAIT ]; then
-        log "WARNING: greeter niri still running after ${MAX_WAIT}s, proceeding anyway"
+        log "WARNING: greeter processes still running after ${MAX_WAIT}s, proceeding anyway"
+        timed_out=1
         break
     fi
-    [ $i -eq 0 ] && log "greeter niri still running, waiting for exit..."
+    [ $i -eq 0 ] && log "greeter processes still running, waiting for exit..."
     sleep 1
     i=$((i + 1))
 done
 
-if [ $i -gt 0 ]; then
-    log "greeter niri exited after ~${i}s, adding 500ms settle delay"
+if [ $i -gt 0 ] && [ $timed_out -eq 0 ]; then
+    log "greeter processes exited after ~${i}s, adding 500ms settle delay"
+    sleep 0.5
+elif [ $timed_out -eq 1 ]; then
+    log "proceeding after ${MAX_WAIT}s timeout, adding 500ms settle delay"
     sleep 0.5
 fi
 
@@ -92,7 +97,7 @@ def install_niri_drm_wait(chroot_dir: Path) -> None:
     """Deploy the niri DRM wait workaround for NVIDIA Optimus systems.
 
     Installs a PATH-hijacking wrapper at /usr/local/bin/niri-session that
-    waits for the greeter's niri to exit before starting the real
+    waits for the greeter to exit before starting the real
     /usr/bin/niri-session, working around EBUSY errors caused by the
     greeter's compositor still holding the NVIDIA DRM master during the
     greeter-to-session transition.

@@ -55,7 +55,7 @@ while pgrep -u "$GREETER_USER" > /dev/null 2>&1; do
         break
     fi
     sleep 0.1
-    (( i++ ))
+    (( ++i ))
 done
 
 if (( i > 0 )); then

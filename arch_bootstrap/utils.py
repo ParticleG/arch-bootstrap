@@ -8,7 +8,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Callable, TypeVar
 
-from archinstall.lib.output import Font, debug, info
+from archinstall.lib.output import debug, info
 
 from .constants import GHPROXY_CHUNK_URL, GHPROXY_FALLBACK
 
@@ -22,7 +22,7 @@ def _debug(msg: str) -> None:
 
 def _info(msg: str) -> None:
     """Log an info message with a [utils] prefix."""
-    info(f'{_PREFIX} {msg}', fg=Font.green)
+    info(f'{_PREFIX} {msg}', fg='green')
 
 
 T = TypeVar('T')

@@ -30,12 +30,12 @@ def _debug(msg: str) -> None:
     debug(f'{_PREFIX} {msg}', fg='green')
 
 
-_GREETD_CONFIG = """\
+_GREETD_CONFIG_TEMPLATE = """\
 [terminal]
 vt = 1
 
 [default_session]
-command = "dms-greeter"
+command = "dms-greeter --command {compositor} -p /usr/share/quickshell/dms"
 user = "greeter"
 """
 
@@ -146,14 +146,14 @@ def _run_dms_setup(
         _debug(f'dms setup exited with code {result.returncode}')
 
 
-def _configure_greetd(chroot_dir: Path) -> None:
+def _configure_greetd(chroot_dir: Path, compositor: str) -> None:
     """Write greetd configuration for dms-greeter."""
     _info(t('dms_manual.configuring_greetd'))
 
     config_dir = chroot_dir / 'etc' / 'greetd'
     config_dir.mkdir(parents=True, exist_ok=True)
     config_path = config_dir / 'config.toml'
-    config_path.write_text(_GREETD_CONFIG)
+    config_path.write_text(_GREETD_CONFIG_TEMPLATE.format(compositor=compositor))
     _debug(f'Wrote {config_path}')
 
 
@@ -304,7 +304,7 @@ def install_dms_manual(
             _debug('Removed temporary sudoers rule')
 
     # 5. Configure greetd
-    _configure_greetd(chroot_dir)
+    _configure_greetd(chroot_dir, compositor)
 
     # 6. Enable systemd services
     _enable_services(chroot_dir, username, compositor)

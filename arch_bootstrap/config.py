@@ -142,6 +142,32 @@ def generate_kmscon_config(
     return '\n'.join(lines)
 
 
+_KMSCON_GREETD_WARNING = '''\
+# Warn about kmscon/greetd DRM conflict when kmscon is on tty1.
+# Suppress this message by creating ~/.hushlogin
+
+[ -f "$HOME/.hushlogin" ] && return 0
+
+# Only warn if kmscon is actually enabled on tty1
+systemctl is-enabled kmsconvt@tty1.service >/dev/null 2>&1 || return 0
+
+printf '\\n'
+printf '  \\033[33mNote:\\033[0m kmscon is running on tty1.\\n'
+printf '  If you install a display manager (e.g. greetd), move kmscon first:\\n'
+printf '    sudo systemctl disable kmsconvt@tty1\\n'
+printf '    sudo systemctl enable getty@tty1\\n'
+printf '    sudo systemctl disable getty@tty2\\n'
+printf '    sudo systemctl enable kmsconvt@tty2\\n'
+printf '  To hide this message: touch ~/.hushlogin\\n'
+printf '\\n'
+'''
+
+
+def get_kmscon_greetd_warning() -> str:
+    """Return the content of the kmscon/greetd DRM conflict warning script."""
+    return _KMSCON_GREETD_WARNING
+
+
 # =============================================================================
 # Fontconfig generation
 # =============================================================================

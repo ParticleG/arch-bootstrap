@@ -24,7 +24,7 @@ from archinstall.lib.output import Font, debug, error, info
 from archinstall.lib.profile.profiles_handler import profile_handler
 from archinstall.tui.ui.components import tui
 
-from .config import generate_fontconfig, generate_kmscon_config
+from .config import generate_fontconfig, generate_kmscon_config, get_kmscon_greetd_warning
 from .constants import (
     ARCHLINUXCN_URL,
     BROWSER_OPTIONS,
@@ -479,6 +479,15 @@ def perform_installation(
         kmscon_conf = kmscon_dir / 'kmscon.conf'
         kmscon_conf.write_text(kmscon_conf_content)
         _info(f'Written kmscon.conf (font: {kmscon_font_name}, size: {font_size})')
+
+        # Write login warning for minimal installs where kmscon is on tty1.
+        # Users who later install greetd will see a reminder to move kmscon.
+        if desktop_env not in ('dms', 'dms_manual', 'exo'):
+            warning_dir = chroot_dir / 'etc' / 'profile.d'
+            warning_dir.mkdir(parents=True, exist_ok=True)
+            warning_file = warning_dir / 'kmscon-warning.sh'
+            warning_file.write_text(get_kmscon_greetd_warning())
+            _info('Written /etc/profile.d/kmscon-warning.sh (kmscon on tty1)')
 
     # Post-install: write user fontconfig for CJK locales
     if needs_kmscon(locale) and kmscon_font_name and username:

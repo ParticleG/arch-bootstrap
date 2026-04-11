@@ -42,21 +42,30 @@ _NIRI_SESSION_WRAPPER = r'''#!/usr/bin/env bash
 # niri to fail with EBUSY. This wrapper retries niri-session after a delay, by which time
 # greetd has killed the greeter and the DRM device is released.
 
+LOG_TAG="niri-session-wrapper"
+log() { logger -t "$LOG_TAG" "$@"; }
+
+log "started (PID=$$, PPID=$PPID, args=$*)"
+
 MAX_RETRIES=5
 RETRY_DELAY=2
 
 for attempt in $(seq 1 $MAX_RETRIES); do
+    log "attempt $attempt: calling /usr/bin/niri-session"
     /usr/bin/niri-session
     rc=$?
+    log "attempt $attempt: /usr/bin/niri-session exited with rc=$rc"
 
     # Normal exit (user logout) — do not retry
-    [ $rc -eq 0 ] && exit 0
+    [ $rc -eq 0 ] && { log "normal exit (rc=0), not retrying"; exit 0; }
 
     # Failed start (likely EBUSY). Reset systemd state and retry.
     systemctl --user reset-failed niri.service 2>/dev/null
+    log "attempt $attempt: sleeping ${RETRY_DELAY}s before retry"
     sleep "$RETRY_DELAY"
 done
 
+log "all $MAX_RETRIES attempts exhausted, giving up"
 exit 1
 '''
 

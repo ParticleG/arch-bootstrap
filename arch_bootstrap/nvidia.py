@@ -1,12 +1,13 @@
 """Shared NVIDIA workarounds for Niri-based desktop environments.
 
-Contains the DRM retry workaround for NVIDIA Optimus systems where
+Contains the DRM wait workaround for NVIDIA Optimus systems where
 greeter's compositor holds DRM devices open during close(), causing
 the user's niri session to get EBUSY.
 
 Uses a PATH-hijacking niri-session wrapper at /usr/local/bin/niri-session
-that retries the real /usr/bin/niri-session on failure, combined with a
-systemd drop-in for defense-in-depth restart behavior.
+that waits for the greeter's niri to exit before starting the real
+/usr/bin/niri-session, combined with a systemd drop-in for
+defense-in-depth restart behavior.
 
 Used by both dms.py and exo.py.
 """
@@ -33,61 +34,68 @@ def _debug(msg: str) -> None:
 # PATH-hijacking wrapper installed to /usr/local/bin/niri-session (takes
 # priority over /usr/bin/niri-session).  When the greeter's niri compositor
 # still holds the NVIDIA DRM master during the greeter-to-session transition,
-# the user's niri fails with EBUSY.  This wrapper retries after a delay,
-# giving greetd time to kill the greeter and release the DRM device.
+# the user's niri fails with EBUSY.  This wrapper polls until the greeter's
+# niri process exits, then starts the real niri-session.
 _NIRI_SESSION_WRAPPER = r'''#!/usr/bin/env bash
-# niri-session wrapper: retry on NVIDIA DRM EBUSY during greeter-to-session transition
-# When switching from a graphical greeter (dms-greeter) to the user session, the greeter's
-# niri compositor may still hold the DRM master on the NVIDIA GPU (card1), causing the user's
-# niri to fail with EBUSY. This wrapper retries niri-session after a delay, by which time
-# greetd has killed the greeter and the DRM device is released.
+# niri-session wrapper: wait for greeter's niri to release DRM before starting user session.
+#
+# On NVIDIA Optimus systems, the greeter's niri compositor holds DRM master on the NVIDIA
+# GPU (card1). greetd sends SIGTERM to the greeter when starting the user session, but
+# there is a race: the user's niri may try to open card1 before the greeter releases it,
+# causing EBUSY (errno 16). This wrapper polls until the greeter's niri process exits,
+# then starts the real niri-session.
 
 LOG_TAG="niri-session-wrapper"
 log() { logger -t "$LOG_TAG" "$@"; }
 
-log "started (PID=$$, PPID=$PPID, args=$*)"
+log "started (PID=$$, PPID=$PPID, UID=$(id -u), args=$*)"
 
-MAX_RETRIES=5
-RETRY_DELAY=2
-
-for attempt in $(seq 1 $MAX_RETRIES); do
-    log "attempt $attempt: calling /usr/bin/niri-session"
-    /usr/bin/niri-session
-    rc=$?
-    log "attempt $attempt: /usr/bin/niri-session exited with rc=$rc"
-
-    # Normal exit (user logout) — do not retry
-    [ $rc -eq 0 ] && { log "normal exit (rc=0), not retrying"; exit 0; }
-
-    # Failed start (likely EBUSY). Reset systemd state and retry.
-    systemctl --user reset-failed niri.service 2>/dev/null
-    log "attempt $attempt: sleeping ${RETRY_DELAY}s before retry"
-    sleep "$RETRY_DELAY"
+# Poll until greeter's niri compositor exits and releases DRM master.
+# greetd has already sent SIGTERM to the greeter by the time we start; we just
+# need to wait for the process to actually terminate (usually < 1s).
+MAX_WAIT=5
+i=0
+while pgrep -u greeter -x niri >/dev/null 2>&1; do
+    if [ $i -ge $MAX_WAIT ]; then
+        log "WARNING: greeter niri still running after ${MAX_WAIT}s, proceeding anyway"
+        break
+    fi
+    [ $i -eq 0 ] && log "greeter niri still running, waiting for exit..."
+    sleep 1
+    i=$((i + 1))
 done
 
-log "all $MAX_RETRIES attempts exhausted, giving up"
-exit 1
+if [ $i -gt 0 ]; then
+    log "greeter niri exited after ~${i}s, adding 500ms settle delay"
+    sleep 0.5
+fi
+
+log "starting /usr/bin/niri-session $*"
+exec /usr/bin/niri-session "$@"
 '''
 
 # Defense-in-depth systemd drop-in for niri.service.  The wrapper script
-# handles the primary retry logic; this drop-in provides an additional
+# handles the primary wait logic; this drop-in provides an additional
 # safety net via systemd's own restart mechanism.
 _NIRI_DRM_WAIT_DROPIN = '''\
+[Unit]
+StartLimitIntervalSec=30
+StartLimitBurst=5
+
 [Service]
 Restart=on-failure
 RestartSec=2
-StartLimitIntervalSec=30
-StartLimitBurst=5
 '''
 
 
 def install_niri_drm_wait(chroot_dir: Path) -> None:
-    """Deploy the niri DRM retry workaround for NVIDIA Optimus systems.
+    """Deploy the niri DRM wait workaround for NVIDIA Optimus systems.
 
     Installs a PATH-hijacking wrapper at /usr/local/bin/niri-session that
-    retries /usr/bin/niri-session on failure, working around EBUSY errors
-    caused by the greeter's compositor still holding the NVIDIA DRM master
-    during the greeter-to-session transition.
+    waits for the greeter's niri to exit before starting the real
+    /usr/bin/niri-session, working around EBUSY errors caused by the
+    greeter's compositor still holding the NVIDIA DRM master during the
+    greeter-to-session transition.
     """
     _info('Installing niri DRM wait workaround for NVIDIA...')
 

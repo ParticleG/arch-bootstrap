@@ -34,7 +34,7 @@ from .constants import (
 from .detection import calculate_kmscon_font_size, needs_kmscon
 from .i18n import t
 from .mirrors import format_cn_mirrorlist
-from .utils import resolve_github_proxy
+from .utils import install_github_proxy_dl, resolve_github_proxy, run_with_retry
 
 
 # =============================================================================
@@ -170,9 +170,10 @@ def _install_paru(
 
     if country == 'CN':
         # archlinuxcn repo should be configured — install via pacman
-        result = subprocess.run(
+        result = run_with_retry(
             ['arch-chroot', str(chroot_dir),
              'pacman', '-S', '--noconfirm', '--needed', 'paru'],
+            description=t('paru.installing'),
             check=False,
         )
         if result.returncode == 0:
@@ -190,9 +191,10 @@ def _install_paru(
         'cd paru-bin; '
         'makepkg -si --noconfirm --needed'
     )
-    result = subprocess.run(
+    result = run_with_retry(
         ['arch-chroot', str(chroot_dir),
          'runuser', '-l', username, '-c', build_script],
+        description=t('paru.installing'),
         check=False,
     )
     if result.returncode == 0:
@@ -227,10 +229,11 @@ def _setup_archlinuxcn(chroot_dir: Path) -> None:
 
     # Install keyring
     _info('Installing archlinuxcn-keyring...')
-    result = subprocess.run(
+    result = run_with_retry(
         ['arch-chroot', str(chroot_dir),
          'pacman', '-Syu', '--noconfirm', '--needed',
          'archlinuxcn-keyring'],
+        description='archlinuxcn-keyring',
         check=False,
     )
     if result.returncode != 0:
@@ -290,6 +293,9 @@ def _setup_cn_git_proxy(chroot_dir: Path) -> None:
         f'\tinsteadOf = https://github.com/\n'
     )
 
+    # Also install the download agent for makepkg's DLAGENTS (non-git sources)
+    install_github_proxy_dl(chroot_dir, proxy)
+
 
 # =============================================================================
 # AUR browser installation
@@ -316,10 +322,11 @@ def _install_aur_browsers(
     pkg_str = ' '.join(shlex.quote(p) for p in aur_packages)
     _info(f'Installing AUR browsers: {", ".join(aur_packages)}')
 
-    result = subprocess.run(
+    result = run_with_retry(
         ['arch-chroot', str(chroot_dir),
          'runuser', '-l', username, '-c',
          f'LANG=C.UTF-8 paru -S --noconfirm --needed --skipreview {pkg_str}'],
+        description=f'AUR browsers: {", ".join(aur_packages)}',
         check=False,
     )
     if result.returncode != 0:
@@ -548,9 +555,10 @@ def perform_installation(
                 omz_cmd = f'sh -c "$(curl -fsSL {OMZ_INSTALL_URL})" "" --unattended --skip-chsh'
 
             try:
-                result = subprocess.run(
+                result = run_with_retry(
                     ['arch-chroot', str(chroot_dir),
                      'runuser', '-l', username, '-c', omz_cmd],
+                    description='oh-my-zsh',
                     check=False,
                     timeout=120,
                 )

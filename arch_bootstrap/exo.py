@@ -25,7 +25,7 @@ from .constants import (
 )
 from .i18n import t
 from .nvidia import install_niri_drm_wait
-from .utils import get_clone_url
+from .utils import get_clone_url, run_with_retry
 
 _PREFIX = '[Exo]'
 
@@ -74,10 +74,10 @@ def _install_aur_packages(chroot_dir: Path, username: str) -> bool:
         + ' '.join(all_packages)
     )
 
-    result = subprocess.run(
+    result = run_with_retry(
         ['arch-chroot', str(chroot_dir),
          'runuser', '-l', username, '-c', cmd],
-        check=False,
+        description=t('exo.installing_deps'),
     )
 
     if result.returncode != 0:
@@ -102,10 +102,10 @@ def _clone_and_copy_configs(
     repo_path = '/var/tmp/exo-shell'
 
     # Clone into chroot /var/tmp
-    result = subprocess.run(
+    result = run_with_retry(
         ['arch-chroot', str(chroot_dir),
          'git', 'clone', '--depth', '1', clone_url, repo_path],
-        check=False,
+        description=t('exo.cloning_repo'),
     )
 
     if result.returncode != 0:

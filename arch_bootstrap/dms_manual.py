@@ -16,6 +16,7 @@ from .constants import (
 )
 from .i18n import t
 from .nvidia import install_niri_drm_wait
+from .utils import run_with_retry
 
 
 _PREFIX = '[dms-manual]'
@@ -66,10 +67,10 @@ def _install_prereq_packages(chroot_dir: Path, username: str) -> bool:
         + ' '.join(DMS_MANUAL_PREREQ_PACKAGES)
     )
 
-    result = subprocess.run(
+    result = run_with_retry(
         ['arch-chroot', str(chroot_dir),
          'runuser', '-l', username, '-c', cmd],
-        check=False,
+        description=t('dms_manual.installing_prereqs'),
     )
 
     if result.returncode != 0:
@@ -109,10 +110,10 @@ def _install_packages(
         + ' '.join(all_packages)
     )
 
-    result = subprocess.run(
+    result = run_with_retry(
         ['arch-chroot', str(chroot_dir),
          'runuser', '-l', username, '-c', cmd],
-        check=False,
+        description=t('dms_manual.installing_deps'),
     )
 
     if result.returncode != 0:

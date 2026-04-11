@@ -28,7 +28,7 @@ from .constants import (
 )
 from .i18n import t
 from .nvidia import install_niri_drm_wait
-from .utils import resolve_github_proxy
+from .utils import resolve_github_proxy, retry_on_failure, run_with_retry
 
 _PREFIX = '[DMS]'
 
@@ -71,14 +71,17 @@ def _download_dankinstall(chroot_dir: Path, country: str | None) -> Path:
     _info(f'Downloading dankinstall ({arch})...')
     _debug(f'URL: {url}')
 
-    # Download compressed binary
-    try:
-        req = urllib.request.Request(url)
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            compressed = resp.read()
-    except (urllib.error.URLError, http.client.HTTPException, OSError) as e:
-        error(f'{_PREFIX} Failed to download dankinstall: {e}')
-        raise RuntimeError(f'Failed to download dankinstall: {e}') from e
+    # Download compressed binary (with retry)
+    def _do_download() -> bytes:
+        try:
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                return resp.read()
+        except (urllib.error.URLError, http.client.HTTPException, OSError) as e:
+            error(f'{_PREFIX} Failed to download dankinstall: {e}')
+            raise RuntimeError(f'Failed to download dankinstall: {e}') from e
+
+    compressed = retry_on_failure(_do_download, description='dankinstall download')
 
     # Decompress and write to chroot /var/tmp (NOT /tmp — arch-chroot
     # mounts a fresh tmpfs over /tmp, hiding files written from outside)
@@ -192,9 +195,10 @@ def _install_dms_extras(chroot_dir: Path) -> None:
     _info('Installing DMS extra packages...')
     _debug(f'Packages: {", ".join(_DMS_EXTRA_PACKAGES)}')
 
-    result = subprocess.run(
+    result = run_with_retry(
         ['arch-chroot', str(chroot_dir),
          'pacman', '-S', '--noconfirm', '--needed', *_DMS_EXTRA_PACKAGES],
+        description='DMS extra packages',
         check=False,
     )
 

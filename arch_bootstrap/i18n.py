@@ -154,6 +154,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         # -- WiFi --
         'wifi.copying': 'Copying WiFi connections to new system...',
         'wifi.copied': 'Copied %s WiFi connection(s)',
+        # -- Retry --
+        'retry.attempt': 'Retry %d/%d: %s',
+        'retry.prompt': '\n%s failed. Retry? [Y/n]: ',
+        # -- GitHub proxy --
+        'proxy.installing_dl': 'Installing GitHub download proxy for makepkg...',
     },
     'zh': {
         # -- Common status --
@@ -304,6 +309,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         # -- WiFi --
         'wifi.copying': '正在复制 WiFi 连接信息到新系统...',
         'wifi.copied': '已复制 %s 个 WiFi 连接',
+        # -- 重试 --
+        'retry.attempt': '重试 %d/%d: %s',
+        'retry.prompt': '\n%s 失败，是否重试？[Y/n]: ',
+        # -- GitHub 代理 --
+        'proxy.installing_dl': '正在为 makepkg 安装 GitHub 下载代理...',
     },
     'ja': {
         # -- Common status --
@@ -454,6 +464,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         # -- WiFi --
         'wifi.copying': 'WiFi 接続情報を新システムにコピー中...',
         'wifi.copied': '%s 個の WiFi 接続をコピー',
+        # -- リトライ --
+        'retry.attempt': 'リトライ %d/%d: %s',
+        'retry.prompt': '\n%s が失敗しました。再試行しますか？ [Y/n]: ',
+        # -- GitHub プロキシ --
+        'proxy.installing_dl': 'makepkg 用の GitHub ダウンロードプロキシをインストール中...',
     },
 }
 

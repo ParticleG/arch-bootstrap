@@ -19,16 +19,29 @@ from archinstall.tui.ui.result import ResultType
 from .config import apply_wizard_state_to_config
 from .disk import EFI_PARTITION_MIB, GPT_BACKUP_MIB, MIN_DISK_SIZE_MIB
 from .constants import (
+    AUDIO_FIRMWARE_OPTIONS,
+    BASE_FONT_OPTIONS,
     BROWSER_OPTIONS,
     COUNTRY_NAMES,
+    DEV_EDITOR_OPTIONS,
+    DEV_ENVIRONMENT_OPTIONS,
+    DEVICE_PURPOSES,
+    FILE_MANAGER_OPTIONS,
+    GAMING_OPTIONS,
     GPU_LABELS,
     GPU_VENDORS,
+    INPUT_METHOD_PACKAGES,
+    KEYRING_OPTIONS,
     KMSCON_FONT_OPTIONS,
     LANGUAGES,
+    NERD_FONT_OPTIONS,
     NETWORK_BACKENDS,
+    POLKIT_AGENT_OPTIONS,
+    PROXY_TOOL_OPTIONS,
     REGION_MENU_COUNTRIES,
+    REMOTE_DESKTOP_OPTIONS,
 )
-from .detection import is_raw_tty, needs_kmscon
+from .detection import detect_audio, is_raw_tty, needs_kmscon
 from .i18n import set_lang, t
 from .mirrors import apply_mirrors_to_live_iso
 
@@ -94,6 +107,21 @@ class WizardState:
         self.dms_terminal: str = 'ghostty'      # 'ghostty' | 'kitty' | 'alacritty'
         # Browser selection
         self.browsers: list[str] = []           # ['firefox', 'chromium', ...]
+        # Extra install steps
+        self.input_methods: list[str] = []        # keys from INPUT_METHOD_PACKAGES
+        self.base_fonts: list[str] = []           # keys from BASE_FONT_OPTIONS
+        self.nerd_fonts: list[str] = []           # keys from NERD_FONT_OPTIONS
+        self.proxy_tool: str | None = None        # key from PROXY_TOOL_OPTIONS or None
+        self.audio_firmware: list[str] = []       # keys from AUDIO_FIRMWARE_OPTIONS
+        self.polkit_agent: str | None = None      # key from POLKIT_AGENT_OPTIONS
+        self.keyring: str | None = None           # key from KEYRING_OPTIONS
+        self.file_managers: list[str] = []        # keys from FILE_MANAGER_OPTIONS
+        self.device_purposes: list[str] = []      # keys from DEVICE_PURPOSES
+        self.dev_environments: list[str] = []     # keys from DEV_ENVIRONMENT_OPTIONS
+        self.dev_editors: list[str] = []          # keys from DEV_EDITOR_OPTIONS
+        self.gaming_tools: list[str] = []         # keys from GAMING_OPTIONS
+        self.remote_desktop: list[str] = []       # keys from REMOTE_DESKTOP_OPTIONS
+        self.detected_audio: list[str] = []       # auto-detected audio firmware keys
 
 
 async def step_language(state: WizardState) -> str:
@@ -523,6 +551,411 @@ async def step_browser(state: WizardState) -> str:
             return 'back'
 
 
+async def step_input_method(state: WizardState) -> str:
+    """Select input method frameworks. Auto-skip for English locale."""
+    if state.locale == 'en_US.UTF-8':
+        return 'next'
+
+    # Filter options by locale prefix
+    locale = state.locale
+    available: dict[str, dict] = {}
+    if locale.startswith('zh_'):
+        available = {k: v for k, v in INPUT_METHOD_PACKAGES.items() if k.startswith('fcitx5_zh')}
+    elif locale.startswith('ja_'):
+        available = {k: v for k, v in INPUT_METHOD_PACKAGES.items() if k.startswith('fcitx5_ja')}
+
+    if not available:
+        return 'next'
+
+    items = [
+        MenuItem(info['label'], value=key)
+        for key, info in available.items()
+    ]
+    group = MenuItemGroup(items)
+
+    # Pre-select current choices or default to first item
+    preselect = state.input_methods if state.input_methods else [items[0].value]
+    if preselect:
+        group.set_selected_by_value(preselect)
+
+    result = await Selection[str](
+        group,
+        header=t('opt.input_method.title'),
+        multi=True,
+        allow_skip=True,
+    ).show()
+
+    match result.type_:
+        case ResultType.Skip:
+            return 'back'
+        case ResultType.Selection:
+            state.input_methods = result.get_values()
+            return 'next'
+        case _:
+            return 'back'
+
+
+async def step_fonts(state: WizardState) -> str:
+    """Select base fonts and Nerd Fonts (two sub-selections)."""
+    # --- Base fonts (multi-select, optional) ---
+    base_items = [
+        MenuItem(info['label'], value=key)
+        for key, info in BASE_FONT_OPTIONS.items()
+    ]
+    base_group = MenuItemGroup(base_items)
+
+    # Pre-select current choices or default to 'noto'
+    base_preselect = state.base_fonts if state.base_fonts else ['noto']
+    if base_preselect:
+        base_group.set_selected_by_value(base_preselect)
+
+    base_result = await Selection[str](
+        base_group,
+        header=t('opt.fonts.base_title'),
+        multi=True,
+        allow_skip=True,
+    ).show()
+
+    match base_result.type_:
+        case ResultType.Skip:
+            return 'back'
+        case ResultType.Selection:
+            state.base_fonts = base_result.get_values()
+        case _:
+            return 'back'
+
+    # --- Nerd fonts (multi-select, optional) ---
+    nerd_items = [
+        MenuItem(info['label'], value=key)
+        for key, info in NERD_FONT_OPTIONS.items()
+    ]
+    nerd_group = MenuItemGroup(nerd_items)
+
+    # Pre-select current choices or default to 'jetbrains-mono'
+    nerd_preselect = state.nerd_fonts if state.nerd_fonts else ['jetbrains-mono']
+    if nerd_preselect:
+        nerd_group.set_selected_by_value(nerd_preselect)
+
+    nerd_result = await Selection[str](
+        nerd_group,
+        header=t('opt.fonts.nerd_title'),
+        multi=True,
+        allow_skip=True,
+    ).show()
+
+    match nerd_result.type_:
+        case ResultType.Skip:
+            return 'back'
+        case ResultType.Selection:
+            state.nerd_fonts = nerd_result.get_values()
+            return 'next'
+        case _:
+            return 'back'
+
+
+async def step_proxy_tools(state: WizardState) -> str:
+    """Select proxy tool (CN region only)."""
+    if state.country != 'CN':
+        return 'next'
+
+    items = [
+        MenuItem(info['label'], value=key)
+        for key, info in PROXY_TOOL_OPTIONS.items()
+    ]
+    group = MenuItemGroup(items)
+
+    # Pre-select current choice or default to 'flclash'
+    preset = state.proxy_tool or 'flclash'
+    group.set_default_by_value(preset)
+    group.set_focus_by_value(preset)
+
+    result = await Selection[str](
+        group,
+        header=t('opt.proxy_tools.title'),
+        allow_skip=True,
+    ).show()
+
+    match result.type_:
+        case ResultType.Skip:
+            return 'back'
+        case ResultType.Selection:
+            state.proxy_tool = result.get_value()
+            return 'next'
+        case _:
+            return 'back'
+
+
+async def step_audio_firmware(state: WizardState) -> str:
+    """Select audio firmware packages."""
+    items = [
+        MenuItem(info['label'], value=key)
+        for key, info in AUDIO_FIRMWARE_OPTIONS.items()
+    ]
+    group = MenuItemGroup(items)
+
+    # Pre-select current choices or auto-detected firmware
+    preselect = state.audio_firmware if state.audio_firmware else state.detected_audio
+    if preselect:
+        group.set_selected_by_value(preselect)
+
+    result = await Selection[str](
+        group,
+        header=t('opt.audio_firmware.title'),
+        multi=True,
+        allow_skip=True,
+    ).show()
+
+    match result.type_:
+        case ResultType.Skip:
+            return 'back'
+        case ResultType.Selection:
+            state.audio_firmware = result.get_values()
+            return 'next'
+        case _:
+            return 'back'
+
+
+async def step_polkit_agent(state: WizardState) -> str:
+    """Select polkit agent (non-minimal desktop only)."""
+    if state.desktop_env == 'minimal':
+        return 'next'
+
+    items = [
+        MenuItem(info['label'], value=key)
+        for key, info in POLKIT_AGENT_OPTIONS.items()
+    ]
+    group = MenuItemGroup(items)
+
+    # Pre-select current choice or default to 'mate'
+    preset = state.polkit_agent or 'mate'
+    group.set_default_by_value(preset)
+    group.set_focus_by_value(preset)
+
+    result = await Selection[str](
+        group,
+        header=t('opt.polkit_agent.title'),
+        allow_skip=True,
+    ).show()
+
+    match result.type_:
+        case ResultType.Skip:
+            return 'back'
+        case ResultType.Selection:
+            state.polkit_agent = result.get_value()
+            return 'next'
+        case _:
+            return 'back'
+
+
+async def step_keyring(state: WizardState) -> str:
+    """Select keyring implementation (non-minimal desktop only)."""
+    if state.desktop_env == 'minimal':
+        return 'next'
+
+    items = [
+        MenuItem(info['label'], value=key)
+        for key, info in KEYRING_OPTIONS.items()
+    ]
+    group = MenuItemGroup(items)
+
+    # Pre-select current choice or default to 'gnome'
+    preset = state.keyring or 'gnome'
+    group.set_default_by_value(preset)
+    group.set_focus_by_value(preset)
+
+    result = await Selection[str](
+        group,
+        header=t('opt.keyring.title'),
+        allow_skip=True,
+    ).show()
+
+    match result.type_:
+        case ResultType.Skip:
+            return 'back'
+        case ResultType.Selection:
+            state.keyring = result.get_value()
+            return 'next'
+        case _:
+            return 'back'
+
+
+async def step_file_manager(state: WizardState) -> str:
+    """Select file managers (non-minimal desktop only)."""
+    if state.desktop_env == 'minimal':
+        return 'next'
+
+    items = [
+        MenuItem(info['label'], value=key)
+        for key, info in FILE_MANAGER_OPTIONS.items()
+    ]
+    group = MenuItemGroup(items)
+
+    if state.file_managers:
+        group.set_selected_by_value(state.file_managers)
+
+    result = await Selection[str](
+        group,
+        header=t('opt.file_manager.title'),
+        multi=True,
+        allow_skip=True,
+    ).show()
+
+    match result.type_:
+        case ResultType.Skip:
+            return 'back'
+        case ResultType.Selection:
+            state.file_managers = result.get_values()
+            return 'next'
+        case _:
+            return 'back'
+
+
+async def step_device_purpose(state: WizardState) -> str:
+    """Select device purposes."""
+    items = [
+        MenuItem(label, value=key)
+        for key, label in DEVICE_PURPOSES.items()
+    ]
+    group = MenuItemGroup(items)
+
+    if state.device_purposes:
+        group.set_selected_by_value(state.device_purposes)
+
+    result = await Selection[str](
+        group,
+        header=t('opt.device_purpose.title'),
+        multi=True,
+        allow_skip=True,
+    ).show()
+
+    match result.type_:
+        case ResultType.Skip:
+            return 'back'
+        case ResultType.Selection:
+            state.device_purposes = result.get_values()
+            return 'next'
+        case _:
+            return 'back'
+
+
+async def step_dev_tools(state: WizardState) -> str:
+    """Select development tools (only if development purpose selected)."""
+    if 'development' not in state.device_purposes:
+        return 'next'
+
+    # --- Dev environment (multi-select, optional) ---
+    env_items = [
+        MenuItem(info['label'], value=key)
+        for key, info in DEV_ENVIRONMENT_OPTIONS.items()
+    ]
+    env_group = MenuItemGroup(env_items)
+
+    if state.dev_environments:
+        env_group.set_selected_by_value(state.dev_environments)
+
+    env_result = await Selection[str](
+        env_group,
+        header=t('opt.dev_env.title'),
+        multi=True,
+        allow_skip=True,
+    ).show()
+
+    match env_result.type_:
+        case ResultType.Skip:
+            return 'back'
+        case ResultType.Selection:
+            state.dev_environments = env_result.get_values()
+        case _:
+            return 'back'
+
+    # --- Dev editor (multi-select, optional) ---
+    editor_items = [
+        MenuItem(info['label'], value=key)
+        for key, info in DEV_EDITOR_OPTIONS.items()
+    ]
+    editor_group = MenuItemGroup(editor_items)
+
+    if state.dev_editors:
+        editor_group.set_selected_by_value(state.dev_editors)
+
+    editor_result = await Selection[str](
+        editor_group,
+        header=t('opt.dev_editor.title'),
+        multi=True,
+        allow_skip=True,
+    ).show()
+
+    match editor_result.type_:
+        case ResultType.Skip:
+            return 'back'
+        case ResultType.Selection:
+            state.dev_editors = editor_result.get_values()
+            return 'next'
+        case _:
+            return 'back'
+
+
+async def step_gaming(state: WizardState) -> str:
+    """Select gaming tools (only if gaming purpose selected and multilib enabled)."""
+    if 'gaming' not in state.device_purposes:
+        return 'next'
+    if not state.multilib:
+        return 'next'
+
+    items = [
+        MenuItem(info['label'], value=key)
+        for key, info in GAMING_OPTIONS.items()
+    ]
+    group = MenuItemGroup(items)
+
+    if state.gaming_tools:
+        group.set_selected_by_value(state.gaming_tools)
+
+    result = await Selection[str](
+        group,
+        header=t('opt.gaming.title'),
+        multi=True,
+        allow_skip=True,
+    ).show()
+
+    match result.type_:
+        case ResultType.Skip:
+            return 'back'
+        case ResultType.Selection:
+            state.gaming_tools = result.get_values()
+            return 'next'
+        case _:
+            return 'back'
+
+
+async def step_remote_desktop(state: WizardState) -> str:
+    """Select remote desktop tools."""
+    items = [
+        MenuItem(info['label'], value=key)
+        for key, info in REMOTE_DESKTOP_OPTIONS.items()
+    ]
+    group = MenuItemGroup(items)
+
+    if state.remote_desktop:
+        group.set_selected_by_value(state.remote_desktop)
+
+    result = await Selection[str](
+        group,
+        header=t('opt.remote_desktop.title'),
+        multi=True,
+        allow_skip=True,
+    ).show()
+
+    match result.type_:
+        case ResultType.Skip:
+            return 'back'
+        case ResultType.Selection:
+            state.remote_desktop = result.get_values()
+            return 'next'
+        case _:
+            return 'back'
+
+
 async def step_username(state: WizardState) -> str:
     """Enter username."""
     default = state.username or os.environ.get('SUDO_USER', '') or os.environ.get('USER', '')
@@ -646,8 +1079,35 @@ async def step_confirm(
         _row('Multilib', 'Enabled' if state.multilib else 'Disabled'),
         _row(t('confirm.gpu'), ', '.join(GPU_LABELS.get(v, v) for v in state.gpu_vendors) or 'None'),
         _row(
+            t('confirm.audio_firmware'),
+            ', '.join(AUDIO_FIRMWARE_OPTIONS[k]['label'] for k in state.audio_firmware) if state.audio_firmware else 'None',
+        ),
+        _row(
+            t('confirm.input_method'),
+            ', '.join(INPUT_METHOD_PACKAGES[k]['label'] for k in state.input_methods) if state.input_methods else 'None',
+        ),
+        _row(
+            t('confirm.fonts'),
+            ', '.join(
+                [BASE_FONT_OPTIONS[k]['label'] for k in state.base_fonts]
+                + [NERD_FONT_OPTIONS[k]['label'] for k in state.nerd_fonts]
+            ) or 'None',
+        ),
+        _row(
             t('confirm.browser'),
             ', '.join(BROWSER_OPTIONS[b]['label'] for b in state.browsers) if state.browsers else 'None',
+        ),
+        _row(
+            t('confirm.file_manager'),
+            ', '.join(FILE_MANAGER_OPTIONS[k]['label'] for k in state.file_managers) if state.file_managers else 'None',
+        ),
+        _row(
+            t('confirm.device_purpose'),
+            ', '.join(DEVICE_PURPOSES[k] for k in state.device_purposes) if state.device_purposes else 'None',
+        ),
+        _row(
+            t('confirm.remote_desktop'),
+            ', '.join(REMOTE_DESKTOP_OPTIONS[k]['label'] for k in state.remote_desktop) if state.remote_desktop else 'None',
         ),
         _row(t('confirm.user'), state.username),
         _row(t('confirm.root'), t('status.set') if state.root_password else t('status.not_set')),
@@ -655,6 +1115,37 @@ async def step_confirm(
     ]
     if kmscon_needed and state.kmscon_font_name:
         rows.append(_row('Font', f'{state.kmscon_font_name} ({state.kmscon_font_package})', indent=2))
+
+    # Conditional extra rows
+    if state.country == 'CN':
+        rows.append(_row(
+            t('confirm.proxy_tools'),
+            PROXY_TOOL_OPTIONS[state.proxy_tool]['label'] if state.proxy_tool else 'None',
+        ))
+    if state.polkit_agent:
+        rows.append(_row(
+            t('confirm.polkit_agent'),
+            POLKIT_AGENT_OPTIONS[state.polkit_agent]['label'],
+        ))
+    if state.keyring:
+        rows.append(_row(
+            t('confirm.keyring'),
+            KEYRING_OPTIONS[state.keyring]['label'],
+        ))
+    if 'development' in state.device_purposes:
+        dev_labels = (
+            [DEV_ENVIRONMENT_OPTIONS[k]['label'] for k in state.dev_environments]
+            + [DEV_EDITOR_OPTIONS[k]['label'] for k in state.dev_editors]
+        )
+        rows.append(_row(
+            t('confirm.dev_tools'),
+            ', '.join(dev_labels) if dev_labels else 'None',
+        ))
+    if 'gaming' in state.device_purposes:
+        rows.append(_row(
+            t('confirm.gaming'),
+            ', '.join(GAMING_OPTIONS[k]['label'] for k in state.gaming_tools) if state.gaming_tools else 'None',
+        ))
 
     fixed_rows: list[tuple[int, str, str]] = [
         _row(t('fixed.boot'), 'EFISTUB (UKI)'),
@@ -730,16 +1221,27 @@ async def run_wizard(
 
     steps = [
         step_language,
+        step_input_method,
         step_kmscon_font,
+        step_fonts,
         step_region,
+        step_proxy_tools,
         step_disk,
         step_network,
         step_repos,
         step_gpu_drivers,
+        step_audio_firmware,
         step_desktop_env,
         step_dms_compositor,
         step_dms_terminal,
+        step_polkit_agent,
+        step_keyring,
+        step_file_manager,
+        step_device_purpose,
+        step_dev_tools,
+        step_gaming,
         step_browser,
+        step_remote_desktop,
         step_username,
         step_user_password,
         step_root_password,

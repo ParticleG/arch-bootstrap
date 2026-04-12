@@ -28,11 +28,25 @@ from archinstall.lib.models.users import Password, User
 from archinstall.lib.profile.profiles_handler import profile_handler
 
 from .constants import (
+    AUDIO_FIRMWARE_OPTIONS,
+    BASE_FONT_OPTIONS,
     BASE_PACKAGES,
     BROWSER_OPTIONS,
+    CLIPBOARD_PACKAGES,
+    CLIPBOARD_WAYLAND_PACKAGES,
     COUNTRY_TIMEZONES,
+    DEV_ENVIRONMENT_OPTIONS,
+    FILE_MANAGER_OPTIONS,
     FONTCONFIG_CJK_ALIASES,
+    GAMING_OPTIONS,
     GPU_PACKAGES,
+    INPUT_METHOD_PACKAGES,
+    KEYRING_OPTIONS,
+    NERD_FONT_OPTIONS,
+    POLKIT_AGENT_OPTIONS,
+    PROXY_TOOL_OPTIONS,
+    REMOTE_DESKTOP_OPTIONS,
+    TERMINAL_ENHANCEMENT_PACKAGES,
 )
 from .detection import calculate_kmscon_font_size, needs_kmscon
 from .disk import build_disk_layout
@@ -340,7 +354,76 @@ def apply_wizard_state_to_config(
     # upower for desktop environments that require it
     if state.desktop_env in ('dms', 'dms_manual', 'exo') and 'upower' not in all_packages:
         all_packages.append('upower')
-    config.packages = all_packages
+    # Terminal enhancement
+    all_packages.extend(TERMINAL_ENHANCEMENT_PACKAGES)
+
+    # Clipboard support (Wayland extras when a desktop is selected)
+    all_packages.extend(CLIPBOARD_PACKAGES)
+    if state.desktop_env != 'minimal':
+        all_packages.extend(CLIPBOARD_WAYLAND_PACKAGES)
+        # Note: CLIPBOARD_WAYLAND_AUR_PACKAGES (comalot-clipsync-git) handled in installation.py
+
+    # Archive extraction
+    all_packages.append('unzip')
+
+    # Input method packages
+    for im_key in state.input_methods:
+        if im_key in INPUT_METHOD_PACKAGES:
+            all_packages.extend(INPUT_METHOD_PACKAGES[im_key]['packages'])
+
+    # Font packages
+    for font_key in state.base_fonts:
+        if font_key in BASE_FONT_OPTIONS:
+            all_packages.extend(BASE_FONT_OPTIONS[font_key]['packages'])
+    for font_key in state.nerd_fonts:
+        if font_key in NERD_FONT_OPTIONS:
+            all_packages.extend(NERD_FONT_OPTIONS[font_key]['packages'])
+
+    # Audio firmware packages
+    for af_key in state.audio_firmware:
+        if af_key in AUDIO_FIRMWARE_OPTIONS:
+            all_packages.extend(AUDIO_FIRMWARE_OPTIONS[af_key]['packages'])
+
+    # Polkit agent
+    if state.polkit_agent and state.polkit_agent in POLKIT_AGENT_OPTIONS:
+        all_packages.extend(POLKIT_AGENT_OPTIONS[state.polkit_agent]['packages'])
+
+    # Keyring
+    if state.keyring and state.keyring in KEYRING_OPTIONS:
+        all_packages.extend(KEYRING_OPTIONS[state.keyring]['packages'])
+
+    # File managers (non-AUR only; AUR ones handled in installation.py)
+    for fm_key in state.file_managers:
+        if fm_key in FILE_MANAGER_OPTIONS and not FILE_MANAGER_OPTIONS[fm_key].get('aur', False):
+            all_packages.extend(FILE_MANAGER_OPTIONS[fm_key]['packages'])
+
+    # Minimal install: default to yazi as file manager
+    if state.desktop_env == 'minimal':
+        all_packages.append('yazi')
+
+    # Remote desktop (non-AUR only)
+    for rd_key in state.remote_desktop:
+        if rd_key in REMOTE_DESKTOP_OPTIONS and not REMOTE_DESKTOP_OPTIONS[rd_key].get('aur', False):
+            all_packages.extend(REMOTE_DESKTOP_OPTIONS[rd_key]['packages'])
+
+    # Proxy tools (non-AUR only; archlinuxcn packages for CN users)
+    if state.proxy_tool and state.proxy_tool in PROXY_TOOL_OPTIONS:
+        opt = PROXY_TOOL_OPTIONS[state.proxy_tool]
+        if not opt.get('aur', False):
+            all_packages.extend(opt['packages'])
+
+    # Dev environment packages (non-AUR only)
+    for de_key in state.dev_environments:
+        if de_key in DEV_ENVIRONMENT_OPTIONS and not DEV_ENVIRONMENT_OPTIONS[de_key].get('aur', False):
+            all_packages.extend(DEV_ENVIRONMENT_OPTIONS[de_key]['packages'])
+
+    # Gaming packages (non-AUR only)
+    for g_key in state.gaming_tools:
+        if g_key in GAMING_OPTIONS and not GAMING_OPTIONS[g_key].get('aur', False):
+            all_packages.extend(GAMING_OPTIONS[g_key]['packages'])
+
+    # Deduplicate packages while preserving order
+    config.packages = list(dict.fromkeys(all_packages))
 
     # Authentication
     users = []

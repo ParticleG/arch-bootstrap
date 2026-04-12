@@ -270,6 +270,7 @@ EXO_AUR_PACKAGES: list[str] = [
 EXO_SYSTEM_PACKAGES: list[str] = [
     'niri',
     'xdg-desktop-portal-gnome',
+    'xwayland-satellite',
     'greetd',
     'kitty',
     'nautilus',
@@ -290,13 +291,13 @@ DMS_MANUAL_AUR_PACKAGES: list[str] = [
 
 DMS_MANUAL_SYSTEM_PACKAGES: list[str] = [
     'quickshell', 'greetd', 'xdg-desktop-portal-gtk',
-    'accountsservice', 'xwayland-satellite', 'matugen',
+    'accountsservice', 'matugen',
     'dgop', 'cava', 'cups-pk-helper', 'kimageformats',
     'libavif', 'libheif', 'libjxl', 'qt6ct',
 ]
 
 DMS_MANUAL_COMPOSITOR_PACKAGES: dict[str, list[str]] = {
-    'niri': ['niri', 'dms-shell-niri'],
+    'niri': ['niri', 'xwayland-satellite', 'dms-shell-niri'],
     'hyprland': ['hyprland', 'dms-shell-hyprland'],
 }
 
@@ -318,3 +319,324 @@ BROWSER_OPTIONS: dict[str, dict] = {
     'chrome': {'label': 'Google Chrome (AUR)', 'package': 'google-chrome', 'aur': True},
     'edge': {'label': 'Microsoft Edge (AUR)', 'package': 'microsoft-edge-stable-bin', 'aur': True},
 }
+
+# ---------------------------------------------------------------------------
+# Clipboard tools
+# ---------------------------------------------------------------------------
+
+CLIPBOARD_PACKAGES: list[str] = ['cliphist', 'xclip']
+CLIPBOARD_WAYLAND_PACKAGES: list[str] = ['wl-clipboard']
+CLIPBOARD_WAYLAND_AUR_PACKAGES: list[str] = ['comalot-clipsync-git']
+
+# ---------------------------------------------------------------------------
+# Terminal enhancement (always installed)
+# ---------------------------------------------------------------------------
+
+TERMINAL_ENHANCEMENT_PACKAGES: list[str] = ['fastfetch', 'fzf']
+
+# ---------------------------------------------------------------------------
+# Input method options
+# ---------------------------------------------------------------------------
+
+INPUT_METHOD_PACKAGES: dict[str, dict] = {
+    'fcitx5_zh': {
+        'label': 'Fcitx5 (Chinese)',
+        'packages': ['fcitx5', 'fcitx5-chinese-addons', 'fcitx5-configtool'],
+        'aur': False,
+    },
+    'fcitx5_ja_mozc': {
+        'label': 'Fcitx5 + Mozc (Japanese, recommended)',
+        'packages': ['fcitx5', 'fcitx5-mozc', 'fcitx5-configtool'],
+        'aur': False,
+    },
+    'fcitx5_ja_anthy': {
+        'label': 'Fcitx5 + Anthy (Japanese)',
+        'packages': ['fcitx5', 'fcitx5-anthy', 'fcitx5-configtool'],
+        'aur': False,
+    },
+}
+
+FCITX5_ENVIRONMENT: dict[str, str] = {
+    'XMODIFIERS': '@im=fcitx',
+    'GTK_IM_MODULE': 'fcitx',
+    'QT_IM_MODULE': 'fcitx',
+}
+
+# ---------------------------------------------------------------------------
+# Font options
+# ---------------------------------------------------------------------------
+
+BASE_FONT_OPTIONS: dict[str, dict] = {
+    'noto': {
+        'label': 'Noto Fonts + Emoji (recommended)',
+        'packages': ['noto-fonts', 'noto-fonts-emoji'],
+    },
+    'liberation': {
+        'label': 'Liberation Fonts',
+        'packages': ['ttf-liberation'],
+    },
+    'dejavu': {
+        'label': 'DejaVu Fonts',
+        'packages': ['ttf-dejavu'],
+    },
+}
+
+NERD_FONT_OPTIONS: dict[str, dict] = {
+    'jetbrains-mono': {
+        'label': 'JetBrains Mono Nerd Font (recommended)',
+        'packages': ['ttf-jetbrains-mono-nerd'],
+    },
+    'firacode': {
+        'label': 'Fira Code Nerd Font',
+        'packages': ['ttf-firacode-nerd'],
+    },
+    'hack': {
+        'label': 'Hack Nerd Font',
+        'packages': ['ttf-hack-nerd'],
+    },
+}
+
+# ---------------------------------------------------------------------------
+# Audio firmware
+# ---------------------------------------------------------------------------
+
+AUDIO_FIRMWARE_OPTIONS: dict[str, dict] = {
+    'sof': {
+        'label': 'SOF Firmware (Intel, recommended for modern laptops)',
+        'packages': ['sof-firmware'],
+    },
+    'alsa': {
+        'label': 'ALSA Firmware (older devices)',
+        'packages': ['alsa-firmware'],
+    },
+}
+
+AUDIO_DETECT_PATTERNS: dict[str, list[str]] = {
+    'sof': ['sof', 'Sound Open Firmware'],
+    'alsa': ['HDA', 'Realtek', 'Conexant'],
+}
+
+# ---------------------------------------------------------------------------
+# Polkit agent options
+# ---------------------------------------------------------------------------
+
+POLKIT_AGENT_OPTIONS: dict[str, dict] = {
+    'mate': {
+        'label': 'MATE Polkit Agent (recommended)',
+        'packages': ['mate-polkit'],
+    },
+    'gnome': {
+        'label': 'GNOME Polkit Agent',
+        'packages': ['polkit-gnome'],
+    },
+}
+
+# ---------------------------------------------------------------------------
+# Keyring options
+# ---------------------------------------------------------------------------
+
+KEYRING_OPTIONS: dict[str, dict] = {
+    'gnome': {
+        'label': 'GNOME Keyring (recommended)',
+        'packages': ['gnome-keyring'],
+    },
+    'kwallet': {
+        'label': 'KWallet (KDE)',
+        'packages': ['kwallet'],
+    },
+}
+
+# ---------------------------------------------------------------------------
+# Remote desktop options
+# ---------------------------------------------------------------------------
+
+REMOTE_DESKTOP_OPTIONS: dict[str, dict] = {
+    'remmina': {
+        'label': 'Remmina + FreeRDP',
+        'packages': ['remmina', 'freerdp'],
+        'aur': False,
+    },
+    'parsec': {
+        'label': 'Parsec (AUR)',
+        'packages': ['parsec-bin'],
+        'aur': True,
+    },
+    'moonlight': {
+        'label': 'Moonlight',
+        'packages': ['moonlight-qt'],
+        'aur': False,
+    },
+    'rustdesk': {
+        'label': 'RustDesk (AUR)',
+        'packages': ['rustdesk'],
+        'aur': True,
+    },
+}
+
+# ---------------------------------------------------------------------------
+# File manager options
+# ---------------------------------------------------------------------------
+
+FILE_MANAGER_OPTIONS: dict[str, dict] = {
+    'yazi': {
+        'label': 'Yazi (terminal)',
+        'packages': ['yazi'],
+        'aur': False,
+    },
+    'nautilus': {
+        'label': 'Nautilus (GNOME)',
+        'packages': ['nautilus'],
+        'aur': False,
+    },
+    'dolphin': {
+        'label': 'Dolphin (KDE)',
+        'packages': ['dolphin'],
+        'aur': False,
+    },
+    'thunar': {
+        'label': 'Thunar (XFCE)',
+        'packages': ['thunar'],
+        'aur': False,
+    },
+}
+
+# ---------------------------------------------------------------------------
+# Proxy tool options (CN region)
+# ---------------------------------------------------------------------------
+
+PROXY_TOOL_OPTIONS: dict[str, dict] = {
+    'flclash': {
+        'label': 'FlClash (recommended, in archlinuxcn)',
+        'packages': ['flclash'],
+        'aur': False,
+    },
+    'mihomo': {
+        'label': 'Mihomo (CLI, in archlinuxcn)',
+        'packages': ['mihomo'],
+        'aur': False,
+    },
+    'mihomo_party': {
+        'label': 'Mihomo Party (AUR)',
+        'packages': ['mihomo-party-bin'],
+        'aur': True,
+    },
+    'clash_verge': {
+        'label': 'Clash Verge Rev (AUR)',
+        'packages': ['clash-verge-rev-bin'],
+        'aur': True,
+    },
+}
+
+# ---------------------------------------------------------------------------
+# Device purpose options
+# ---------------------------------------------------------------------------
+
+DEVICE_PURPOSES: dict[str, str] = {
+    'development': 'Development',
+    'gaming': 'Gaming',
+    'media': 'Media Production',
+    'industrial': 'Industrial Design',
+}
+
+DEV_ENVIRONMENT_OPTIONS: dict[str, dict] = {
+    'docker': {
+        'label': 'Docker',
+        'packages': ['docker', 'docker-compose'],
+        'aur': False,
+        'services': ['docker'],
+    },
+    'go': {
+        'label': 'Go',
+        'packages': ['go'],
+        'aur': False,
+        'services': [],
+    },
+    'bun': {
+        'label': 'Bun',
+        'packages': ['bun'],
+        'aur': False,
+        'services': [],
+    },
+    'nodejs': {
+        'label': 'Node.js (LTS)',
+        # NOTE: Update LTS codename when new LTS is released (current: Jod/v22)
+        'packages': ['nodejs-lts-jod', 'npm'],
+        'aur': False,
+        'services': [],
+    },
+    'python': {
+        'label': 'Python',
+        'packages': ['python', 'python-pip'],
+        'aur': False,
+        'services': [],
+    },
+    'rustup': {
+        'label': 'Rust (rustup)',
+        'packages': ['rustup'],
+        'aur': False,
+        'services': [],
+    },
+    'bat': {
+        'label': 'bat (cat replacement)',
+        'packages': ['bat'],
+        'aur': False,
+        'services': [],
+    },
+    'eza': {
+        'label': 'eza (ls replacement)',
+        'packages': ['eza'],
+        'aur': False,
+        'services': [],
+    },
+    'ripgrep': {
+        'label': 'ripgrep (grep replacement)',
+        'packages': ['ripgrep'],
+        'aur': False,
+        'services': [],
+    },
+}
+
+DEV_EDITOR_OPTIONS: dict[str, dict] = {
+    'vscode': {
+        'label': 'Visual Studio Code (AUR)',
+        'packages': ['visual-studio-code-bin'],
+        'aur': True,
+    },
+    'jetbrains': {
+        'label': 'JetBrains Toolbox (AUR)',
+        'packages': ['jetbrains-toolbox'],
+        'aur': True,
+    },
+}
+
+GAMING_OPTIONS: dict[str, dict] = {
+    'steam': {
+        'label': 'Steam',
+        'packages': ['steam'],
+        'aur': False,
+    },
+    'lutris': {
+        'label': 'Lutris',
+        'packages': ['lutris'],
+        'aur': False,
+    },
+    'gamemode': {
+        'label': 'GameMode',
+        'packages': ['gamemode', 'lib32-gamemode'],
+        'aur': False,
+    },
+    'mangohud': {
+        'label': 'MangoHud',
+        'packages': ['mangohud', 'lib32-mangohud'],
+        'aur': False,
+    },
+}
+
+# ---------------------------------------------------------------------------
+# Electron / VS Code Wayland flags
+# ---------------------------------------------------------------------------
+
+ELECTRON_WAYLAND_FLAGS: str = """\
+--enable-features=UseOzonePlatform,WaylandWindowDecorations
+--ozone-platform-hint=auto
+"""

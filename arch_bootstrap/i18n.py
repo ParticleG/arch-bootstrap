@@ -159,6 +159,62 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'retry.prompt': '\n%s failed. Retry? [Y/n]: ',
         # -- GitHub proxy --
         'proxy.installing_dl': 'Installing GitHub download proxy for makepkg...',
+        # --- Extra install steps ---
+        # -- Input method --
+        'step.input_method': 'Input Method',
+        'opt.input_method.title': 'Select input method (multi-select, press Enter to skip)',
+        # -- Fonts --
+        'step.fonts': 'Fonts',
+        'opt.fonts.base_title': 'Select base fonts (multi-select, press Enter to skip)',
+        'opt.fonts.nerd_title': 'Select Nerd Fonts (multi-select, press Enter to skip)',
+        # -- Proxy tools --
+        'step.proxy_tools': 'Proxy Tools',
+        'opt.proxy_tools.title': 'Select proxy tool (single-select, press Enter to skip)',
+        # -- Audio firmware --
+        'step.audio_firmware': 'Audio Firmware',
+        'opt.audio_firmware.title': 'Select audio firmware (multi-select, press Enter to skip)',
+        # -- Polkit agent --
+        'step.polkit_agent': 'Polkit Agent',
+        'opt.polkit_agent.title': 'Select polkit agent',
+        # -- Keyring --
+        'step.keyring': 'Keyring',
+        'opt.keyring.title': 'Select keyring implementation',
+        # -- File manager --
+        'step.file_manager': 'File Manager',
+        'opt.file_manager.title': 'Select file manager (multi-select, press Enter to skip)',
+        # -- Device purpose --
+        'step.device_purpose': 'Device Purpose',
+        'opt.device_purpose.title': 'Select device purpose (multi-select, press Enter to skip)',
+        # -- Dev tools --
+        'step.dev_tools': 'Development Tools',
+        'opt.dev_env.title': 'Select development environment (multi-select, press Enter to skip)',
+        'opt.dev_editor.title': 'Select development editor (multi-select, press Enter to skip)',
+        # -- Gaming --
+        'step.gaming': 'Gaming',
+        'opt.gaming.title': 'Select gaming tools (multi-select, press Enter to skip)',
+        # -- Remote desktop --
+        'step.remote_desktop': 'Remote Desktop',
+        'opt.remote_desktop.title': 'Select remote desktop tools (multi-select, press Enter to skip)',
+        # -- Confirm panel (extra) --
+        'confirm.input_method': 'Input Method',
+        'confirm.fonts': 'Fonts',
+        'confirm.proxy_tools': 'Proxy Tools',
+        'confirm.audio_firmware': 'Audio Firmware',
+        'confirm.polkit_agent': 'Polkit Agent',
+        'confirm.keyring': 'Keyring',
+        'confirm.file_manager': 'File Manager',
+        'confirm.device_purpose': 'Device Purpose',
+        'confirm.dev_tools': 'Development Tools',
+        'confirm.gaming': 'Gaming',
+        'confirm.remote_desktop': 'Remote Desktop',
+        # -- Post-install (extra) --
+        'post.input_method': 'Setting up input method ...',
+        'post.proxy_tools': 'Installing proxy tools ...',
+        'post.clipboard': 'Setting up clipboard tools ...',
+        'post.zsh_plugins': 'Installing zsh plugins ...',
+        'post.electron_flags': 'Writing Electron Wayland flags ...',
+        'post.dev_services': 'Enabling development services ...',
+        'post.clipsync': 'Enabling clipboard sync service ...',
     },
     'zh': {
         # -- Common status --
@@ -314,6 +370,62 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'retry.prompt': '\n%s 失败，是否重试？[Y/n]: ',
         # -- GitHub 代理 --
         'proxy.installing_dl': '正在为 makepkg 安装 GitHub 下载代理...',
+        # --- Extra install steps ---
+        # -- 输入法 --
+        'step.input_method': '输入法',
+        'opt.input_method.title': '选择输入法（多选，按回车跳过）',
+        # -- 字体 --
+        'step.fonts': '字体',
+        'opt.fonts.base_title': '选择基础字体（多选，按回车跳过）',
+        'opt.fonts.nerd_title': '选择 Nerd 字体（多选，按回车跳过）',
+        # -- 代理工具 --
+        'step.proxy_tools': '代理工具',
+        'opt.proxy_tools.title': '选择代理工具（单选，按回车跳过）',
+        # -- 声卡固件 --
+        'step.audio_firmware': '声卡固件',
+        'opt.audio_firmware.title': '选择声卡固件（多选，按回车跳过）',
+        # -- Polkit 代理 --
+        'step.polkit_agent': 'Polkit 代理',
+        'opt.polkit_agent.title': '选择 Polkit 代理',
+        # -- 密钥环 --
+        'step.keyring': '密钥环',
+        'opt.keyring.title': '选择密钥环实现',
+        # -- 文件管理器 --
+        'step.file_manager': '文件管理器',
+        'opt.file_manager.title': '选择文件管理器（多选，按回车跳过）',
+        # -- 设备用途 --
+        'step.device_purpose': '设备用途',
+        'opt.device_purpose.title': '选择设备主要用途（多选，按回车跳过）',
+        # -- 开发工具 --
+        'step.dev_tools': '开发工具',
+        'opt.dev_env.title': '选择开发环境（多选，按回车跳过）',
+        'opt.dev_editor.title': '选择开发编辑器（多选，按回车跳过）',
+        # -- 游戏 --
+        'step.gaming': '游戏',
+        'opt.gaming.title': '选择游戏工具（多选，按回车跳过）',
+        # -- 远程桌面 --
+        'step.remote_desktop': '远程桌面',
+        'opt.remote_desktop.title': '选择远程桌面工具（多选，按回车跳过）',
+        # -- 确认面板（扩展） --
+        'confirm.input_method': '输入法',
+        'confirm.fonts': '字体',
+        'confirm.proxy_tools': '代理工具',
+        'confirm.audio_firmware': '声卡固件',
+        'confirm.polkit_agent': 'Polkit 代理',
+        'confirm.keyring': '密钥环',
+        'confirm.file_manager': '文件管理器',
+        'confirm.device_purpose': '设备用途',
+        'confirm.dev_tools': '开发工具',
+        'confirm.gaming': '游戏',
+        'confirm.remote_desktop': '远程桌面',
+        # -- 安装后（扩展） --
+        'post.input_method': '正在设置输入法 ...',
+        'post.proxy_tools': '正在安装代理工具 ...',
+        'post.clipboard': '正在设置剪贴板工具 ...',
+        'post.zsh_plugins': '正在安装 zsh 插件 ...',
+        'post.electron_flags': '正在写入 Electron Wayland 标志 ...',
+        'post.dev_services': '正在启用开发服务 ...',
+        'post.clipsync': '正在启用剪贴板同步服务 ...',
     },
     'ja': {
         # -- Common status --
@@ -469,6 +581,62 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'retry.prompt': '\n%s が失敗しました。再試行しますか？ [Y/n]: ',
         # -- GitHub プロキシ --
         'proxy.installing_dl': 'makepkg 用の GitHub ダウンロードプロキシをインストール中...',
+        # --- Extra install steps ---
+        # -- 入力メソッド --
+        'step.input_method': '入力メソッド',
+        'opt.input_method.title': '入力メソッドを選択（複数選択可、Enterでスキップ）',
+        # -- フォント --
+        'step.fonts': 'フォント',
+        'opt.fonts.base_title': '基本フォントを選択（複数選択可、Enterでスキップ）',
+        'opt.fonts.nerd_title': 'Nerd Fontsを選択（複数選択可、Enterでスキップ）',
+        # -- プロキシツール --
+        'step.proxy_tools': 'プロキシツール',
+        'opt.proxy_tools.title': 'プロキシツールを選択（単一選択、Enterでスキップ）',
+        # -- オーディオファームウェア --
+        'step.audio_firmware': 'オーディオファームウェア',
+        'opt.audio_firmware.title': 'オーディオファームウェアを選択（複数選択可、Enterでスキップ）',
+        # -- Polkit エージェント --
+        'step.polkit_agent': 'Polkit エージェント',
+        'opt.polkit_agent.title': 'Polkit エージェントを選択',
+        # -- キーリング --
+        'step.keyring': 'キーリング',
+        'opt.keyring.title': 'キーリング実装を選択',
+        # -- ファイルマネージャー --
+        'step.file_manager': 'ファイルマネージャー',
+        'opt.file_manager.title': 'ファイルマネージャーを選択（複数選択可、Enterでスキップ）',
+        # -- デバイスの用途 --
+        'step.device_purpose': 'デバイスの用途',
+        'opt.device_purpose.title': 'デバイスの用途を選択（複数選択可、Enterでスキップ）',
+        # -- 開発ツール --
+        'step.dev_tools': '開発ツール',
+        'opt.dev_env.title': '開発環境を選択（複数選択可、Enterでスキップ）',
+        'opt.dev_editor.title': '開発エディタを選択（複数選択可、Enterでスキップ）',
+        # -- ゲーム --
+        'step.gaming': 'ゲーム',
+        'opt.gaming.title': 'ゲームツールを選択（複数選択可、Enterでスキップ）',
+        # -- リモートデスクトップ --
+        'step.remote_desktop': 'リモートデスクトップ',
+        'opt.remote_desktop.title': 'リモートデスクトップツールを選択（複数選択可、Enterでスキップ）',
+        # -- 確認パネル（追加） --
+        'confirm.input_method': '入力メソッド',
+        'confirm.fonts': 'フォント',
+        'confirm.proxy_tools': 'プロキシツール',
+        'confirm.audio_firmware': 'オーディオファームウェア',
+        'confirm.polkit_agent': 'Polkit エージェント',
+        'confirm.keyring': 'キーリング',
+        'confirm.file_manager': 'ファイルマネージャー',
+        'confirm.device_purpose': 'デバイスの用途',
+        'confirm.dev_tools': '開発ツール',
+        'confirm.gaming': 'ゲーム',
+        'confirm.remote_desktop': 'リモートデスクトップ',
+        # -- インストール後（追加） --
+        'post.input_method': '入力メソッドを設定中 ...',
+        'post.proxy_tools': 'プロキシツールをインストール中 ...',
+        'post.clipboard': 'クリップボードツールを設定中 ...',
+        'post.zsh_plugins': 'zsh プラグインをインストール中 ...',
+        'post.electron_flags': 'Electron Wayland フラグを書き込み中 ...',
+        'post.dev_services': '開発サービスを有効化中 ...',
+        'post.clipsync': 'クリップボード同期サービスを有効化中 ...',
     },
 }
 

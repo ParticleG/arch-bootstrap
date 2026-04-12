@@ -11,6 +11,7 @@ from archinstall.lib.models.device import BDevice, Unit
 from archinstall.lib.output import debug
 
 from .constants import (
+    AUDIO_DETECT_PATTERNS,
     GPU_DETECT_PATTERNS,
     GEO_ENDPOINTS,
     KMSCON_DEFAULT_FONT_SIZE,
@@ -88,6 +89,40 @@ def detect_gpu() -> list[str]:
         nvidia_ids = re.findall(r'\[10de:([0-9a-fA-F]{4})\]', gpu_output)
         has_turing = any(int(did, 16) >= NVIDIA_TURING_THRESHOLD for did in nvidia_ids)
         detected.append('nvidia_open' if has_turing else 'nouveau')
+
+    return detected
+
+
+def detect_audio() -> list[str]:
+    """Detect audio hardware via lspci and return recommended firmware keys.
+
+    Returns a list of firmware option keys (e.g. ['sof']) matching
+    constants.AUDIO_DETECT_PATTERNS.
+    """
+    try:
+        result = subprocess.run(
+            ['lspci'], capture_output=True, text=True,
+        )
+        lspci_output = result.stdout
+    except (FileNotFoundError, subprocess.CalledProcessError) as exc:
+        _debug(f'Audio detection failed: {exc}')
+        return []
+
+    # Filter to audio-related PCI device lines
+    audio_lines = [
+        line for line in lspci_output.splitlines()
+        if re.search(r'audio|multimedia audio', line, re.IGNORECASE)
+    ]
+
+    if not audio_lines:
+        return []
+
+    detected: list[str] = []
+    combined = '\n'.join(audio_lines)
+
+    for key, patterns in AUDIO_DETECT_PATTERNS.items():
+        if any(p.lower() in combined.lower() for p in patterns):
+            detected.append(key)
 
     return detected
 

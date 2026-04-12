@@ -28,13 +28,20 @@ from .config import generate_fontconfig, generate_kmscon_config, get_kmscon_gree
 from .constants import (
     ARCHLINUXCN_URL,
     BROWSER_OPTIONS,
+    CLIPBOARD_WAYLAND_AUR_PACKAGES,
+    DEV_EDITOR_OPTIONS,
+    DEV_ENVIRONMENT_OPTIONS,
+    ELECTRON_WAYLAND_FLAGS,
+    FCITX5_ENVIRONMENT,
     OMZ_INSTALL_URL,
     OMZ_REMOTE_GITHUB,
+    PROXY_TOOL_OPTIONS,
+    REMOTE_DESKTOP_OPTIONS,
 )
 from .detection import calculate_kmscon_font_size, needs_kmscon
 from .i18n import t
 from .mirrors import format_cn_mirrorlist
-from .utils import install_github_proxy_dl, resolve_github_proxy, run_with_retry
+from .utils import get_clone_url, install_github_proxy_dl, resolve_github_proxy, run_with_retry
 
 
 # =============================================================================
@@ -340,17 +347,22 @@ def _install_aur_browsers(
 def perform_installation(
     config: ArchConfig,
     mirror_list_handler: MirrorListHandler,
-    kmscon_font_name: str = '',
-    screen_resolution: tuple[int, int] | None = None,
-    gpu_vendors: list[str] | None = None,
-    username: str = '',
-    country: str | None = None,
-    desktop_env: str = 'minimal',
-    dms_compositor: str = 'niri',
-    dms_terminal: str = 'ghostty',
-    browsers: list[str] | None = None,
+    state: 'WizardState',
 ) -> None:
     """Execute the installation using archinstall's Installer."""
+    from .wizard import WizardState  # noqa: F811 — deferred to avoid circular import
+
+    # Unpack frequently used state fields
+    kmscon_font_name = state.kmscon_font_name
+    screen_resolution = state.screen_resolution
+    gpu_vendors = state.gpu_vendors
+    username = state.username
+    country = state.country
+    desktop_env = state.desktop_env
+    dms_compositor = state.dms_compositor
+    dms_terminal = state.dms_terminal
+    browsers = state.browsers
+
     start_time = time.monotonic()
     _info('Starting installation...')
 
@@ -547,6 +559,16 @@ def perform_installation(
         if username:
             has_paru = _install_paru(chroot_dir, username, country)
 
+        # Post-install: clipboard Wayland AUR packages
+        if has_paru and desktop_env != 'minimal' and username:
+            _info(t('post.clipboard'))
+            aur_cmd = f"paru -S --noconfirm --needed --skipreview {' '.join(CLIPBOARD_WAYLAND_AUR_PACKAGES)}"
+            run_with_retry(
+                ['arch-chroot', str(chroot_dir), 'runuser', '-l', username, '-c', aur_cmd],
+                max_retries=3, retry_delay=5,
+                description='clipboard AUR packages',
+            )
+
         # Post-install: set default shell to zsh and install oh-my-zsh
         if username:
             subprocess.run(
@@ -577,6 +599,30 @@ def perform_installation(
                     _info(f'oh-my-zsh installation failed (exit {result.returncode}), skipping')
             except subprocess.TimeoutExpired:
                 _debug('oh-my-zsh installation timed out after 120s, skipping')
+
+        # Post-install: zsh plugins
+        is_cn = country == 'CN'
+        if username:
+            _info(t('post.zsh_plugins'))
+            home = f'/home/{username}'
+            omz_custom = f'{home}/.oh-my-zsh/custom/plugins'
+
+            # zsh-autosuggestions (pacman)
+            run_with_retry(
+                ['arch-chroot', str(chroot_dir),
+                 'pacman', '-S', '--noconfirm', '--needed', 'zsh-autosuggestions'],
+                max_retries=3, retry_delay=5,
+                description='zsh-autosuggestions',
+            )
+
+            # fast-syntax-highlighting (git clone into oh-my-zsh custom plugins)
+            fsh_url = get_clone_url('https://github.com/zdharma-continuum/fast-syntax-highlighting.git', is_cn)
+            fsh_cmd = f"git clone {fsh_url} {omz_custom}/fast-syntax-highlighting"
+            run_with_retry(
+                ['arch-chroot', str(chroot_dir), 'runuser', '-l', username, '-c', fsh_cmd],
+                max_retries=3, retry_delay=5,
+                description='fast-syntax-highlighting plugin',
+            )
 
         # Post-install: DMS desktop environment
         if desktop_env == 'dms' and username:
@@ -618,6 +664,90 @@ def perform_installation(
         # Post-install: AUR browsers (requires paru)
         if has_paru and browsers:
             _install_aur_browsers(chroot_dir, username, browsers)
+
+        # Post-install: Electron / VS Code Wayland flags
+        if desktop_env != 'minimal' and username:
+            _info(t('post.electron_flags'))
+            config_dir = str(chroot_dir / 'home' / username / '.config')
+            os.makedirs(config_dir, exist_ok=True)
+            for filename in ('code-flags.conf', 'electron-flags.conf'):
+                filepath = os.path.join(config_dir, filename)
+                with open(filepath, 'w') as f:
+                    f.write(ELECTRON_WAYLAND_FLAGS)
+            # Fix ownership
+            home = f'/home/{username}'
+            run_with_retry(
+                ['arch-chroot', str(chroot_dir),
+                 'chown', '-R', f'{username}:{username}',
+                 f'{home}/.config/code-flags.conf',
+                 f'{home}/.config/electron-flags.conf'],
+                max_retries=1, retry_delay=0,
+                description='fix electron flags ownership',
+            )
+
+        # Post-install: fcitx5 input method environment variables
+        if state.input_methods:
+            _info(t('post.input_method'))
+            env_file = f'{chroot_dir}/etc/environment'
+            with open(env_file, 'a') as f:
+                for key, value in FCITX5_ENVIRONMENT.items():
+                    f.write(f'{key}={value}\n')
+
+        # Post-install: additional AUR packages (remote desktop, proxy, dev editors)
+        aur_packages: list[str] = []
+
+        for rd_key in state.remote_desktop:
+            if rd_key in REMOTE_DESKTOP_OPTIONS and REMOTE_DESKTOP_OPTIONS[rd_key].get('aur', False):
+                aur_packages.extend(REMOTE_DESKTOP_OPTIONS[rd_key]['packages'])
+
+        if state.proxy_tool and state.proxy_tool in PROXY_TOOL_OPTIONS:
+            opt = PROXY_TOOL_OPTIONS[state.proxy_tool]
+            if opt.get('aur', False):
+                aur_packages.extend(opt['packages'])
+
+        for de_key in state.dev_editors:
+            if de_key in DEV_EDITOR_OPTIONS and DEV_EDITOR_OPTIONS[de_key].get('aur', False):
+                aur_packages.extend(DEV_EDITOR_OPTIONS[de_key]['packages'])
+
+        if has_paru and aur_packages and username:
+            aur_cmd = f"paru -S --noconfirm --needed --skipreview {' '.join(aur_packages)}"
+            run_with_retry(
+                ['arch-chroot', str(chroot_dir), 'runuser', '-l', username, '-c', aur_cmd],
+                max_retries=3, retry_delay=5,
+                description='additional AUR packages',
+            )
+
+        # Post-install: enable services for dev tools (docker, etc.)
+        if state.dev_environments:
+            _info(t('post.dev_services'))
+        for de_key in state.dev_environments:
+            if de_key in DEV_ENVIRONMENT_OPTIONS:
+                for service in DEV_ENVIRONMENT_OPTIONS[de_key].get('services', []):
+                    run_with_retry(
+                        ['arch-chroot', str(chroot_dir),
+                         'systemctl', 'enable', service],
+                        max_retries=1, retry_delay=0,
+                        description=f'enable {service}',
+                    )
+
+        # Initialize rustup default toolchain
+        if 'rustup' in state.dev_environments and state.username:
+            run_with_retry(
+                ['arch-chroot', str(chroot_dir), 'runuser', '-l', state.username, '-c',
+                 'rustup default stable'],
+                max_retries=3, retry_delay=5,
+                description='rustup default stable',
+            )
+
+        # Post-install: enable clipboard sync service
+        if desktop_env != 'minimal' and username:
+            _info(t('post.clipsync'))
+            run_with_retry(
+                ['arch-chroot', str(chroot_dir),
+                 'systemctl', '--global', 'enable', 'clipsync'],
+                max_retries=1, retry_delay=0,
+                description='enable clipsync service',
+            )
     finally:
         # Post-install: remove temporary NOPASSWD sudo rule
         if sudoers_aur is not None and sudoers_aur.exists():

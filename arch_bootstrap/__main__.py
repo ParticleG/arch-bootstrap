@@ -17,6 +17,7 @@ from .constants import COUNTRY_NAMES, GPU_LABELS
 from .i18n import set_lang
 from .detection import (
     cleanup_disk_locks,
+    detect_audio,
     detect_country,
     detect_gpu,
     detect_preferred_disk,
@@ -67,6 +68,10 @@ def main() -> None:
     if detected_gpu:
         _info(f'Detected GPU: {", ".join(GPU_LABELS.get(v, v) for v in detected_gpu)}')
 
+    detected_audio = detect_audio()
+    if detected_audio:
+        _info(f'Detected audio firmware: {", ".join(detected_audio)}')
+
     preferred_disk = detect_preferred_disk()
     if preferred_disk:
         _info(f'Preferred disk: {preferred_disk}')
@@ -90,6 +95,7 @@ def main() -> None:
     state.locale = initial_locale
     state.detected_gpu = detected_gpu
     state.gpu_vendors = list(detected_gpu)
+    state.detected_audio = detected_audio
     state.preferred_disk = preferred_disk
     state.screen_resolution = screen_resolution
 
@@ -131,15 +137,7 @@ def main() -> None:
     perform_installation(
         config,
         mirror_list_handler,
-        kmscon_font_name=state.kmscon_font_name,
-        screen_resolution=state.screen_resolution,
-        gpu_vendors=state.gpu_vendors,
-        username=state.username,
-        country=state.country,
-        desktop_env=state.desktop_env,
-        dms_compositor=state.dms_compositor,
-        dms_terminal=state.dms_terminal,
-        browsers=state.browsers,
+        state=state,
     )
 
 

@@ -358,8 +358,15 @@ INPUT_METHOD_PACKAGES: dict[str, dict] = {
 
 FCITX5_ENVIRONMENT: dict[str, str] = {
     'XMODIFIERS': '@im=fcitx',
-    'GTK_IM_MODULE': 'fcitx',
     'QT_IM_MODULE': 'fcitx',
+    'QT_IM_MODULES': 'wayland;fcitx',
+    # GTK_IM_MODULE is intentionally not set globally: on Wayland,
+    # Gtk3/4 use text-input-v3 natively. For XWayland Gtk2/3 apps,
+    # per-toolkit config files are written instead (see installation.py).
+    # QT_IM_MODULE is still needed because wlroots-based compositors
+    # (niri, hyprland, sway) do not support text-input-v2 used by Qt5.
+    # QT_IM_MODULES provides a fallback chain for Qt 6.7+.
+    # Reference: https://fcitx-im.org/wiki/Using_Fcitx_5_on_Wayland
 }
 
 # ---------------------------------------------------------------------------
@@ -639,4 +646,5 @@ GAMING_OPTIONS: dict[str, dict] = {
 ELECTRON_WAYLAND_FLAGS: str = """\
 --enable-features=UseOzonePlatform,WaylandWindowDecorations
 --ozone-platform-hint=auto
+--enable-wayland-ime
 """

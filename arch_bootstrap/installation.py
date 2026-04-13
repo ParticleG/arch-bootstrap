@@ -693,6 +693,26 @@ def perform_installation(
                 for key, value in FCITX5_ENVIRONMENT.items():
                     f.write(f'{key}={value}\n')
 
+            # Write per-toolkit GTK IM config for XWayland apps.
+            # GTK_IM_MODULE is not set globally (Wayland apps use
+            # text-input-v3 natively); these files only affect
+            # GTK2/3 apps running under XWayland.
+            if username:
+                user_home = chroot_dir / 'home' / username
+                gtk2_path = user_home / '.gtkrc-2.0'
+                with open(gtk2_path, 'a') as f:
+                    f.write('gtk-im-module="fcitx"\n')
+
+                gtk3_dir = user_home / '.config' / 'gtk-3.0'
+                gtk3_dir.mkdir(parents=True, exist_ok=True)
+                with open(gtk3_dir / 'settings.ini', 'a') as f:
+                    f.write('[Settings]\ngtk-im-module=fcitx\n')
+
+                gtk4_dir = user_home / '.config' / 'gtk-4.0'
+                gtk4_dir.mkdir(parents=True, exist_ok=True)
+                with open(gtk4_dir / 'settings.ini', 'a') as f:
+                    f.write('[Settings]\ngtk-im-module=fcitx\n')
+
         # Post-install: additional AUR/archlinuxcn packages (remote desktop, proxy, dev editors)
         aur_packages: list[str] = []
 

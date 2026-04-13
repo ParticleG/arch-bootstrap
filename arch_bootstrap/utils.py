@@ -5,6 +5,7 @@ import re
 import subprocess
 import time
 import urllib.request
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, TypeVar
 
@@ -26,6 +27,20 @@ def _info(msg: str) -> None:
 
 
 T = TypeVar('T')
+
+
+def _log_cmd(cmd: str | list[str], returncode: int) -> None:
+    """Write a command execution record to the installation log file."""
+    try:
+        from .log import get_log_file
+        log_file = get_log_file()
+        if log_file:
+            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            cmd_str = ' '.join(cmd) if isinstance(cmd, list) else cmd
+            log_file.write(f'[{timestamp}] CMD: {cmd_str} -> rc={returncode}\n')
+            log_file.flush()
+    except Exception:
+        pass  # Never let logging crash the installer
 
 
 def resolve_github_proxy(is_cn: bool) -> str | None:
@@ -131,6 +146,7 @@ def run_with_retry(
 
     for attempt in range(1, max_retries + 1):
         result = subprocess.run(cmd, **kwargs)
+        _log_cmd(cmd, result.returncode)
         if result.returncode == 0:
             return result
         if attempt < max_retries:
@@ -148,6 +164,7 @@ def run_with_retry(
             return result
         # Default (empty / 'y' / 'yes') = retry
         result = subprocess.run(cmd, **kwargs)
+        _log_cmd(cmd, result.returncode)
         if result.returncode == 0:
             return result
 

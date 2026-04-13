@@ -29,6 +29,7 @@ from .constants import (
     ARCHLINUXCN_URL,
     BROWSER_OPTIONS,
     CLIPBOARD_WAYLAND_AUR_PACKAGES,
+    CN_APP_OPTIONS,
     DEV_EDITOR_OPTIONS,
     DEV_ENVIRONMENT_OPTIONS,
     ELECTRON_WAYLAND_FLAGS,
@@ -36,10 +37,12 @@ from .constants import (
     OMZ_INSTALL_URL,
     OMZ_REMOTE_GITHUB,
     PROXY_TOOL_OPTIONS,
+    REFLECTOR_CONF,
     REMOTE_DESKTOP_OPTIONS,
 )
 from .detection import calculate_kmscon_font_size, needs_kmscon
 from .i18n import t
+from .log import copy_log_to_target
 from .mirrors import format_cn_mirrorlist
 from .utils import get_clone_url, install_github_proxy_dl, resolve_github_proxy, run_with_retry
 
@@ -668,19 +671,31 @@ def perform_installation(
         # Post-install: Electron / VS Code Wayland flags
         if desktop_env != 'minimal' and username:
             _info(t('post.electron_flags'))
+            home = f'/home/{username}'
             config_dir = str(chroot_dir / 'home' / username / '.config')
             os.makedirs(config_dir, exist_ok=True)
-            for filename in ('code-flags.conf', 'electron-flags.conf'):
-                filepath = os.path.join(config_dir, filename)
-                with open(filepath, 'w') as f:
+            flag_files: list[str] = []
+            # electron-flags.conf: always for non-minimal (catches generic electron apps)
+            electron_path = os.path.join(config_dir, 'electron-flags.conf')
+            with open(electron_path, 'w') as f:
+                f.write(ELECTRON_WAYLAND_FLAGS)
+            flag_files.append(f'{home}/.config/electron-flags.conf')
+            # code-flags.conf: only when VS Code is selected
+            if 'vscode' in state.dev_editors:
+                code_path = os.path.join(config_dir, 'code-flags.conf')
+                with open(code_path, 'w') as f:
                     f.write(ELECTRON_WAYLAND_FLAGS)
+                flag_files.append(f'{home}/.config/code-flags.conf')
+            # qq-flags.conf: only when QQ is selected
+            if 'linuxqq-nt-bwrap' in state.cn_apps:
+                qq_path = os.path.join(config_dir, 'qq-flags.conf')
+                with open(qq_path, 'w') as f:
+                    f.write(ELECTRON_WAYLAND_FLAGS)
+                flag_files.append(f'{home}/.config/qq-flags.conf')
             # Fix ownership
-            home = f'/home/{username}'
             run_with_retry(
                 ['arch-chroot', str(chroot_dir),
-                 'chown', '-R', f'{username}:{username}',
-                 f'{home}/.config/code-flags.conf',
-                 f'{home}/.config/electron-flags.conf'],
+                 'chown', '-R', f'{username}:{username}'] + flag_files,
                 max_retries=1, retry_delay=0,
                 description='fix electron flags ownership',
             )
@@ -730,6 +745,13 @@ def perform_installation(
             if de_key in DEV_EDITOR_OPTIONS and DEV_EDITOR_OPTIONS[de_key].get('aur', False):
                 aur_packages.extend(DEV_EDITOR_OPTIONS[de_key]['packages'])
 
+        # CN communication apps (all AUR)
+        if state and state.cn_apps:
+            for app_key in state.cn_apps:
+                app = CN_APP_OPTIONS.get(app_key)
+                if app and app.get('aur'):
+                    aur_packages.extend(app['packages'])
+
         if has_paru and aur_packages and username:
             aur_cmd = f"paru -S --noconfirm --needed --skipreview {' '.join(aur_packages)}"
             run_with_retry(
@@ -769,6 +791,145 @@ def perform_installation(
                 max_retries=1, retry_delay=0,
                 description='enable clipsync service',
             )
+
+        # Post-install: enable snapper timers for btrfs snapshots
+        _info(t('post.snapper_timers'))
+        for timer in ('snapper-timeline.timer', 'snapper-cleanup.timer', 'snapper-boot.timer'):
+            run_with_retry(
+                ['arch-chroot', str(chroot_dir), 'systemctl', 'enable', timer],
+                max_retries=1, retry_delay=0,
+                description=f'enable {timer}',
+            )
+
+        # Post-install: enable GNOME Keyring sockets (user-level)
+        if state and state.keyring == 'gnome':
+            _info(t('post.gnome_keyring'))
+            run_with_retry(
+                ['arch-chroot', str(chroot_dir),
+                 'systemctl', '--global', 'enable', 'gnome-keyring-daemon.socket'],
+                max_retries=1, retry_delay=0,
+                description='enable gnome-keyring-daemon.socket',
+            )
+            run_with_retry(
+                ['arch-chroot', str(chroot_dir),
+                 'systemctl', '--global', 'enable', 'p11-kit-server.socket'],
+                max_retries=1, retry_delay=0,
+                description='enable p11-kit-server.socket',
+            )
+
+        # Post-install: reflector setup for non-CN users
+        if country != 'CN':
+            _info(t('post.reflector'))
+            reflector_dir = chroot_dir / 'etc' / 'xdg' / 'reflector'
+            reflector_dir.mkdir(parents=True, exist_ok=True)
+            (reflector_dir / 'reflector.conf').write_text(REFLECTOR_CONF)
+            run_with_retry(
+                ['arch-chroot', str(chroot_dir),
+                 'systemctl', 'enable', 'reflector.timer'],
+                max_retries=1, retry_delay=0,
+                description='enable reflector.timer',
+            )
+
+        # Post-install: hibernation setup (btrfs swapfile + resume parameters)
+        if state and state.hibernation:
+            _info(t('post.hibernation'))
+
+            # Create swapfile sized to match RAM
+            ram_bytes = os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES')
+            ram_gib = max(1, round(ram_bytes / (1024**3)))
+
+            # Ensure @swap subvolume is mounted
+            swap_mount = chroot_dir / 'swap'
+            if not swap_mount.is_mount():
+                os.makedirs(str(swap_mount), exist_ok=True)
+                # Find the root btrfs UUID from fstab and mount @swap subvolume
+                fstab_path = chroot_dir / 'etc' / 'fstab'
+                fstab_root_uuid = None
+                for line in fstab_path.read_text().splitlines():
+                    line = line.strip()
+                    if line.startswith('#') or not line:
+                        continue
+                    parts = line.split()
+                    if len(parts) >= 2 and parts[1] == '/':
+                        if parts[0].startswith('UUID='):
+                            fstab_root_uuid = parts[0].split('=', 1)[1]
+                        break
+                if fstab_root_uuid:
+                    run_with_retry([
+                        'mount', '-t', 'btrfs', '-o', 'subvol=@swap',
+                        f'UUID={fstab_root_uuid}', str(swap_mount),
+                    ])
+
+            # Create swapfile
+            run_with_retry(
+                ['arch-chroot', str(chroot_dir),
+                 'btrfs', 'filesystem', 'mkswapfile',
+                 '--size', f'{ram_gib}g', '--uuid', 'clear', '/swap/swapfile'],
+                max_retries=1, retry_delay=0,
+                description='create btrfs swapfile',
+            )
+            run_with_retry(
+                ['arch-chroot', str(chroot_dir), 'swapon', '/swap/swapfile'],
+                max_retries=1, retry_delay=0,
+                description='activate swapfile',
+            )
+
+            # Get resume_offset for the swapfile
+            result = subprocess.run(
+                ['arch-chroot', str(chroot_dir),
+                 'btrfs', 'inspect-internal', 'map-swapfile', '-r', '/swap/swapfile'],
+                capture_output=True, text=True,
+            )
+            resume_offset = result.stdout.strip()
+
+            # Find the root (btrfs) partition UUID from the generated fstab
+            root_uuid = None
+            fstab_path = chroot_dir / 'etc' / 'fstab'
+            for line in fstab_path.read_text().splitlines():
+                line = line.strip()
+                if line.startswith('#') or not line:
+                    continue
+                parts = line.split()
+                if len(parts) >= 2 and parts[1] == '/':
+                    # Extract UUID from UUID=xxxx format
+                    if parts[0].startswith('UUID='):
+                        root_uuid = parts[0].split('=', 1)[1]
+                    break
+
+            # Add swap entry to fstab
+            fstab_path = chroot_dir / 'etc' / 'fstab'
+            with open(fstab_path, 'a') as f:
+                f.write('\n# Swap for hibernation\n')
+                f.write('/swap/swapfile none swap defaults 0 0\n')
+
+            # Add resume parameters to kernel cmdline
+            if root_uuid and resume_offset:
+                cmdline_path = chroot_dir / 'etc' / 'kernel' / 'cmdline'
+                if cmdline_path.exists():
+                    cmdline = cmdline_path.read_text().strip()
+                    cmdline += f' resume=UUID={root_uuid} resume_offset={resume_offset}'
+                    # Disable zswap (conflicts with hibernation)
+                    cmdline += ' zswap.enabled=0'
+                    cmdline_path.write_text(cmdline + '\n')
+                else:
+                    _info(t('post.hibernation_cmdline_warning'))
+
+            # Add 'resume' hook to mkinitcpio.conf (before fsck)
+            mkinitcpio_path = chroot_dir / 'etc' / 'mkinitcpio.conf'
+            if mkinitcpio_path.exists():
+                content = mkinitcpio_path.read_text()
+                new_content = content.replace('filesystems fsck', 'filesystems resume fsck')
+                if new_content == content:
+                    _info(t('post.hibernation_hook_warning'))
+                else:
+                    mkinitcpio_path.write_text(new_content)
+
+            # Regenerate initramfs and UKI (picks up new cmdline + resume hook)
+            run_with_retry(
+                ['arch-chroot', str(chroot_dir), 'mkinitcpio', '-P'],
+                max_retries=1, retry_delay=0,
+                description='regenerate initramfs for hibernation',
+            )
     finally:
         # Post-install: remove temporary NOPASSWD sudo rule
         if sudoers_aur is not None and sudoers_aur.exists():
@@ -777,6 +938,9 @@ def perform_installation(
 
     elapsed_time = time.monotonic() - start_time
     _info(f'Installation completed in {elapsed_time:.0f} seconds.')
+
+    # Copy the installation log to the new system
+    copy_log_to_target(chroot_dir)
 
     # Post-installation action
     action: PostInstallationAction = tui.run(lambda: select_post_installation(elapsed_time))

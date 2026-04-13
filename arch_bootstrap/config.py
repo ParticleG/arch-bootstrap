@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 from xml.sax.saxutils import escape as xml_escape
 
@@ -17,6 +18,7 @@ from archinstall.lib.models.application import (
 )
 from archinstall.lib.models.authentication import AuthenticationConfiguration
 from archinstall.lib.models.bootloader import Bootloader, BootloaderConfiguration
+from archinstall.lib.models.device import SubvolumeModification
 from archinstall.lib.models.locale import LocaleConfiguration
 from archinstall.lib.models.mirrors import (
     MirrorConfiguration,
@@ -325,9 +327,22 @@ def apply_wizard_state_to_config(
     # Disk layout
     if state.disk_device:
         config.disk_config = build_disk_layout(state.disk_device)
+        # Add @swap subvolume for hibernation (no compression — swap on
+        # compressed btrfs is problematic)
+        if state.hibernation and config.disk_config:
+            for dev_mod in config.disk_config.device_modifications:
+                for part in dev_mod.partitions:
+                    if part.btrfs_subvols:
+                        part.btrfs_subvols.append(
+                            SubvolumeModification(Path('@swap'), Path('/swap')),
+                        )
+                        break
 
     # Network
     config.network_config = NetworkConfiguration(type=state.network_type)
+
+    # Hostname
+    config.hostname = state.hostname
 
     # GPU packages
     gpu_packages = list(GPU_PACKAGES.get('common', []))  # always include mesa
@@ -354,6 +369,15 @@ def apply_wizard_state_to_config(
     # upower for desktop environments that require it
     if state.desktop_env in ('dms', 'dms_manual', 'exo') and 'upower' not in all_packages:
         all_packages.append('upower')
+    # btrfs-assistant and gsmartcontrol for non-minimal desktops
+    if state.desktop_env != 'minimal':
+        if 'btrfs-assistant' not in all_packages:
+            all_packages.append('btrfs-assistant')
+        if 'gsmartcontrol' not in all_packages:
+            all_packages.append('gsmartcontrol')
+    # reflector for non-CN users (mirror auto-update)
+    if state.country != 'CN' and 'reflector' not in all_packages:
+        all_packages.append('reflector')
     # Terminal enhancement
     all_packages.extend(TERMINAL_ENHANCEMENT_PACKAGES)
 

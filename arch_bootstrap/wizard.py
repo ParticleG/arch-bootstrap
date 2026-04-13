@@ -22,6 +22,7 @@ from .constants import (
     AUDIO_FIRMWARE_OPTIONS,
     BASE_FONT_OPTIONS,
     BROWSER_OPTIONS,
+    CN_APP_OPTIONS,
     COUNTRY_NAMES,
     DEV_EDITOR_OPTIONS,
     DEV_ENVIRONMENT_OPTIONS,
@@ -121,6 +122,9 @@ class WizardState:
         self.dev_editors: list[str] = []          # keys from DEV_EDITOR_OPTIONS
         self.gaming_tools: list[str] = []         # keys from GAMING_OPTIONS
         self.remote_desktop: list[str] = []       # keys from REMOTE_DESKTOP_OPTIONS
+        self.cn_apps: list[str] = []              # keys from CN_APP_OPTIONS
+        self.hostname: str = 'archlinux'          # system hostname
+        self.hibernation: bool = False            # enable hibernation (btrfs swapfile)
         self.detected_audio: list[str] = []       # auto-detected audio firmware keys
 
 
@@ -357,6 +361,24 @@ async def step_disk(state: WizardState) -> str:
                 return 'back'
 
 
+async def step_hibernation(state: WizardState) -> str:
+    """Enable hibernation (creates a btrfs swapfile for suspend-to-disk)."""
+    result = await Confirmation(
+        header=t('step.hibernation.title'),
+        allow_skip=True,
+        preset=state.hibernation,
+    ).show()
+
+    match result.type_:
+        case ResultType.Skip:
+            return 'back'
+        case ResultType.Selection:
+            state.hibernation = result.item() == MenuItem.yes()
+            return 'next'
+        case _:
+            return 'back'
+
+
 async def step_network(state: WizardState) -> str:
     """Select network backend."""
     items = [
@@ -382,6 +404,37 @@ async def step_network(state: WizardState) -> str:
             value = result.get_value()
             state.network_type = NicType(value)
             return 'next'
+        case _:
+            return 'back'
+
+
+async def step_hostname(state: WizardState) -> str:
+    """Enter system hostname."""
+    def validate(value: str) -> str | None:
+        if not value:
+            return t('validate.hostname.empty')
+        if len(value) > 63:
+            return t('validate.hostname.length')
+        if not re.match(r'^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$', value):
+            return t('validate.hostname.format')
+        return None
+
+    result = await Input(
+        header=t('step.hostname.title'),
+        default_value=state.hostname or 'archlinux',
+        allow_skip=True,
+        validator_callback=validate,
+    ).show()
+
+    match result.type_:
+        case ResultType.Skip:
+            return 'back'
+        case ResultType.Selection:
+            value = result.get_value()
+            if value:
+                state.hostname = value
+                return 'next'
+            return 'back'
         case _:
             return 'back'
 
@@ -956,6 +1009,37 @@ async def step_remote_desktop(state: WizardState) -> str:
             return 'back'
 
 
+async def step_cn_apps(state: WizardState) -> str:
+    """Select CN communication apps (CN region only, multi-select)."""
+    if state.country != 'CN':
+        return 'next'
+
+    items = [
+        MenuItem(info['label'], value=key)
+        for key, info in CN_APP_OPTIONS.items()
+    ]
+    group = MenuItemGroup(items)
+
+    if state.cn_apps:
+        group.set_selected_by_value(state.cn_apps)
+
+    result = await Selection[str](
+        group,
+        header=t('step.cn_apps.title'),
+        multi=True,
+        allow_skip=True,
+    ).show()
+
+    match result.type_:
+        case ResultType.Skip:
+            return 'back'
+        case ResultType.Selection:
+            state.cn_apps = result.get_values()
+            return 'next'
+        case _:
+            return 'back'
+
+
 async def step_username(state: WizardState) -> str:
     """Enter username."""
     default = state.username or os.environ.get('SUDO_USER', '') or os.environ.get('USER', '')
@@ -1075,7 +1159,9 @@ async def step_confirm(
              f'({state.disk_device.device_info.total_size.format_highest()})')
             if state.disk_device else t('status.not_set'),
         ),
+        _row(t('confirm.hibernation'), t('status.enabled') if state.hibernation else t('status.not_enabled')),
         _row(t('confirm.net'), state.network_type.display_msg()),
+        _row(t('confirm.hostname'), state.hostname),
         _row('Multilib', 'Enabled' if state.multilib else 'Disabled'),
         _row(t('confirm.gpu'), ', '.join(GPU_LABELS.get(v, v) for v in state.gpu_vendors) or 'None'),
         _row(
@@ -1122,6 +1208,11 @@ async def step_confirm(
             t('confirm.proxy_tools'),
             PROXY_TOOL_OPTIONS[state.proxy_tool]['label'] if state.proxy_tool else 'None',
         ))
+        if state.cn_apps:
+            rows.append(_row(
+                t('confirm.cn_apps'),
+                ', '.join(CN_APP_OPTIONS[k]['label'] for k in state.cn_apps),
+            ))
     if state.polkit_agent:
         rows.append(_row(
             t('confirm.polkit_agent'),
@@ -1227,7 +1318,9 @@ async def run_wizard(
         step_region,
         step_proxy_tools,
         step_disk,
+        step_hibernation,
         step_network,
+        step_hostname,
         step_repos,
         step_gpu_drivers,
         step_audio_firmware,
@@ -1242,6 +1335,7 @@ async def run_wizard(
         step_gaming,
         step_browser,
         step_remote_desktop,
+        step_cn_apps,
         step_username,
         step_user_password,
         step_root_password,

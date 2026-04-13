@@ -215,6 +215,29 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'post.electron_flags': 'Writing Electron Wayland flags ...',
         'post.dev_services': 'Enabling development services ...',
         'post.clipsync': 'Enabling clipboard sync service ...',
+        'post.snapper_timers': 'Enabling snapper timers ...',
+        'post.gnome_keyring': 'Enabling GNOME Keyring sockets ...',
+        'post.reflector': 'Configuring reflector mirror auto-update ...',
+        # -- CN communication apps --
+        'step.cn_apps.title': 'Communication Apps',
+        'confirm.cn_apps': 'Communication',
+        'post.cn_apps': 'Installing communication apps...',
+        # -- Hostname --
+        'step.hostname.title': 'Hostname',
+        'validate.hostname.empty': 'Hostname cannot be empty',
+        'validate.hostname.format': 'Hostname must contain only lowercase letters, digits, and hyphens',
+        'validate.hostname.length': 'Hostname must be at most 63 characters',
+        'confirm.hostname': 'Hostname',
+        # -- Hibernation --
+        'step.hibernation.title': 'Enable hibernation? (A swap file will be created)',
+        'confirm.hibernation': 'Hibernation',
+        'post.hibernation': 'Setting up hibernation...',
+        'post.hibernation_hook_warning': 'Warning: Could not add resume hook to mkinitcpio.conf. You may need to add it manually.',
+        'post.hibernation_cmdline_warning': 'Warning: /etc/kernel/cmdline not found. Resume parameters not added.',
+        # -- Logging --
+        'log.copied': 'Installation log copied to new system',
+        # -- Dev tool labels --
+        'opt.dev.chezmoi': 'Chezmoi (dotfile manager)',
     },
     'zh': {
         # -- Common status --
@@ -426,6 +449,29 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'post.electron_flags': '正在写入 Electron Wayland 标志 ...',
         'post.dev_services': '正在启用开发服务 ...',
         'post.clipsync': '正在启用剪贴板同步服务 ...',
+        'post.snapper_timers': '正在启用 snapper 定时器 ...',
+        'post.gnome_keyring': '正在启用 GNOME 密钥环套接字 ...',
+        'post.reflector': '正在配置 reflector 镜像自动更新 ...',
+        # -- 通讯应用 --
+        'step.cn_apps.title': '通讯应用',
+        'confirm.cn_apps': '通讯应用',
+        'post.cn_apps': '正在安装通讯应用...',
+        # -- 主机名 --
+        'step.hostname.title': '主机名',
+        'validate.hostname.empty': '主机名不能为空',
+        'validate.hostname.format': '主机名只能包含小写字母、数字和连字符',
+        'validate.hostname.length': '主机名最长 63 个字符',
+        'confirm.hostname': '主机名',
+        # -- 休眠 --
+        'step.hibernation.title': '是否启用休眠？（将创建交换文件）',
+        'confirm.hibernation': '休眠',
+        'post.hibernation': '正在配置休眠...',
+        'post.hibernation_hook_warning': '警告：无法将 resume hook 添加到 mkinitcpio.conf，可能需要手动添加。',
+        'post.hibernation_cmdline_warning': '警告：未找到 /etc/kernel/cmdline，未添加 resume 参数。',
+        # -- 日志 --
+        'log.copied': '安装日志已复制到新系统',
+        # -- 开发工具标签 --
+        'opt.dev.chezmoi': 'Chezmoi（Dotfile 管理器）',
     },
     'ja': {
         # -- Common status --
@@ -637,6 +683,29 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'post.electron_flags': 'Electron Wayland フラグを書き込み中 ...',
         'post.dev_services': '開発サービスを有効化中 ...',
         'post.clipsync': 'クリップボード同期サービスを有効化中 ...',
+        'post.snapper_timers': 'snapper タイマーを有効化中 ...',
+        'post.gnome_keyring': 'GNOME キーリングソケットを有効化中 ...',
+        'post.reflector': 'reflector ミラー自動更新を設定中 ...',
+        # -- CN通信アプリ --
+        'step.cn_apps.title': '通信アプリ',
+        'confirm.cn_apps': '通信アプリ',
+        'post.cn_apps': '通信アプリをインストール中...',
+        # -- ホスト名 --
+        'step.hostname.title': 'ホスト名',
+        'validate.hostname.empty': 'ホスト名を空にできません',
+        'validate.hostname.format': 'ホスト名には小文字、数字、ハイフンのみ使用できます',
+        'validate.hostname.length': 'ホスト名は63文字以内にしてください',
+        'confirm.hostname': 'ホスト名',
+        # -- ハイバネーション --
+        'step.hibernation.title': 'ハイバネーションを有効にしますか？（スワップファイルが作成されます）',
+        'confirm.hibernation': 'ハイバネーション',
+        'post.hibernation': 'ハイバネーションを設定中...',
+        'post.hibernation_hook_warning': '警告：mkinitcpio.conf に resume フックを追加できませんでした。手動で追加が必要な場合があります。',
+        'post.hibernation_cmdline_warning': '警告：/etc/kernel/cmdline が見つかりません。resume パラメータは追加されませんでした。',
+        # -- ログ --
+        'log.copied': 'インストールログを新システムにコピーしました',
+        # -- 開発ツールラベル --
+        'opt.dev.chezmoi': 'Chezmoi（dotfileマネージャー）',
     },
 }
 

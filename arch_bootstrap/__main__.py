@@ -15,6 +15,7 @@ from . import __version__
 from .config import build_default_config
 from .constants import COUNTRY_NAMES, GPU_LABELS
 from .i18n import set_lang
+from .log import copy_log_to_target, resume_logging, setup_logging, teardown_logging
 from .detection import (
     cleanup_disk_locks,
     detect_audio,
@@ -52,6 +53,9 @@ def main() -> None:
             sys.stdin = open(0, closefd=False)
         except OSError:
             print('[WARN] Could not reopen /dev/tty — interactive prompts may not work', file=sys.stderr)
+
+    # Start logging to /var/log/arch-bootstrap/install.log
+    setup_logging()
 
     _info('Detecting environment...')
 
@@ -100,10 +104,14 @@ def main() -> None:
     state.screen_resolution = screen_resolution
 
     # Phase 2: Interactive wizard (archinstall native UI)
+    # TUI requires raw terminal — suspend logging during the wizard loop
+    teardown_logging()
+
     while True:
         action = tui.run(lambda: run_wizard(state, config, mirror_list_handler))
 
         if action == 'abort':
+            resume_logging()
             _info('Installation aborted.')
             sys.exit(0)
 
@@ -118,6 +126,9 @@ def main() -> None:
 
         if action == 'install':
             break
+
+    # Re-enable logging after wizard completes
+    resume_logging()
 
     # Phase 3: Disk formatting warning
     if config.disk_config:

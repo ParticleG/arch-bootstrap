@@ -421,6 +421,11 @@ def _download_pyz(dest: Path, country: str | None) -> bool:
 
 def _exec_pyz(pyz_path: Path) -> None:
     """Replace this process with python3 running the .pyz."""
+    # Ensure log directory exists before exec'ing into arch_bootstrap
+    try:
+        Path('/var/log/arch-bootstrap').mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
     os.execv(sys.executable, [sys.executable, str(pyz_path)])
 
 

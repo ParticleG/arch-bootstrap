@@ -511,6 +511,29 @@ FILE_MANAGER_OPTIONS: dict[str, dict] = {
 # Proxy tool options (CN region)
 # ---------------------------------------------------------------------------
 
+CN_APP_OPTIONS: dict[str, dict] = {
+    'linuxqq-nt-bwrap': {
+        'label': 'QQ',
+        'packages': ['linuxqq-nt-bwrap'],
+        'aur': True,
+    },
+    'wechat': {
+        'label': 'WeChat',
+        'packages': ['wechat-universal-bwrap'],
+        'aur': True,
+    },
+    'feishu': {
+        'label': 'Feishu / Lark',
+        'packages': ['feishu-bin'],
+        'aur': True,
+    },
+    'dingtalk': {
+        'label': 'DingTalk',
+        'packages': ['dingtalk-bin'],
+        'aur': True,
+    },
+}
+
 PROXY_TOOL_OPTIONS: dict[str, dict] = {
     'flclash': {
         'label': 'FlClash (recommended, in archlinuxcn)',
@@ -601,6 +624,12 @@ DEV_ENVIRONMENT_OPTIONS: dict[str, dict] = {
         'aur': False,
         'services': [],
     },
+    'chezmoi': {
+        'label': 'Chezmoi',
+        'packages': ['chezmoi'],
+        'aur': False,
+        'services': [],
+    },
 }
 
 DEV_EDITOR_OPTIONS: dict[str, dict] = {
@@ -647,4 +676,14 @@ ELECTRON_WAYLAND_FLAGS: str = """\
 --enable-features=UseOzonePlatform,WaylandWindowDecorations
 --ozone-platform-hint=auto
 --enable-wayland-ime
+"""
+
+# ---------------------------------------------------------------------------
+# Reflector configuration (non-CN users)
+# ---------------------------------------------------------------------------
+
+REFLECTOR_CONF: str = """--save /etc/pacman.d/mirrorlist
+--protocol https
+--latest 5
+--sort age
 """

@@ -34,7 +34,7 @@
 
 ---
 
-A 9-step TUI wizard that walks you through Arch Linux installation using archinstall's native Python API. No manual JSON editing required — the installer detects your hardware, guides you through options, and runs the installation directly.
+A multi-step TUI wizard that walks you through Arch Linux installation using archinstall's native Python API. No manual JSON editing required — the installer detects your hardware, guides you through options, and runs the installation directly.
 
 ## Quick Start
 
@@ -65,24 +65,45 @@ python arch_bootstrap.pyz
 The full installer then:
 
 1. **Auto-detects** your country (IP geolocation), GPU (`lspci`), and preferred disk
-2. **Walks you through a 9-step wizard** with pre-selected defaults
+2. **Walks you through a multi-step wizard** with pre-selected defaults
 3. Shows a **confirmation panel**: Install / Advanced Modify (archinstall GlobalMenu) / Cancel
 4. Cleans up disk locks (swap, LVM, LUKS), formats the disk, installs Arch Linux
 5. Presents **post-install options**: exit, reboot, or arch-chroot
 
+> All operations are logged to `/var/log/arch-bootstrap/install.log` (on both the live ISO and installed system).
+
 ## Wizard Steps
 
-| # | Step | Description |
-|---|------|-------------|
-| 1 | Language | System locale (`en_US`, `zh_CN`, `ja_JP`); non-English adds `kmscon` |
-| 2 | Region | Mirror country (auto-detected via IP); applies mirrors to live ISO immediately |
-| 3 | Disk | Target block device with partition preview; confirms data destruction |
-| 4 | Network | Backend choice: NetworkManager + iwd (recommended) or + wpa_supplicant |
-| 5 | Repos | Optionally enable `multilib` (32-bit / Steam support) |
-| 6 | GPU Drivers | Auto-detects vendor; choose from AMD / Intel / NVIDIA (open) / nouveau |
-| 7 | Username | With format validation (`[a-z_][a-z0-9_-]*`) |
-| 8 | User Password | Masked input via archinstall's `get_password()` |
-| 9 | Root Password | Optional; prompted only if you choose to set one |
+| # | Step | Condition | Description |
+|---|------|-----------|-------------|
+| 1 | Language | Always | System locale (`en_US`, `zh_CN`, `ja_JP`) |
+| 2 | Input Method | Non-English | Fcitx5 input method (Chinese / Japanese) |
+| 3 | Console Font | Non-English | kmscon font for CJK console rendering |
+| 4 | Fonts | Always | Base fonts + Nerd fonts (multi-select) |
+| 5 | Region | Always | Mirror country (auto-detected via IP) |
+| 6 | Proxy Tools | CN only | Proxy client (FlClash / Mihomo / etc.) |
+| 7 | Disk | Always | Target block device with partition preview |
+| 8 | Hibernation | Always | Enable swap file for hibernation (default: No) |
+| 9 | Network | Always | Backend: NetworkManager + iwd / wpa_supplicant |
+| 10 | Hostname | Always | System hostname (default: `archlinux`) |
+| 11 | Repos | Always | Enable `multilib` (32-bit / Steam support) |
+| 12 | GPU Drivers | Always | Auto-detected vendor; AMD / Intel / NVIDIA / nouveau |
+| 13 | Audio Firmware | Always | SOF (modern Intel) or ALSA (legacy) |
+| 14 | Desktop | Always | minimal / DMS / DMS Manual / Exo |
+| 15 | Compositor | DMS only | Niri or Hyprland |
+| 16 | Terminal | DMS only | Ghostty / Kitty / Alacritty |
+| 17 | Polkit Agent | Non-minimal | MATE / GNOME polkit agent |
+| 18 | Keyring | Non-minimal | GNOME Keyring / KWallet |
+| 19 | File Manager | Non-minimal | Yazi / Nautilus / Dolphin / Thunar |
+| 20 | Device Purpose | Always | Development / Gaming / etc. (multi-select) |
+| 21 | Dev Tools | Development | Docker, Go, Bun, Node.js, Python, Rust, Chezmoi, etc. |
+| 22 | Gaming | Gaming + multilib | Steam, Lutris, GameMode, MangoHud |
+| 23 | Browser | Always | Firefox, Chromium, Chrome, Edge (multi-select) |
+| 24 | Remote Desktop | Always | Remmina, Parsec, Moonlight, RustDesk |
+| 25 | Communication | CN only | QQ, WeChat, Feishu, DingTalk (multi-select) |
+| 26 | Username | Always | With format validation |
+| 27 | User Password | Always | Masked input |
+| 28 | Root Password | Always | Optional |
 
 ### Navigation
 
@@ -101,7 +122,7 @@ These are baked into every installation and are **not configurable** through the
 |--------|-------|
 | Bootloader | EFISTUB + Unified Kernel Image (UKI) |
 | Filesystem | Btrfs with `zstd` compression + Snapper snapshots |
-| Subvolumes | `@` `/`, `@home` `/home`, `@log` `/var/log`, `@pkg` `/var/cache/pacman/pkg` |
+| Subvolumes | `@` `/`, `@home` `/home`, `@log` `/var/log`, `@pkg` `/var/cache/pacman/pkg` (+ `@swap` `/swap` if hibernation enabled) |
 | Partitions | 1 GiB EFI (FAT32) + remaining space Btrfs |
 | Audio | PipeWire |
 | Bluetooth | Enabled |
@@ -109,6 +130,7 @@ These are baked into every installation and are **not configurable** through the
 | Swap | zram (lzo-rle) |
 | Base packages | `neovim`, `git`, `7zip`, `base-devel`, `zsh` |
 | CN extras | `archlinuxcn` repo auto-added for CN region |
+| Snapper | Timeline, cleanup, and boot timers auto-enabled |
 
 ## Features
 
@@ -119,6 +141,15 @@ These are baked into every installation and are **not configurable** through the
 - **Advanced escape hatch** — archinstall's GlobalMenu available from the confirmation panel for full manual override
 - **Pipe-friendly** — designed for `curl | python` with automatic stdin recovery from `/dev/tty`
 - **GitHub proxy for CN** — auto-detects China region and routes `.pyz` downloads through ghproxy.link / ghfast.top
+- **Hibernation support** — optional btrfs swapfile with automatic resume parameter and mkinitcpio configuration
+- **Hostname customization** — configurable hostname with RFC 952 validation
+- **CN communication apps** — optional QQ, WeChat, Feishu, DingTalk installation for CN users
+- **Installation logging** — full installation log saved to `/var/log/arch-bootstrap/install.log` on both live ISO and installed system
+- **Reflector integration** — automatic mirror management with reflector timer for non-CN users
+- **Per-app Electron flags** — Wayland flags written only for installed Electron apps
+- **GNOME Keyring auto-setup** — sockets auto-enabled when GNOME Keyring is selected
+- **Snapper timers** — snapshot timeline, cleanup, and boot timers auto-enabled
+- **Btrfs tools** — btrfs-assistant and gsmartcontrol auto-installed for non-minimal desktops
 
 ## Requirements
 
@@ -164,13 +195,15 @@ arch-bootstrap/
 │   ├── __init__.py         # Version (0.2.0)
 │   ├── __main__.py         # Entry point: detect → wizard → install
 │   ├── config.py           # ArchConfig builder
-│   ├── constants.py        # GPU maps, mirrors, languages, countries
+│   ├── constants.py        # Package definitions, mirrors, option dictionaries
 │   ├── detection.py        # Hardware & environment detection
 │   ├── disk.py             # Btrfs disk layout builder
 │   ├── i18n.py             # Trilingual translations (en/zh/ja)
 │   ├── installation.py     # archinstall API integration
+│   ├── log.py              # Installation logging (TeeStream, log copy)
 │   ├── mirrors.py          # Mirror resolution & fallback
-│   └── wizard.py           # 9-step interactive wizard
+│   ├── utils.py            # Command retry, GitHub proxy, logging helpers
+│   └── wizard.py           # Multi-step interactive wizard
 └── .github/
     └── workflows/
         └── package.yml     # CI: build .pyz + GitHub Release

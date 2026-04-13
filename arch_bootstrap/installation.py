@@ -713,20 +713,19 @@ def perform_installation(
             # text-input-v3 natively); these files only affect
             # GTK2/3 apps running under XWayland.
             if username:
-                user_home = chroot_dir / 'home' / username
-                gtk2_path = user_home / '.gtkrc-2.0'
-                with open(gtk2_path, 'a') as f:
-                    f.write('gtk-im-module="fcitx"\n')
-
-                gtk3_dir = user_home / '.config' / 'gtk-3.0'
-                gtk3_dir.mkdir(parents=True, exist_ok=True)
-                with open(gtk3_dir / 'settings.ini', 'a') as f:
-                    f.write('[Settings]\ngtk-im-module=fcitx\n')
-
-                gtk4_dir = user_home / '.config' / 'gtk-4.0'
-                gtk4_dir.mkdir(parents=True, exist_ok=True)
-                with open(gtk4_dir / 'settings.ini', 'a') as f:
-                    f.write('[Settings]\ngtk-im-module=fcitx\n')
+                # Create GTK IM config files as the user (not root)
+                gtk_im_cmd = (
+                    'printf \'gtk-im-module="fcitx"\\n\' >> ~/.gtkrc-2.0'
+                    ' && mkdir -p ~/.config/gtk-3.0'
+                    ' && printf \'[Settings]\\ngtk-im-module=fcitx\\n\' >> ~/.config/gtk-3.0/settings.ini'
+                    ' && mkdir -p ~/.config/gtk-4.0'
+                    ' && printf \'[Settings]\\ngtk-im-module=fcitx\\n\' >> ~/.config/gtk-4.0/settings.ini'
+                )
+                subprocess.run(
+                    ['arch-chroot', str(chroot_dir),
+                     'runuser', '-l', username, '-c', gtk_im_cmd],
+                    check=False,
+                )
 
         # Post-install: additional AUR/archlinuxcn packages (remote desktop, proxy, dev editors)
         aur_packages: list[str] = []
@@ -930,6 +929,7 @@ def perform_installation(
                 max_retries=1, retry_delay=0,
                 description='regenerate initramfs for hibernation',
             )
+
     finally:
         # Post-install: remove temporary NOPASSWD sudo rule
         if sudoers_aur is not None and sudoers_aur.exists():

@@ -202,6 +202,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         # -- Remote desktop --
         'step.remote_desktop': 'Remote Desktop',
         'opt.remote_desktop.title': 'Select remote desktop tools (multi-select, press Enter to skip)',
+        # -- Virtual machine --
+        'opt.vm.title': 'Virtual Machine Setup',
+        'opt.vm.desc': 'Select VM components to install',
         # -- Confirm panel (extra) --
         'confirm.input_method': 'Input Method',
         'confirm.fonts': 'Fonts',
@@ -214,6 +217,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'confirm.dev_tools': 'Development Tools',
         'confirm.gaming': 'Gaming',
         'confirm.remote_desktop': 'Remote Desktop',
+        'confirm.vm_options': 'VM Components',
         # -- Post-install (extra) --
         'post.input_method': 'Setting up input method ...',
         'post.proxy_tools': 'Installing proxy tools ...',
@@ -443,6 +447,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         # -- 远程桌面 --
         'step.remote_desktop': '远程桌面',
         'opt.remote_desktop.title': '选择远程桌面工具（多选，按回车跳过）',
+        # -- 虚拟机 --
+        'opt.vm.title': '虚拟机配置',
+        'opt.vm.desc': '选择要安装的虚拟机组件',
         # -- 确认面板（扩展） --
         'confirm.input_method': '输入法',
         'confirm.fonts': '字体',
@@ -455,6 +462,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'confirm.dev_tools': '开发工具',
         'confirm.gaming': '游戏',
         'confirm.remote_desktop': '远程桌面',
+        'confirm.vm_options': '虚拟机组件',
         # -- 安装后（扩展） --
         'post.input_method': '正在设置输入法 ...',
         'post.proxy_tools': '正在安装代理工具 ...',
@@ -684,6 +692,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         # -- リモートデスクトップ --
         'step.remote_desktop': 'リモートデスクトップ',
         'opt.remote_desktop.title': 'リモートデスクトップツールを選択（複数選択可、Enterでスキップ）',
+        # -- 仮想マシン --
+        'opt.vm.title': '仮想マシン設定',
+        'opt.vm.desc': 'インストールするVMコンポーネントを選択',
         # -- 確認パネル（追加） --
         'confirm.input_method': '入力メソッド',
         'confirm.fonts': 'フォント',
@@ -696,6 +707,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'confirm.dev_tools': '開発ツール',
         'confirm.gaming': 'ゲーム',
         'confirm.remote_desktop': 'リモートデスクトップ',
+        'confirm.vm_options': 'VMコンポーネント',
         # -- インストール後（追加） --
         'post.input_method': '入力メソッドを設定中 ...',
         'post.proxy_tools': 'プロキシツールをインストール中 ...',

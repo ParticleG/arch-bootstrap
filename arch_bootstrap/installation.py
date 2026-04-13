@@ -4,6 +4,7 @@ import os
 import shlex
 import shutil
 import subprocess
+import textwrap
 import time
 from pathlib import Path
 
@@ -39,6 +40,7 @@ from .constants import (
     PROXY_TOOL_OPTIONS,
     REFLECTOR_CONF,
     REMOTE_DESKTOP_OPTIONS,
+    VM_OPTIONS,
 )
 from .detection import calculate_kmscon_font_size, needs_kmscon
 from .i18n import t
@@ -341,6 +343,335 @@ def _install_aur_browsers(
     )
     if result.returncode != 0:
         _info(f'AUR browser installation failed (exit {result.returncode}), skipping')
+
+
+# =============================================================================
+# GPU passthrough script
+# =============================================================================
+
+_GPU_PASSTHROUGH_SCRIPT = """\
+#!/usr/bin/env bash
+# gpu-passthrough - Hot-switch GPU passthrough for KVM virtual machines
+# Usage: gpu-passthrough {on|off|status}
+#
+# Automatically detects discrete GPU (NVIDIA or AMD) and manages:
+# - Driver unbinding/rebinding
+# - VFIO-PCI binding
+# - Hugepage allocation/release
+
+set -euo pipefail
+
+# --- Auto-detection functions ---
+
+detect_dgpu() {
+    # Find discrete GPU (NVIDIA vendor 10de, AMD vendor 1002 on non-root PCI bus)
+    local gpu_type=""
+    local pci_addrs=()
+
+    # Check for NVIDIA
+    local nvidia_addrs
+    nvidia_addrs=$(lspci -D -nn | grep -i '10de:' | grep -Ei 'VGA|3D|Display|Audio' | awk '{print $1}' || true)
+    if [[ -n "$nvidia_addrs" ]]; then
+        gpu_type="nvidia"
+        while IFS= read -r addr; do
+            pci_addrs+=("$addr")
+        done <<< "$nvidia_addrs"
+    fi
+
+    # Check for AMD discrete (bus != 00, to exclude iGPU)
+    if [[ -z "$gpu_type" ]]; then
+        local amd_addrs
+        amd_addrs=$(lspci -D -nn | grep -i '1002:' | grep -Ei 'VGA|3D|Display|Audio' | grep -v '^0000:00:' | awk '{print $1}' || true)
+        if [[ -n "$amd_addrs" ]]; then
+            gpu_type="amd"
+            while IFS= read -r addr; do
+                pci_addrs+=("$addr")
+            done <<< "$amd_addrs"
+        fi
+    fi
+
+    if [[ -z "$gpu_type" ]]; then
+        echo "ERROR: No discrete GPU detected" >&2
+        return 1
+    fi
+
+    echo "$gpu_type"
+    printf '%s\\n' "${pci_addrs[@]}"
+}
+
+get_iommu_group_devices() {
+    # Given a PCI address, find all devices in the same IOMMU group
+    local pci_addr="$1"
+    local iommu_group
+    iommu_group=$(basename "$(readlink /sys/bus/pci/devices/"$pci_addr"/iommu_group)")
+
+    for dev in /sys/kernel/iommu_groups/"$iommu_group"/devices/*; do
+        basename "$dev"
+    done
+}
+
+get_current_driver() {
+    local pci_addr="$1"
+    local driver_link="/sys/bus/pci/devices/$pci_addr/driver"
+    if [[ -L "$driver_link" ]]; then
+        basename "$(readlink "$driver_link")"
+    else
+        echo "none"
+    fi
+}
+
+# --- Hugepage management ---
+
+get_total_ram_gb() {
+    awk '/MemTotal/ {printf "%d", $2 / 1024 / 1024}' /proc/meminfo
+}
+
+allocate_hugepages() {
+    local total_ram_gb
+    total_ram_gb=$(get_total_ram_gb)
+    local vm_mem_gb=$(( total_ram_gb / 2 ))
+
+    echo "Allocating hugepages for ${vm_mem_gb}GB VM memory..."
+
+    # Flush caches and compact memory
+    sync
+    echo 3 > /proc/sys/vm/drop_caches
+    echo 1 > /proc/sys/vm/compact_memory
+
+    if (( total_ram_gb >= 32 )); then
+        # Use 1GB hugepages
+        local nr_pages=$vm_mem_gb
+        echo "Using 1GB hugepages: ${nr_pages} pages"
+        echo "$nr_pages" > /sys/kernel/mm/hugepages/hugepages-1048576kB/nr_hugepages
+        local actual
+        actual=$(cat /sys/kernel/mm/hugepages/hugepages-1048576kB/nr_hugepages)
+        echo "Allocated: ${actual} x 1GB hugepages"
+    else
+        # Use 2MB hugepages
+        local nr_pages=$(( vm_mem_gb * 1024 / 2 ))
+        echo "Using 2MB hugepages: ${nr_pages} pages"
+        sysctl -w vm.nr_hugepages="$nr_pages" > /dev/null
+        local actual
+        actual=$(cat /proc/sys/vm/nr_hugepages)
+        echo "Allocated: ${actual} x 2MB hugepages"
+    fi
+}
+
+release_hugepages() {
+    local total_ram_gb
+    total_ram_gb=$(get_total_ram_gb)
+
+    echo "Releasing hugepages..."
+
+    if (( total_ram_gb >= 32 )); then
+        echo 0 > /sys/kernel/mm/hugepages/hugepages-1048576kB/nr_hugepages
+    fi
+    sysctl -w vm.nr_hugepages=0 > /dev/null
+
+    echo "Hugepages released"
+}
+
+# --- GPU passthrough control ---
+
+passthrough_on() {
+    echo "=== Enabling GPU passthrough ==="
+
+    # Detect GPU
+    local detection
+    detection=$(detect_dgpu)
+    local gpu_type
+    gpu_type=$(echo "$detection" | head -1)
+    local -a gpu_addrs
+    mapfile -t gpu_addrs < <(echo "$detection" | tail -n +2)
+
+    echo "Detected ${gpu_type} GPU at: ${gpu_addrs[*]}"
+
+    # Collect ALL IOMMU group devices
+    local -a all_devices=()
+    local -A seen_devices=()
+    for addr in "${gpu_addrs[@]}"; do
+        while IFS= read -r dev; do
+            if [[ -z "${seen_devices[$dev]:-}" ]]; then
+                all_devices+=("$dev")
+                seen_devices[$dev]=1
+            fi
+        done < <(get_iommu_group_devices "$addr")
+    done
+
+    echo "IOMMU group devices: ${all_devices[*]}"
+
+    # Kill GPU processes and unload driver modules
+    case "$gpu_type" in
+        nvidia)
+            echo "Killing NVIDIA processes..."
+            fuser -k -9 /dev/nvidia* 2>/dev/null || true
+
+            echo "Unloading NVIDIA modules..."
+            for mod in nvidia_drm nvidia_modeset nvidia_uvm nvidia; do
+                rmmod "$mod" 2>/dev/null || true
+            done
+            ;;
+        amd)
+            echo "Unloading AMD GPU module..."
+            rmmod amdgpu 2>/dev/null || true
+            ;;
+    esac
+
+    # Unbind all devices from current drivers
+    echo "Unbinding devices from current drivers..."
+    for dev in "${all_devices[@]}"; do
+        local current_driver
+        current_driver=$(get_current_driver "$dev")
+        if [[ "$current_driver" != "none" && "$current_driver" != "vfio-pci" ]]; then
+            echo "  Unbinding $dev from $current_driver"
+            echo "$dev" > "/sys/bus/pci/drivers/$current_driver/unbind" 2>/dev/null || true
+        fi
+    done
+
+    # Load vfio-pci and bind devices
+    echo "Loading vfio-pci module..."
+    modprobe vfio-pci
+
+    echo "Binding devices to vfio-pci..."
+    for dev in "${all_devices[@]}"; do
+        echo "vfio-pci" > "/sys/bus/pci/devices/$dev/driver_override"
+        echo "$dev" > /sys/bus/pci/drivers_probe
+    done
+
+    # Allocate hugepages
+    allocate_hugepages
+
+    echo "=== GPU passthrough enabled ==="
+    echo "You can now start your VM with GPU passthrough."
+}
+
+passthrough_off() {
+    echo "=== Disabling GPU passthrough ==="
+
+    # Detect GPU type
+    local detection
+    detection=$(detect_dgpu 2>/dev/null) || true
+    local gpu_type
+
+    # If detection fails (GPU bound to vfio), try to determine from loaded modules
+    if [[ -z "$detection" ]]; then
+        # Check vfio-bound devices to determine GPU type
+        for dev in /sys/bus/pci/drivers/vfio-pci/*/; do
+            local pci_addr
+            pci_addr=$(basename "$dev")
+            local vendor
+            vendor=$(cat "/sys/bus/pci/devices/$pci_addr/vendor" 2>/dev/null || echo "")
+            case "$vendor" in
+                0x10de) gpu_type="nvidia"; break ;;
+                0x1002) gpu_type="amd"; break ;;
+            esac
+        done
+    else
+        gpu_type=$(echo "$detection" | head -1)
+    fi
+
+    if [[ -z "${gpu_type:-}" ]]; then
+        echo "ERROR: Cannot determine GPU type" >&2
+        return 1
+    fi
+
+    # Find all vfio-pci bound devices
+    local -a vfio_devices=()
+    for dev_path in /sys/bus/pci/drivers/vfio-pci/*/; do
+        [[ -d "$dev_path" ]] || continue
+        local pci_addr
+        pci_addr=$(basename "$dev_path")
+        # Only process GPU-related devices (vendor 10de or 1002)
+        local vendor
+        vendor=$(cat "/sys/bus/pci/devices/$pci_addr/vendor" 2>/dev/null || echo "")
+        if [[ "$vendor" == "0x10de" || "$vendor" == "0x1002" ]]; then
+            vfio_devices+=("$pci_addr")
+        fi
+    done
+
+    # Clear driver overrides and unbind from vfio-pci
+    echo "Unbinding devices from vfio-pci..."
+    for dev in "${vfio_devices[@]}"; do
+        echo "" > "/sys/bus/pci/devices/$dev/driver_override"
+        echo "$dev" > /sys/bus/pci/drivers/vfio-pci/unbind 2>/dev/null || true
+    done
+
+    # Reload original driver
+    case "$gpu_type" in
+        nvidia)
+            echo "Reloading NVIDIA modules..."
+            modprobe nvidia
+            modprobe nvidia_drm
+            modprobe nvidia_modeset
+            modprobe nvidia_uvm
+            ;;
+        amd)
+            echo "Reloading AMD GPU module..."
+            modprobe amdgpu
+            ;;
+    esac
+
+    # Reprobe devices
+    echo "Reprobing devices..."
+    for dev in "${vfio_devices[@]}"; do
+        echo "$dev" > /sys/bus/pci/drivers_probe 2>/dev/null || true
+    done
+
+    # Release hugepages
+    release_hugepages
+
+    echo "=== GPU passthrough disabled ==="
+}
+
+passthrough_status() {
+    echo "=== GPU Passthrough Status ==="
+
+    # Show GPU devices and their current drivers
+    echo ""
+    echo "GPU Devices:"
+    lspci -D -nn -k | grep -A 2 -Ei 'VGA|3D|Display' | head -30
+
+    echo ""
+    echo "VFIO-PCI bound devices:"
+    if [[ -d /sys/bus/pci/drivers/vfio-pci ]]; then
+        for dev_path in /sys/bus/pci/drivers/vfio-pci/*/; do
+            [[ -d "$dev_path" ]] || { echo "  (none)"; break; }
+            local pci_addr
+            pci_addr=$(basename "$dev_path")
+            echo "  $pci_addr: $(lspci -s "${pci_addr#*:}" 2>/dev/null || echo 'unknown')"
+        done
+    else
+        echo "  vfio-pci module not loaded"
+    fi
+
+    echo ""
+    echo "Hugepages:"
+    echo "  2MB: $(cat /proc/sys/vm/nr_hugepages) allocated"
+    if [[ -f /sys/kernel/mm/hugepages/hugepages-1048576kB/nr_hugepages ]]; then
+        echo "  1GB: $(cat /sys/kernel/mm/hugepages/hugepages-1048576kB/nr_hugepages) allocated"
+    fi
+
+    echo ""
+    echo "Total RAM: $(get_total_ram_gb) GB"
+}
+
+# --- Main ---
+
+if [[ $EUID -ne 0 ]]; then
+    echo "ERROR: This script must be run as root (use sudo)" >&2
+    exit 1
+fi
+
+case "${1:-}" in
+    on)  passthrough_on ;;
+    off) passthrough_off ;;
+    status) passthrough_status ;;
+    *)
+        echo "Usage: gpu-passthrough {on|off|status}" >&2
+        exit 1
+        ;;
+esac
+"""
 
 
 # =============================================================================
@@ -751,6 +1082,13 @@ def perform_installation(
                 if app and app.get('aur'):
                     aur_packages.extend(app['packages'])
 
+        # VM AUR packages (looking_glass)
+        for vm_key in state.vm_options:
+            if vm_key in VM_OPTIONS:
+                for pkg in VM_OPTIONS[vm_key].get('aur_packages', []):
+                    if pkg not in aur_packages:
+                        aur_packages.append(pkg)
+
         if has_paru and aur_packages and username:
             aur_cmd = f"LANG=C.UTF-8 paru -S --noconfirm --needed --skipreview {' '.join(aur_packages)}"
             run_with_retry(
@@ -771,6 +1109,110 @@ def perform_installation(
                         max_retries=1, retry_delay=0,
                         description=f'enable {service}',
                     )
+
+        # Post-install: VM services
+        for vm_key in state.vm_options:
+            if vm_key in VM_OPTIONS:
+                for service in VM_OPTIONS[vm_key].get('services', []):
+                    run_with_retry(
+                        ['arch-chroot', str(chroot_dir), 'systemctl', 'enable', service],
+                        description=f'enable {service}',
+                    )
+
+        # Post-install: VM user groups
+        if state.vm_options:
+            run_with_retry(
+                ['arch-chroot', str(chroot_dir), 'usermod', '-a', '-G', 'libvirt,kvm', username],
+                description='add user to libvirt and kvm groups',
+            )
+
+        # Post-install: KVM network setup first-boot service
+        if 'kvm_base' in state.vm_options:
+            service_dir = chroot_dir / 'etc' / 'systemd' / 'system'
+            service_dir.mkdir(parents=True, exist_ok=True)
+            service_file = service_dir / 'kvm-network-setup.service'
+            service_file.write_text(textwrap.dedent("""\
+                [Unit]
+                Description=KVM Default Network Setup
+                After=libvirtd.service
+                Requires=libvirtd.service
+                ConditionPathExists=!/etc/kvm-network-configured
+
+                [Service]
+                Type=oneshot
+                ExecStart=/bin/bash -c 'virsh net-start default; virsh net-autostart default; touch /etc/kvm-network-configured'
+                RemainAfterExit=yes
+
+                [Install]
+                WantedBy=multi-user.target
+            """))
+            run_with_retry(
+                ['arch-chroot', str(chroot_dir), 'systemctl', 'enable', 'kvm-network-setup'],
+                description='enable KVM network setup service',
+            )
+
+        # Post-install: nested virtualization
+        if 'nested_virt' in state.vm_options:
+            cpuinfo = Path('/proc/cpuinfo').read_text()
+            if 'GenuineIntel' in cpuinfo:
+                kvm_module = 'kvm_intel'
+            else:
+                kvm_module = 'kvm_amd'
+
+            modprobe_dir = chroot_dir / 'etc' / 'modprobe.d'
+            modprobe_dir.mkdir(parents=True, exist_ok=True)
+            (modprobe_dir / f'{kvm_module}.conf').write_text(f'options {kvm_module} nested=1\n')
+
+        # Post-install: OVMF nvram configuration
+        if 'kvm_base' in state.vm_options:
+            qemu_conf = chroot_dir / 'etc' / 'libvirt' / 'qemu.conf'
+            if qemu_conf.exists():
+                content = qemu_conf.read_text()
+                nvram_line = 'nvram = [\n    "/usr/share/ovmf/x64/OVMF_CODE.fd:/usr/share/ovmf/x64/OVMF_VARS.fd"\n]'
+                if 'nvram' not in content or '#nvram' in content:
+                    # Append nvram config at end of file
+                    content = content.rstrip() + '\n\n' + nvram_line + '\n'
+                    qemu_conf.write_text(content)
+
+        # Post-install: GPU hot-switch script
+        if 'gpu_passthrough' in state.vm_options:
+            gpu_script_dir = chroot_dir / 'usr' / 'local' / 'bin'
+            gpu_script_dir.mkdir(parents=True, exist_ok=True)
+            gpu_script = gpu_script_dir / 'gpu-passthrough'
+            gpu_script.write_text(_GPU_PASSTHROUGH_SCRIPT)
+            gpu_script.chmod(0o755)
+
+        # Post-install: LookingGlass KVMFR configuration
+        if 'looking_glass' in state.vm_options:
+            modprobe_dir = chroot_dir / 'etc' / 'modprobe.d'
+            modprobe_dir.mkdir(parents=True, exist_ok=True)
+            (modprobe_dir / 'kvmfr.conf').write_text('options kvmfr static_size_mb=512\n')
+
+            modules_dir = chroot_dir / 'etc' / 'modules-load.d'
+            modules_dir.mkdir(parents=True, exist_ok=True)
+            (modules_dir / 'kvmfr.conf').write_text('# KVMFR Looking Glass module\nkvmfr\n')
+
+            udev_dir = chroot_dir / 'etc' / 'udev' / 'rules.d'
+            udev_dir.mkdir(parents=True, exist_ok=True)
+            (udev_dir / '99-kvmfr.rules').write_text(
+                f'SUBSYSTEM=="kvmfr", OWNER="{username}", GROUP="kvm", MODE="0660"\n'
+            )
+
+            qemu_conf = chroot_dir / 'etc' / 'libvirt' / 'qemu.conf'
+            if qemu_conf.exists():
+                content = qemu_conf.read_text()
+                if '/dev/kvmfr0' not in content:
+                    cgroup_block = '''
+cgroup_device_acl = [
+    "/dev/null", "/dev/full", "/dev/zero",
+    "/dev/random", "/dev/urandom",
+    "/dev/ptmx", "/dev/kvm", "/dev/kqemu",
+    "/dev/rtc", "/dev/hpet", "/dev/vfio/vfio",
+    "/dev/kvmfr0"
+]
+'''
+                    content = content.rstrip() + '\n' + cgroup_block
+                    qemu_conf.write_text(content)
 
         # Initialize rustup default toolchain
         if 'rustup' in state.dev_environments and state.username:

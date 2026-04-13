@@ -41,6 +41,7 @@ from .constants import (
     PROXY_TOOL_OPTIONS,
     REGION_MENU_COUNTRIES,
     REMOTE_DESKTOP_OPTIONS,
+    VM_OPTIONS,
 )
 from .detection import detect_audio, is_raw_tty, needs_kmscon
 from .i18n import set_lang, t
@@ -123,6 +124,7 @@ class WizardState:
         self.dev_environments: list[str] = []     # keys from DEV_ENVIRONMENT_OPTIONS
         self.dev_editors: list[str] = []          # keys from DEV_EDITOR_OPTIONS
         self.gaming_tools: list[str] = []         # keys from GAMING_OPTIONS
+        self.vm_options: list[str] = []          # keys from VM_OPTIONS
         self.remote_desktop: list[str] = []       # keys from REMOTE_DESKTOP_OPTIONS
         self.cn_apps: list[str] = []              # keys from CN_APP_OPTIONS
         self.hostname: str = 'archlinux'          # system hostname
@@ -984,6 +986,61 @@ async def step_gaming(state: WizardState) -> str:
             return 'back'
 
 
+async def step_virtual_machine(state: WizardState) -> str:
+    """Select VM components (only if virtual_machine purpose selected)."""
+    if 'virtual_machine' not in state.device_purposes:
+        return 'next'
+
+    # Detect if discrete GPU is available for passthrough
+    has_dgpu = (
+        len(state.detected_gpu) > 1
+        or (
+            any(g in state.detected_gpu for g in ['nvidia_open', 'nouveau'])
+            and any(g in state.detected_gpu for g in ['amd', 'intel'])
+        )
+    )
+
+    # Build option items - only show GPU-related options if dGPU detected
+    items = []
+    for key, info in VM_OPTIONS.items():
+        if key in ('gpu_passthrough', 'looking_glass') and not has_dgpu:
+            continue
+        items.append(MenuItem(info['label'], value=key))
+
+    group = MenuItemGroup(items)
+
+    # Pre-select defaults
+    preselect = ['kvm_base', 'nested_virt']
+    if has_dgpu:
+        preselect.extend(['gpu_passthrough', 'looking_glass'])
+    if state.vm_options:
+        group.set_selected_by_value(state.vm_options)
+    else:
+        group.set_selected_by_value(preselect)
+
+    result = await Selection[str](
+        group,
+        header=_build_progress_header(state, step_virtual_machine, 'opt.vm.title'),
+        multi=True,
+        allow_skip=True,
+    ).show()
+
+    match result.type_:
+        case ResultType.Skip:
+            return 'back'
+        case ResultType.Selection:
+            selected = result.get_values()
+
+            # Enforce dependency: looking_glass requires gpu_passthrough
+            if 'looking_glass' in selected and 'gpu_passthrough' not in selected:
+                selected.remove('looking_glass')
+
+            state.vm_options = selected
+            return 'next'
+        case _:
+            return 'back'
+
+
 async def step_remote_desktop(state: WizardState) -> str:
     """Select remote desktop tools."""
     items = [
@@ -1145,7 +1202,7 @@ WIZARD_CATEGORIES: list[tuple[str, list[Callable]]] = [
     ('category.system', [step_proxy_tools, step_disk, step_hibernation, step_network, step_hostname]),
     ('category.hardware', [step_repos, step_gpu_drivers, step_audio_firmware]),
     ('category.desktop', [step_desktop_env, step_dms_compositor, step_dms_terminal, step_polkit_agent, step_keyring, step_file_manager]),
-    ('category.software', [step_device_purpose, step_dev_tools, step_gaming, step_browser, step_remote_desktop, step_cn_apps]),
+    ('category.software', [step_device_purpose, step_dev_tools, step_gaming, step_virtual_machine, step_browser, step_remote_desktop, step_cn_apps]),
     ('category.account', [step_username, step_user_password, step_root_password]),
 ]
 
@@ -1162,6 +1219,7 @@ _STEP_SKIP_CONDITIONS: dict[Callable, Callable[[WizardState], bool]] = {
     step_file_manager: lambda s: s.desktop_env == 'minimal',
     step_dev_tools: lambda s: 'development' not in s.device_purposes,
     step_gaming: lambda s: 'gaming' not in s.device_purposes or not s.multilib,
+    step_virtual_machine: lambda s: 'virtual_machine' not in s.device_purposes,
     step_cn_apps: lambda s: s.country != 'CN',
 }
 
@@ -1296,6 +1354,11 @@ async def step_confirm(
             t('confirm.gaming'),
             ', '.join(GAMING_OPTIONS[k]['label'] for k in state.gaming_tools) if state.gaming_tools else 'None',
         ))
+    if 'virtual_machine' in state.device_purposes and state.vm_options:
+        rows.append(_row(
+            t('confirm.vm_options'),
+            ', '.join(VM_OPTIONS[k]['label'] for k in state.vm_options if k in VM_OPTIONS),
+        ))
 
     fixed_rows: list[tuple[int, str, str]] = [
         _row(t('fixed.boot'), 'EFISTUB (UKI)'),
@@ -1392,6 +1455,7 @@ async def run_wizard(
         step_device_purpose,
         step_dev_tools,
         step_gaming,
+        step_virtual_machine,
         step_browser,
         step_remote_desktop,
         step_cn_apps,

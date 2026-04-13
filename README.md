@@ -98,12 +98,13 @@ The full installer then:
 | 20 | Device Purpose | Always | Development / Gaming / etc. (multi-select) |
 | 21 | Dev Tools | Development | Docker, Go, Bun, Node.js, Python, Rust, Chezmoi, etc. |
 | 22 | Gaming | Gaming + multilib | Steam, Lutris, GameMode, MangoHud |
-| 23 | Browser | Always | Firefox, Chromium, Chrome, Edge (multi-select) |
-| 24 | Remote Desktop | Always | Remmina, Parsec, Moonlight, RustDesk |
-| 25 | Communication | CN only | QQ, WeChat, Feishu, DingTalk (multi-select) |
-| 26 | Username | Always | With format validation |
-| 27 | User Password | Always | Masked input |
-| 28 | Root Password | Always | Optional |
+| 23 | Virtual Machine | Selected Virtual Machine + dGPU detected | KVM/QEMU, GPU passthrough, LookingGlass, nested virtualization |
+| 24 | Browser | Always | Firefox, Chromium, Chrome, Edge (multi-select) |
+| 25 | Remote Desktop | Always | Remmina, Parsec, Moonlight, RustDesk |
+| 26 | Communication | CN only | QQ, WeChat, Feishu, DingTalk (multi-select) |
+| 27 | Username | Always | With format validation |
+| 28 | User Password | Always | Masked input |
+| 29 | Root Password | Always | Optional |
 
 ### Navigation
 
@@ -141,6 +142,7 @@ These are baked into every installation and are **not configurable** through the
 - **Advanced escape hatch** — archinstall's GlobalMenu available from the confirmation panel for full manual override
 - **Pipe-friendly** — designed for `curl | python` with automatic stdin recovery from `/dev/tty`
 - **GitHub proxy for CN** — auto-detects China region and routes `.pyz` downloads through ghproxy.link / ghfast.top
+- **GPU passthrough** — hot-swap scripts supporting both NVIDIA and AMD dGPUs, LookingGlass KVMFR integration
 - **Hibernation support** — optional btrfs swapfile with automatic resume parameter and mkinitcpio configuration
 - **Hostname customization** — configurable hostname with RFC 952 validation
 - **CN communication apps** — optional QQ, WeChat, Feishu, DingTalk installation for CN users

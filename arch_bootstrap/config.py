@@ -49,6 +49,7 @@ from .constants import (
     PROXY_TOOL_OPTIONS,
     REMOTE_DESKTOP_OPTIONS,
     TERMINAL_ENHANCEMENT_PACKAGES,
+    VM_OPTIONS,
 )
 from .detection import calculate_kmscon_font_size, needs_kmscon
 from .disk import build_disk_layout
@@ -439,6 +440,11 @@ def apply_wizard_state_to_config(
     for g_key in state.gaming_tools:
         if g_key in GAMING_OPTIONS and not GAMING_OPTIONS[g_key].get('aur', False):
             all_packages.extend(GAMING_OPTIONS[g_key]['packages'])
+
+    # VM packages (non-AUR only)
+    for vm_key in state.vm_options:
+        if vm_key in VM_OPTIONS and not VM_OPTIONS[vm_key].get('aur', False):
+            all_packages.extend(VM_OPTIONS[vm_key]['packages'])
 
     # Deduplicate packages while preserving order
     config.packages = list(dict.fromkeys(all_packages))

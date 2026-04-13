@@ -566,6 +566,35 @@ DEVICE_PURPOSES: dict[str, str] = {
     'gaming': 'Gaming',
     'media': 'Media Production',
     'industrial': 'Industrial Design',
+    'virtual_machine': 'Virtual Machine',
+}
+
+VM_OPTIONS: dict[str, dict] = {
+    'kvm_base': {
+        'label': 'KVM/QEMU + virt-manager',
+        'packages': ['qemu-full', 'virt-manager', 'swtpm', 'dnsmasq', 'edk2-ovmf'],
+        'aur': False,
+        'services': ['libvirtd'],
+    },
+    'nested_virt': {
+        'label': 'Nested Virtualization',
+        'packages': [],
+        'aur': False,
+        'services': [],
+    },
+    'gpu_passthrough': {
+        'label': 'GPU Hot-Switch Passthrough',
+        'packages': [],
+        'aur': False,
+        'services': [],
+    },
+    'looking_glass': {
+        'label': 'LookingGlass (KVMFR)',
+        'packages': ['linux-headers'],
+        'aur': False,
+        'services': [],
+        'aur_packages': ['looking-glass-module-dkms-git', 'looking-glass-git'],
+    },
 }
 
 DEV_ENVIRONMENT_OPTIONS: dict[str, dict] = {

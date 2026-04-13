@@ -6,6 +6,13 @@ _current_lang: str = 'en'
 # All 85 keys x 3 languages
 TRANSLATIONS: dict[str, dict[str, str]] = {
     'en': {
+        # -- Category names (progress display) --
+        'category.localization': 'Localization',
+        'category.system': 'System',
+        'category.hardware': 'Hardware',
+        'category.desktop': 'Desktop',
+        'category.software': 'Software',
+        'category.account': 'Account',
         # -- Common status --
         'status.set': 'Set',
         'status.not_set': 'Not set',
@@ -240,6 +247,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'opt.dev.chezmoi': 'Chezmoi (dotfile manager)',
     },
     'zh': {
+        # -- Category names (progress display) --
+        'category.localization': '本地化',
+        'category.system': '系统',
+        'category.hardware': '硬件',
+        'category.desktop': '桌面',
+        'category.software': '软件',
+        'category.account': '账户',
         # -- Common status --
         'status.set': '已设置',
         'status.not_set': '未设置',
@@ -474,6 +488,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'opt.dev.chezmoi': 'Chezmoi（Dotfile 管理器）',
     },
     'ja': {
+        # -- Category names (progress display) --
+        'category.localization': 'ローカライズ',
+        'category.system': 'システム',
+        'category.hardware': 'ハードウェア',
+        'category.desktop': 'デスクトップ',
+        'category.software': 'ソフトウェア',
+        'category.account': 'アカウント',
         # -- Common status --
         'status.set': '設定済み',
         'status.not_set': '未設定',

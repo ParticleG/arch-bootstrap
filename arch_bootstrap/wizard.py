@@ -46,6 +46,8 @@ from .detection import detect_audio, is_raw_tty, needs_kmscon
 from .i18n import set_lang, t
 from .mirrors import apply_mirrors_to_live_iso
 
+from collections.abc import Callable
+
 
 # =============================================================================
 # TUI helpers
@@ -139,14 +141,15 @@ async def step_language(state: WizardState) -> str:
     group = MenuItemGroup(items)
 
     # On raw TTY, default to English to avoid CJK rendering issues
+    progress = _build_progress_header(state, step_language, 'step.lang.title')
     if raw_tty and state.locale != 'en_US.UTF-8':
         header = (
-            'Select system language\n'
+            f'{progress}\n'
             'NOTE: Raw TTY detected — CJK languages will install kmscon\n'
             'for proper console rendering after reboot.'
         )
     else:
-        header = 'Select system language / 选择系统语言 / システム言語を選択'
+        header = progress
 
     group.set_default_by_value(state.locale)
     group.set_focus_by_value(state.locale)
@@ -210,7 +213,7 @@ async def step_kmscon_font(state: WizardState) -> str:
 
     result = await Selection[int](
         group,
-        header=t('step.kmscon_font.title'),
+        header=_build_progress_header(state, step_kmscon_font, 'step.kmscon_font.title'),
         allow_skip=True,
     ).show()
 
@@ -242,7 +245,7 @@ async def step_region(state: WizardState) -> str:
 
     result = await Selection[str](
         group,
-        header=t('step.region.title'),
+        header=_build_progress_header(state, step_region, 'step.region.title'),
         allow_skip=True,
         enable_filter=True,
     ).show()
@@ -316,7 +319,7 @@ async def step_disk(state: WizardState) -> str:
 
         result = await Selection[BDevice](
             group,
-            header=t('step.disk.title'),
+            header=_build_progress_header(state, step_disk, 'step.disk.title'),
             allow_skip=True,
         ).show()
 
@@ -364,7 +367,7 @@ async def step_disk(state: WizardState) -> str:
 async def step_hibernation(state: WizardState) -> str:
     """Enable hibernation (creates a btrfs swapfile for suspend-to-disk)."""
     result = await Confirmation(
-        header=t('step.hibernation.title'),
+        header=_build_progress_header(state, step_hibernation, 'step.hibernation.title'),
         allow_skip=True,
         preset=state.hibernation,
     ).show()
@@ -393,7 +396,7 @@ async def step_network(state: WizardState) -> str:
 
     result = await Selection[str](
         group,
-        header=t('step.net.title'),
+        header=_build_progress_header(state, step_network, 'step.net.title'),
         allow_skip=True,
     ).show()
 
@@ -420,7 +423,7 @@ async def step_hostname(state: WizardState) -> str:
         return None
 
     result = await Input(
-        header=t('step.hostname.title'),
+        header=_build_progress_header(state, step_hostname, 'step.hostname.title'),
         default_value=state.hostname or 'archlinux',
         allow_skip=True,
         validator_callback=validate,
@@ -442,7 +445,7 @@ async def step_hostname(state: WizardState) -> str:
 async def step_repos(state: WizardState) -> str:
     """Enable multilib repository."""
     result = await Confirmation(
-        header=t('step.repos.confirm'),
+        header=_build_progress_header(state, step_repos, 'step.repos.confirm'),
         allow_skip=True,
         preset=state.multilib,
     ).show()
@@ -472,7 +475,7 @@ async def step_gpu_drivers(state: WizardState) -> str:
 
     result = await Selection[str](
         group,
-        header=t('step.gpu.title'),
+        header=_build_progress_header(state, step_gpu_drivers, 'step.gpu.title'),
         multi=True,
         allow_skip=True,
     ).show()
@@ -500,7 +503,7 @@ async def step_desktop_env(state: WizardState) -> str:
 
     result = await Selection[str](
         group,
-        header=t('step.desktop.title'),
+        header=_build_progress_header(state, step_desktop_env, 'step.desktop.title'),
         allow_skip=True,
     ).show()
 
@@ -532,7 +535,7 @@ async def step_dms_compositor(state: WizardState) -> str:
 
     result = await Selection[str](
         group,
-        header=t('step.compositor.title'),
+        header=_build_progress_header(state, step_dms_compositor, 'step.compositor.title'),
         allow_skip=True,
     ).show()
 
@@ -561,7 +564,7 @@ async def step_dms_terminal(state: WizardState) -> str:
 
     result = await Selection[str](
         group,
-        header=t('step.terminal.title'),
+        header=_build_progress_header(state, step_dms_terminal, 'step.terminal.title'),
         allow_skip=True,
     ).show()
 
@@ -589,7 +592,7 @@ async def step_browser(state: WizardState) -> str:
 
     result = await Selection[str](
         group,
-        header=t('step.browser.title'),
+        header=_build_progress_header(state, step_browser, 'step.browser.title'),
         multi=True,
         allow_skip=True,
     ).show()
@@ -633,7 +636,7 @@ async def step_input_method(state: WizardState) -> str:
 
     result = await Selection[str](
         group,
-        header=t('opt.input_method.title'),
+        header=_build_progress_header(state, step_input_method, 'opt.input_method.title'),
         multi=True,
         allow_skip=True,
     ).show()
@@ -664,7 +667,7 @@ async def step_fonts(state: WizardState) -> str:
 
     base_result = await Selection[str](
         base_group,
-        header=t('opt.fonts.base_title'),
+        header=_build_progress_header(state, step_fonts, 'opt.fonts.base_title'),
         multi=True,
         allow_skip=True,
     ).show()
@@ -691,7 +694,7 @@ async def step_fonts(state: WizardState) -> str:
 
     nerd_result = await Selection[str](
         nerd_group,
-        header=t('opt.fonts.nerd_title'),
+        header=_build_progress_header(state, step_fonts, 'opt.fonts.nerd_title'),
         multi=True,
         allow_skip=True,
     ).show()
@@ -724,7 +727,7 @@ async def step_proxy_tools(state: WizardState) -> str:
 
     result = await Selection[str](
         group,
-        header=t('opt.proxy_tools.title'),
+        header=_build_progress_header(state, step_proxy_tools, 'opt.proxy_tools.title'),
         allow_skip=True,
     ).show()
 
@@ -753,7 +756,7 @@ async def step_audio_firmware(state: WizardState) -> str:
 
     result = await Selection[str](
         group,
-        header=t('opt.audio_firmware.title'),
+        header=_build_progress_header(state, step_audio_firmware, 'opt.audio_firmware.title'),
         multi=True,
         allow_skip=True,
     ).show()
@@ -786,7 +789,7 @@ async def step_polkit_agent(state: WizardState) -> str:
 
     result = await Selection[str](
         group,
-        header=t('opt.polkit_agent.title'),
+        header=_build_progress_header(state, step_polkit_agent, 'opt.polkit_agent.title'),
         allow_skip=True,
     ).show()
 
@@ -818,7 +821,7 @@ async def step_keyring(state: WizardState) -> str:
 
     result = await Selection[str](
         group,
-        header=t('opt.keyring.title'),
+        header=_build_progress_header(state, step_keyring, 'opt.keyring.title'),
         allow_skip=True,
     ).show()
 
@@ -848,7 +851,7 @@ async def step_file_manager(state: WizardState) -> str:
 
     result = await Selection[str](
         group,
-        header=t('opt.file_manager.title'),
+        header=_build_progress_header(state, step_file_manager, 'opt.file_manager.title'),
         multi=True,
         allow_skip=True,
     ).show()
@@ -876,7 +879,7 @@ async def step_device_purpose(state: WizardState) -> str:
 
     result = await Selection[str](
         group,
-        header=t('opt.device_purpose.title'),
+        header=_build_progress_header(state, step_device_purpose, 'opt.device_purpose.title'),
         multi=True,
         allow_skip=True,
     ).show()
@@ -908,7 +911,7 @@ async def step_dev_tools(state: WizardState) -> str:
 
     env_result = await Selection[str](
         env_group,
-        header=t('opt.dev_env.title'),
+        header=_build_progress_header(state, step_dev_tools, 'opt.dev_env.title'),
         multi=True,
         allow_skip=True,
     ).show()
@@ -933,7 +936,7 @@ async def step_dev_tools(state: WizardState) -> str:
 
     editor_result = await Selection[str](
         editor_group,
-        header=t('opt.dev_editor.title'),
+        header=_build_progress_header(state, step_dev_tools, 'opt.dev_editor.title'),
         multi=True,
         allow_skip=True,
     ).show()
@@ -966,7 +969,7 @@ async def step_gaming(state: WizardState) -> str:
 
     result = await Selection[str](
         group,
-        header=t('opt.gaming.title'),
+        header=_build_progress_header(state, step_gaming, 'opt.gaming.title'),
         multi=True,
         allow_skip=True,
     ).show()
@@ -994,7 +997,7 @@ async def step_remote_desktop(state: WizardState) -> str:
 
     result = await Selection[str](
         group,
-        header=t('opt.remote_desktop.title'),
+        header=_build_progress_header(state, step_remote_desktop, 'opt.remote_desktop.title'),
         multi=True,
         allow_skip=True,
     ).show()
@@ -1025,7 +1028,7 @@ async def step_cn_apps(state: WizardState) -> str:
 
     result = await Selection[str](
         group,
-        header=t('step.cn_apps.title'),
+        header=_build_progress_header(state, step_cn_apps, 'step.cn_apps.title'),
         multi=True,
         allow_skip=True,
     ).show()
@@ -1057,7 +1060,7 @@ async def step_username(state: WizardState) -> str:
         return None
 
     result = await Input(
-        header=t('step.user.title'),
+        header=_build_progress_header(state, step_username, 'step.user.title'),
         default_value=default if default else None,
         allow_skip=True,
         validator_callback=validate,
@@ -1080,7 +1083,7 @@ async def step_user_password(state: WizardState) -> str:
     """Enter user password."""
     while True:
         password = await get_password(
-            header=t('step.passwd.title'),
+            header=_build_progress_header(state, step_user_password, 'step.passwd.title'),
             allow_skip=True,
         )
 
@@ -1108,7 +1111,7 @@ async def step_user_password(state: WizardState) -> str:
 async def step_root_password(state: WizardState) -> str:
     """Enter root password (optional)."""
     result = await Confirmation(
-        header=t('step.root.title'),
+        header=_build_progress_header(state, step_root_password, 'step.root.title'),
         allow_skip=True,
         preset=False,
     ).show()
@@ -1130,6 +1133,62 @@ async def step_root_password(state: WizardState) -> str:
             return 'next'
         case _:
             return 'back'
+
+
+# =============================================================================
+# Category definitions for progress display
+# =============================================================================
+
+# Each tuple: (i18n_key, [step_functions])
+WIZARD_CATEGORIES: list[tuple[str, list[Callable]]] = [
+    ('category.localization', [step_language, step_input_method, step_kmscon_font, step_fonts, step_region]),
+    ('category.system', [step_proxy_tools, step_disk, step_hibernation, step_network, step_hostname]),
+    ('category.hardware', [step_repos, step_gpu_drivers, step_audio_firmware]),
+    ('category.desktop', [step_desktop_env, step_dms_compositor, step_dms_terminal, step_polkit_agent, step_keyring, step_file_manager]),
+    ('category.software', [step_device_purpose, step_dev_tools, step_gaming, step_browser, step_remote_desktop, step_cn_apps]),
+    ('category.account', [step_username, step_user_password, step_root_password]),
+]
+
+# Steps that auto-skip under certain conditions
+# Key: step function, Value: callable(state) -> bool (True = skip)
+_STEP_SKIP_CONDITIONS: dict[Callable, Callable[[WizardState], bool]] = {
+    step_input_method: lambda s: s.locale == 'en_US.UTF-8',
+    step_kmscon_font: lambda s: not needs_kmscon(s.locale),
+    step_proxy_tools: lambda s: s.country != 'CN',
+    step_dms_compositor: lambda s: s.desktop_env not in ('dms', 'dms_manual'),
+    step_dms_terminal: lambda s: s.desktop_env not in ('dms', 'dms_manual'),
+    step_polkit_agent: lambda s: s.desktop_env == 'minimal',
+    step_keyring: lambda s: s.desktop_env == 'minimal',
+    step_file_manager: lambda s: s.desktop_env == 'minimal',
+    step_dev_tools: lambda s: 'development' not in s.device_purposes,
+    step_gaming: lambda s: 'gaming' not in s.device_purposes or not s.multilib,
+    step_cn_apps: lambda s: s.country != 'CN',
+}
+
+
+def _is_step_visible(step_fn: Callable, state: WizardState) -> bool:
+    """Check if a step will be shown (not auto-skipped)."""
+    skip = _STEP_SKIP_CONDITIONS.get(step_fn)
+    return skip is None or not skip(state)
+
+
+def _build_progress_header(state: WizardState, step_fn: Callable, title_key: str) -> str:
+    """Build a two-line header with progress info."""
+    cat_total = len(WIZARD_CATEGORIES)
+    for cat_idx, (cat_key, cat_steps) in enumerate(WIZARD_CATEGORIES):
+        if step_fn not in cat_steps:
+            continue
+        # Count visible steps in this category
+        visible_steps = [s for s in cat_steps if _is_step_visible(s, state)]
+        sub_total = len(visible_steps)
+        try:
+            sub_idx = visible_steps.index(step_fn) + 1
+        except ValueError:
+            sub_idx = 1
+        cat_name = t(cat_key)
+        return f'-- {cat_name} ({cat_idx + 1}/{cat_total}) -- Step {sub_idx}/{sub_total} --\n{t(title_key)}'
+    # Fallback: no category found
+    return t(title_key)
 
 
 # =============================================================================

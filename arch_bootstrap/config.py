@@ -406,12 +406,6 @@ def apply_wizard_state_to_config(
         if rd_key in REMOTE_DESKTOP_OPTIONS and not REMOTE_DESKTOP_OPTIONS[rd_key].get('aur', False):
             all_packages.extend(REMOTE_DESKTOP_OPTIONS[rd_key]['packages'])
 
-    # Proxy tools (non-AUR only; archlinuxcn packages for CN users)
-    if state.proxy_tool and state.proxy_tool in PROXY_TOOL_OPTIONS:
-        opt = PROXY_TOOL_OPTIONS[state.proxy_tool]
-        if not opt.get('aur', False):
-            all_packages.extend(opt['packages'])
-
     # Dev environment packages (non-AUR only)
     for de_key in state.dev_environments:
         if de_key in DEV_ENVIRONMENT_OPTIONS and not DEV_ENVIRONMENT_OPTIONS[de_key].get('aur', False):

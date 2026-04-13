@@ -693,17 +693,18 @@ def perform_installation(
                 for key, value in FCITX5_ENVIRONMENT.items():
                     f.write(f'{key}={value}\n')
 
-        # Post-install: additional AUR packages (remote desktop, proxy, dev editors)
+        # Post-install: additional AUR/archlinuxcn packages (remote desktop, proxy, dev editors)
         aur_packages: list[str] = []
 
         for rd_key in state.remote_desktop:
             if rd_key in REMOTE_DESKTOP_OPTIONS and REMOTE_DESKTOP_OPTIONS[rd_key].get('aur', False):
                 aur_packages.extend(REMOTE_DESKTOP_OPTIONS[rd_key]['packages'])
 
+        # Proxy tools are installed here (both AUR and archlinuxcn) since
+        # archlinuxcn repo and paru are already configured at this point.
         if state.proxy_tool and state.proxy_tool in PROXY_TOOL_OPTIONS:
             opt = PROXY_TOOL_OPTIONS[state.proxy_tool]
-            if opt.get('aur', False):
-                aur_packages.extend(opt['packages'])
+            aur_packages.extend(opt['packages'])
 
         for de_key in state.dev_editors:
             if de_key in DEV_EDITOR_OPTIONS and DEV_EDITOR_OPTIONS[de_key].get('aur', False):

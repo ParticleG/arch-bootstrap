@@ -182,7 +182,7 @@ def _install_paru(
         # archlinuxcn repo should be configured — install via pacman
         result = run_with_retry(
             ['arch-chroot', str(chroot_dir),
-             'pacman', '-S', '--noconfirm', '--needed', 'paru'],
+             'env', 'LANG=C.UTF-8', 'pacman', '-S', '--noconfirm', '--needed', 'paru'],
             description=t('paru.installing'),
             check=False,
         )
@@ -241,7 +241,7 @@ def _setup_archlinuxcn(chroot_dir: Path) -> None:
     _info('Installing archlinuxcn-keyring...')
     result = run_with_retry(
         ['arch-chroot', str(chroot_dir),
-         'pacman', '-Syu', '--noconfirm', '--needed',
+         'env', 'LANG=C.UTF-8', 'pacman', '-Syu', '--noconfirm', '--needed',
          'archlinuxcn-keyring'],
         description='archlinuxcn-keyring',
         check=False,
@@ -565,7 +565,7 @@ def perform_installation(
         # Post-install: clipboard Wayland AUR packages
         if has_paru and desktop_env != 'minimal' and username:
             _info(t('post.clipboard'))
-            aur_cmd = f"paru -S --noconfirm --needed --skipreview {' '.join(CLIPBOARD_WAYLAND_AUR_PACKAGES)}"
+            aur_cmd = f"LANG=C.UTF-8 paru -S --noconfirm --needed --skipreview {' '.join(CLIPBOARD_WAYLAND_AUR_PACKAGES)}"
             run_with_retry(
                 ['arch-chroot', str(chroot_dir), 'runuser', '-l', username, '-c', aur_cmd],
                 max_retries=3, retry_delay=5,
@@ -613,7 +613,7 @@ def perform_installation(
             # zsh-autosuggestions (pacman)
             run_with_retry(
                 ['arch-chroot', str(chroot_dir),
-                 'pacman', '-S', '--noconfirm', '--needed', 'zsh-autosuggestions'],
+                 'env', 'LANG=C.UTF-8', 'pacman', '-S', '--noconfirm', '--needed', 'zsh-autosuggestions'],
                 max_retries=3, retry_delay=5,
                 description='zsh-autosuggestions',
             )
@@ -752,7 +752,7 @@ def perform_installation(
                     aur_packages.extend(app['packages'])
 
         if has_paru and aur_packages and username:
-            aur_cmd = f"paru -S --noconfirm --needed --skipreview {' '.join(aur_packages)}"
+            aur_cmd = f"LANG=C.UTF-8 paru -S --noconfirm --needed --skipreview {' '.join(aur_packages)}"
             run_with_retry(
                 ['arch-chroot', str(chroot_dir), 'runuser', '-l', username, '-c', aur_cmd],
                 max_retries=3, retry_delay=5,

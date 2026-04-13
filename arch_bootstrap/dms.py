@@ -192,7 +192,7 @@ def _install_dms_extras(chroot_dir: Path) -> None:
 
     result = run_with_retry(
         ['arch-chroot', str(chroot_dir),
-         'pacman', '-S', '--noconfirm', '--needed', *_DMS_EXTRA_PACKAGES],
+         'env', 'LANG=C.UTF-8', 'pacman', '-S', '--noconfirm', '--needed', *_DMS_EXTRA_PACKAGES],
         description='DMS extra packages',
         check=False,
     )

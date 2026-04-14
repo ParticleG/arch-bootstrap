@@ -6,6 +6,8 @@ import shutil
 import subprocess
 import textwrap
 import time
+from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 
 from archinstall.lib.applications.application_handler import ApplicationHandler
@@ -43,10 +45,114 @@ from .constants import (
     VM_OPTIONS,
 )
 from .detection import calculate_kmscon_font_size, needs_kmscon
-from .i18n import t
+from .i18n import get_lang, t
 from .log import copy_log_to_target
 from .mirrors import format_cn_mirrorlist
 from .utils import get_clone_url, install_github_proxy_dl, resolve_github_proxy, run_with_retry
+
+
+# =============================================================================
+# Installation tracker
+# =============================================================================
+
+class StepStatus(Enum):
+    SUCCESS = 'success'
+    FAILED = 'failed'
+    SKIPPED = 'skipped'
+
+
+@dataclass
+class StepResult:
+    name: str          # i18n key
+    status: StepStatus
+    reason: str = ''   # failure/skip reason
+
+
+@dataclass
+class InstallationTracker:
+    steps: list[StepResult] = field(default_factory=list)
+
+    def record(self, name: str, status: StepStatus, reason: str = '') -> None:
+        self.steps.append(StepResult(name, status, reason))
+
+    @property
+    def has_failures(self) -> bool:
+        return any(s.status == StepStatus.FAILED for s in self.steps)
+
+
+def _print_summary(tracker: InstallationTracker) -> None:
+    """Print a bordered installation summary with step statuses."""
+    # ANSI color codes
+    GREEN = '\033[32m'
+    RED = '\033[31m'
+    YELLOW = '\033[33m'
+    BOLD = '\033[1m'
+    RESET = '\033[0m'
+
+    # Translate step names and compute column width
+    translated_steps: list[tuple[str, StepResult]] = [
+        (t(step.name), step) for step in tracker.steps
+    ]
+    max_name_len = max((len(name) for name, _ in translated_steps), default=20)
+    # Ensure minimum width for title and totals line
+    title = t('summary.title')
+    log_label = t('summary.log_path')
+    log_path = '/var/log/arch-bootstrap/install.log'
+    log_line_len = len(log_label) + 2 + len(log_path)  # "label: path"
+    min_content_width = max(len(title), log_line_len, max_name_len + 6)
+    box_width = min_content_width + 4  # 2 for "║ " + 2 for " ║"
+
+    def pad(text: str, width: int) -> str:
+        """Pad text to width accounting for ANSI escape sequences."""
+        # Strip ANSI codes to get visible length
+        import re
+        visible = re.sub(r'\033\[[0-9;]*m', '', text)
+        return text + ' ' * (width - len(visible))
+
+    content_width = box_width - 4  # inner content width
+
+    print()
+    print(f'╔{"═" * (box_width - 2)}╗')
+    print(f'║ {BOLD}{pad(title, content_width)}{RESET} ║')
+    print(f'╠{"═" * (box_width - 2)}╣')
+
+    for name, step in translated_steps:
+        if step.status == StepStatus.SUCCESS:
+            indicator = f'{GREEN}✓{RESET}'
+        elif step.status == StepStatus.FAILED:
+            indicator = f'{RED}✗{RESET}'
+        else:
+            indicator = f'{YELLOW}-{RESET}'
+
+        line = f'{indicator} {name}'
+        print(f'║ {pad(line, content_width)} ║')
+
+        if step.status == StepStatus.FAILED and step.reason:
+            reason_line = f'  {RED}→ {step.reason}{RESET}'
+            print(f'║ {pad(reason_line, content_width)} ║')
+
+    print(f'╠{"═" * (box_width - 2)}╣')
+
+    # Totals
+    total = len(tracker.steps)
+    succeeded = sum(1 for s in tracker.steps if s.status == StepStatus.SUCCESS)
+    failed = sum(1 for s in tracker.steps if s.status == StepStatus.FAILED)
+    skipped = sum(1 for s in tracker.steps if s.status == StepStatus.SKIPPED)
+
+    totals_line = (
+        f'{t("summary.total")}: {total} | '
+        f'{GREEN}✓{RESET} {succeeded} | '
+        f'{RED}✗{RESET} {failed} | '
+        f'{YELLOW}-{RESET} {skipped}'
+    )
+    print(f'║ {pad(totals_line, content_width)} ║')
+
+    # Log file path
+    log_line = f'{log_label}: {log_path}'
+    print(f'║ {pad(log_line, content_width)} ║')
+
+    print(f'╚{"═" * (box_width - 2)}╝')
+    print()
 
 
 # =============================================================================
@@ -698,6 +804,7 @@ def perform_installation(
     browsers = state.browsers
 
     start_time = time.monotonic()
+    tracker = InstallationTracker()
     _info('Starting installation...')
 
     auth_handler = AuthenticationHandler()
@@ -755,6 +862,9 @@ def perform_installation(
 
         if config.network_config:
             install_network_config(config.network_config, installation, config.profile_config)
+            tracker.record('summary.step.network', StepStatus.SUCCESS)
+        else:
+            tracker.record('summary.step.network', StepStatus.SKIPPED)
 
         users = None
         if config.auth_config:
@@ -762,6 +872,11 @@ def perform_installation(
                 users = config.auth_config.users
                 installation.create_users(config.auth_config.users)
                 auth_handler.setup_auth(installation, config.auth_config, config.hostname)
+                tracker.record('summary.step.user_accounts', StepStatus.SUCCESS)
+            else:
+                tracker.record('summary.step.user_accounts', StepStatus.SKIPPED)
+        else:
+            tracker.record('summary.step.user_accounts', StepStatus.SKIPPED)
 
         # Force English XDG user directories regardless of locale.
         # This runs xdg-user-dirs-update with LC_ALL=C so directories
@@ -825,6 +940,8 @@ def perform_installation(
 
         _debug(f'Disk states after installing:\n{disk_layouts()}')
 
+    tracker.record('summary.step.base_system', StepStatus.SUCCESS)
+
     # Post-install: write keyboard layout to vconsole.conf
     chroot_dir = mountpoint
     if not (chroot_dir / 'etc').exists():
@@ -832,6 +949,7 @@ def perform_installation(
 
     vconsole = chroot_dir / 'etc' / 'vconsole.conf'
     vconsole.write_text('KEYMAP=us\n')
+    tracker.record('summary.step.console', StepStatus.SUCCESS)
 
     # Post-install: write kmscon configuration if needed
     locale = config.locale_config.sys_lang if config.locale_config else 'en_US.UTF-8'
@@ -854,6 +972,10 @@ def perform_installation(
             warning_file = warning_dir / 'kmscon-warning.sh'
             warning_file.write_text(get_kmscon_greetd_warning())
             _info('Written /etc/profile.d/kmscon-warning.sh (kmscon on tty1)')
+
+        tracker.record('summary.step.kmscon', StepStatus.SUCCESS)
+    else:
+        tracker.record('summary.step.kmscon', StepStatus.SKIPPED)
 
     # Post-install: write user fontconfig for CJK locales
     if needs_kmscon(locale) and kmscon_font_name and username:
@@ -888,14 +1010,23 @@ def perform_installation(
             pass  # best-effort ownership fix
 
         _info(f'Written fontconfig for user {username}')
+        tracker.record('summary.step.fonts', StepStatus.SUCCESS)
+    else:
+        tracker.record('summary.step.fonts', StepStatus.SKIPPED)
 
     # Post-install: copy WiFi connections from live ISO
     _copy_wifi_connections(chroot_dir)
+    tracker.record('summary.step.wifi', StepStatus.SUCCESS)
 
     # Post-install: CN-specific setup (git proxy + archlinuxcn repo)
     if country == 'CN':
         _setup_cn_git_proxy(chroot_dir)
+        tracker.record('summary.step.git_proxy', StepStatus.SUCCESS)
         _setup_archlinuxcn(chroot_dir)
+        tracker.record('summary.step.cn_repo', StepStatus.SUCCESS)
+    else:
+        tracker.record('summary.step.git_proxy', StepStatus.SKIPPED)
+        tracker.record('summary.step.cn_repo', StepStatus.SKIPPED)
 
     # Post-install: grant temporary NOPASSWD sudo for AUR operations
     sudoers_aur = None
@@ -912,6 +1043,12 @@ def perform_installation(
         has_paru = False
         if username:
             has_paru = _install_paru(chroot_dir, username, country)
+            if has_paru:
+                tracker.record('summary.step.aur_helper', StepStatus.SUCCESS)
+            else:
+                tracker.record('summary.step.aur_helper', StepStatus.FAILED, 'paru installation failed')
+        else:
+            tracker.record('summary.step.aur_helper', StepStatus.SKIPPED)
 
         # Post-install: clipboard Wayland AUR packages
         if has_paru and desktop_env != 'minimal' and username:
@@ -922,6 +1059,9 @@ def perform_installation(
                 max_retries=3, retry_delay=5,
                 description='clipboard AUR packages',
             )
+            tracker.record('summary.step.clipboard', StepStatus.SUCCESS)
+        else:
+            tracker.record('summary.step.clipboard', StepStatus.SKIPPED)
 
         # Post-install: set default shell to zsh and install oh-my-zsh
         if username:
@@ -939,6 +1079,7 @@ def perform_installation(
             else:
                 omz_cmd = f'sh -c "$(curl -fsSL {OMZ_INSTALL_URL})" "" --unattended --skip-chsh'
 
+            _zsh_ok = True
             try:
                 result = run_with_retry(
                     ['arch-chroot', str(chroot_dir),
@@ -951,8 +1092,10 @@ def perform_installation(
                     _info(f'Installed oh-my-zsh for user {username}')
                 else:
                     _info(f'oh-my-zsh installation failed (exit {result.returncode}), skipping')
+                    _zsh_ok = False
             except subprocess.TimeoutExpired:
                 _debug('oh-my-zsh installation timed out after 120s, skipping')
+                _zsh_ok = False
 
         # Post-install: zsh plugins
         is_cn = country == 'CN'
@@ -978,6 +1121,13 @@ def perform_installation(
                 description='fast-syntax-highlighting plugin',
             )
 
+            if _zsh_ok:
+                tracker.record('summary.step.zsh', StepStatus.SUCCESS)
+            else:
+                tracker.record('summary.step.zsh', StepStatus.FAILED, 'oh-my-zsh installation failed or timed out')
+        else:
+            tracker.record('summary.step.zsh', StepStatus.SKIPPED)
+
         # Post-install: DMS desktop environment
         if desktop_env == 'dms' and username:
             from .dms import install_dms
@@ -990,9 +1140,10 @@ def perform_installation(
                 country=country,
                 gpu_vendors=gpu_vendors,
             )
+            tracker.record('summary.step.desktop', StepStatus.SUCCESS)
 
         # Post-install: DMS Manual desktop environment
-        if desktop_env == 'dms_manual' and username:
+        elif desktop_env == 'dms_manual' and username:
             from .dms_manual import install_dms_manual
             _info('Setting up DMS Manual desktop environment...')
             install_dms_manual(
@@ -1003,9 +1154,10 @@ def perform_installation(
                 country=country,
                 gpu_vendors=gpu_vendors,
             )
+            tracker.record('summary.step.desktop', StepStatus.SUCCESS)
 
         # Post-install: Exo desktop environment
-        if desktop_env == 'exo' and username:
+        elif desktop_env == 'exo' and username:
             from .exo import install_exo
             _info('Setting up Exo desktop environment...')
             install_exo(
@@ -1014,10 +1166,18 @@ def perform_installation(
                 country=country,
                 gpu_vendors=gpu_vendors,
             )
+            tracker.record('summary.step.desktop', StepStatus.SUCCESS)
+        else:
+            tracker.record('summary.step.desktop', StepStatus.SKIPPED)
 
         # Post-install: AUR browsers (requires paru)
         if has_paru and browsers:
             _install_aur_browsers(chroot_dir, username, browsers)
+            tracker.record('summary.step.browser', StepStatus.SUCCESS)
+        elif browsers:
+            tracker.record('summary.step.browser', StepStatus.FAILED, 'paru not available')
+        else:
+            tracker.record('summary.step.browser', StepStatus.SKIPPED)
 
         # Post-install: Electron / VS Code Wayland flags
         if desktop_env != 'minimal' and username:
@@ -1050,6 +1210,9 @@ def perform_installation(
                 max_retries=1, retry_delay=0,
                 description='fix electron flags ownership',
             )
+            tracker.record('summary.step.electron_flags', StepStatus.SUCCESS)
+        else:
+            tracker.record('summary.step.electron_flags', StepStatus.SKIPPED)
 
         # Post-install: fcitx5 input method environment variables
         if state.input_methods:
@@ -1077,6 +1240,10 @@ def perform_installation(
                      'runuser', '-l', username, '-c', gtk_im_cmd],
                     check=False,
                 )
+
+            tracker.record('summary.step.input_method', StepStatus.SUCCESS)
+        else:
+            tracker.record('summary.step.input_method', StepStatus.SKIPPED)
 
         # Post-install: additional AUR/archlinuxcn packages (remote desktop, proxy, dev editors)
         aur_packages: list[str] = []
@@ -1116,35 +1283,47 @@ def perform_installation(
                 max_retries=3, retry_delay=5,
                 description='additional AUR packages',
             )
+            tracker.record('summary.step.aur_packages', StepStatus.SUCCESS)
+        elif aur_packages:
+            tracker.record('summary.step.aur_packages', StepStatus.FAILED, 'paru not available')
+        else:
+            tracker.record('summary.step.aur_packages', StepStatus.SKIPPED)
 
         # Post-install: enable services for dev tools (docker, etc.)
         if state.dev_environments:
             _info(t('post.dev_services'))
-        for de_key in state.dev_environments:
-            if de_key in DEV_ENVIRONMENT_OPTIONS:
-                for service in DEV_ENVIRONMENT_OPTIONS[de_key].get('services', []):
-                    run_with_retry(
-                        ['arch-chroot', str(chroot_dir),
-                         'systemctl', 'enable', service],
-                        max_retries=1, retry_delay=0,
-                        description=f'enable {service}',
-                    )
+            for de_key in state.dev_environments:
+                if de_key in DEV_ENVIRONMENT_OPTIONS:
+                    for service in DEV_ENVIRONMENT_OPTIONS[de_key].get('services', []):
+                        run_with_retry(
+                            ['arch-chroot', str(chroot_dir),
+                             'systemctl', 'enable', service],
+                            max_retries=1, retry_delay=0,
+                            description=f'enable {service}',
+                        )
+            tracker.record('summary.step.dev_services', StepStatus.SUCCESS)
+        else:
+            tracker.record('summary.step.dev_services', StepStatus.SKIPPED)
 
         # Post-install: VM services
-        for vm_key in state.vm_options:
-            if vm_key in VM_OPTIONS:
-                for service in VM_OPTIONS[vm_key].get('services', []):
-                    run_with_retry(
-                        ['arch-chroot', str(chroot_dir), 'systemctl', 'enable', service],
-                        description=f'enable {service}',
-                    )
-
-        # Post-install: VM user groups
         if state.vm_options:
+            for vm_key in state.vm_options:
+                if vm_key in VM_OPTIONS:
+                    for service in VM_OPTIONS[vm_key].get('services', []):
+                        run_with_retry(
+                            ['arch-chroot', str(chroot_dir), 'systemctl', 'enable', service],
+                            description=f'enable {service}',
+                        )
+
+            # Post-install: VM user groups
             run_with_retry(
                 ['arch-chroot', str(chroot_dir), 'usermod', '-a', '-G', 'libvirt,kvm', username],
                 description='add user to libvirt and kvm groups',
             )
+
+            tracker.record('summary.step.virtual_machine', StepStatus.SUCCESS)
+        else:
+            tracker.record('summary.step.virtual_machine', StepStatus.SKIPPED)
 
         # Post-install: KVM network setup first-boot service
         if 'kvm_base' in state.vm_options:
@@ -1278,6 +1457,8 @@ cgroup_device_acl = [
                 description='enable p11-kit-server.socket',
             )
 
+        tracker.record('summary.step.snapper', StepStatus.SUCCESS)
+
         # Post-install: reflector setup for non-CN users
         if country != 'CN':
             _info(t('post.reflector'))
@@ -1290,6 +1471,9 @@ cgroup_device_acl = [
                 max_retries=1, retry_delay=0,
                 description='enable reflector.timer',
             )
+            tracker.record('summary.step.reflector', StepStatus.SUCCESS)
+        else:
+            tracker.record('summary.step.reflector', StepStatus.SKIPPED)
 
         # Post-install: hibernation setup (btrfs swapfile + resume parameters)
         if state and state.hibernation:
@@ -1391,6 +1575,9 @@ cgroup_device_acl = [
                 max_retries=1, retry_delay=0,
                 description='regenerate initramfs for hibernation',
             )
+            tracker.record('summary.step.hibernation', StepStatus.SUCCESS)
+        else:
+            tracker.record('summary.step.hibernation', StepStatus.SKIPPED)
 
     finally:
         # Post-install: remove temporary NOPASSWD sudo rule
@@ -1400,6 +1587,8 @@ cgroup_device_acl = [
 
     elapsed_time = time.monotonic() - start_time
     _info(f'Installation completed in {elapsed_time:.0f} seconds.')
+
+    _print_summary(tracker)
 
     # Copy the installation log to the new system
     copy_log_to_target(chroot_dir)

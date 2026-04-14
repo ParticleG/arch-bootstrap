@@ -763,6 +763,26 @@ def perform_installation(
                 installation.create_users(config.auth_config.users)
                 auth_handler.setup_auth(installation, config.auth_config, config.hostname)
 
+        # Force English XDG user directories regardless of locale.
+        # This runs xdg-user-dirs-update with LC_ALL=C so directories
+        # like Downloads, Documents, Desktop stay in English, then
+        # disables automatic updates to prevent locale changes from
+        # renaming them on subsequent logins.
+        if users:
+            _info(t('post.xdg_user_dirs'))
+            for user in users:
+                xdg_cmd = (
+                    'LC_ALL=C xdg-user-dirs-update --force'
+                    ' && mkdir -p ~/.config'
+                    ' && printf \'enabled=False\\n\' > ~/.config/user-dirs.conf'
+                )
+                subprocess.run(
+                    ['arch-chroot', str(mountpoint),
+                     'runuser', '-l', user.username, '-c', xdg_cmd],
+                    check=False,
+                )
+                _debug(f'XDG user directories set to English for {user.username}')
+
         if app_config := config.app_config:
             application_handler.install_applications(installation, app_config)
 

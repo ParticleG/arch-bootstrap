@@ -10,6 +10,7 @@ BASE_PACKAGES: list[str] = [
     'neovim',
     'git',
     'openssh',
+    'xdg-user-dirs',
     'zsh'
 ]
 

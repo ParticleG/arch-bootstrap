@@ -245,6 +245,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'post.hibernation': 'Setting up hibernation...',
         'post.hibernation_hook_warning': 'Warning: Could not add resume hook to mkinitcpio.conf. You may need to add it manually.',
         'post.hibernation_cmdline_warning': 'Warning: /etc/kernel/cmdline not found. Resume parameters not added.',
+        # -- xdg-user-dirs --
+        'post.xdg_user_dirs': 'Forcing English XDG user directories ...',
         # -- Logging --
         'log.copied': 'Installation log copied to new system',
         # -- Dev tool labels --
@@ -490,6 +492,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'post.hibernation': '正在配置休眠...',
         'post.hibernation_hook_warning': '警告：无法将 resume hook 添加到 mkinitcpio.conf，可能需要手动添加。',
         'post.hibernation_cmdline_warning': '警告：未找到 /etc/kernel/cmdline，未添加 resume 参数。',
+        # -- xdg-user-dirs --
+        'post.xdg_user_dirs': '正在强制设置英文 XDG 用户目录 ...',
         # -- 日志 --
         'log.copied': '安装日志已复制到新系统',
         # -- 开发工具标签 --
@@ -735,6 +739,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'post.hibernation': 'ハイバネーションを設定中...',
         'post.hibernation_hook_warning': '警告：mkinitcpio.conf に resume フックを追加できませんでした。手動で追加が必要な場合があります。',
         'post.hibernation_cmdline_warning': '警告：/etc/kernel/cmdline が見つかりません。resume パラメータは追加されませんでした。',
+        # -- xdg-user-dirs --
+        'post.xdg_user_dirs': '英語の XDG ユーザーディレクトリを強制設定中 ...',
         # -- ログ --
         'log.copied': 'インストールログを新システムにコピーしました',
         # -- 開発ツールラベル --

@@ -885,15 +885,48 @@ def perform_installation(
         # renaming them on subsequent logins.
         if users:
             _info(t('post.xdg_user_dirs'))
-            for user in users:
-                xdg_cmd = (
-                    'LC_ALL=C xdg-user-dirs-update --force'
-                    ' && mkdir -p ~/.config'
-                    ' && printf \'enabled=False\\n\' > ~/.config/user-dirs.conf'
+            # The English XDG directory names and their XDG keys.
+            _xdg_dirs = {
+                'DESKTOP': 'Desktop',
+                'DOWNLOAD': 'Downloads',
+                'TEMPLATES': 'Templates',
+                'PUBLICSHARE': 'Public',
+                'DOCUMENTS': 'Documents',
+                'MUSIC': 'Music',
+                'PICTURES': 'Pictures',
+                'VIDEOS': 'Videos',
+            }
+            _user_dirs_content = (
+                '# This file is written by xdg-user-dirs-update\n'
+                + ''.join(
+                    f'XDG_{k}_DIR="$HOME/{v}"\n' for k, v in _xdg_dirs.items()
                 )
+            )
+            for user in users:
+                home = mountpoint / 'home' / user.username
+                config_dir = home / '.config'
+                config_dir.mkdir(parents=True, exist_ok=True)
+
+                # 1. Write user-dirs.dirs directly — this is authoritative
+                #    and does not depend on xdg-user-dirs-update succeeding
+                #    inside the chroot.
+                (config_dir / 'user-dirs.dirs').write_text(_user_dirs_content)
+
+                # 2. Disable automatic xdg-user-dirs-update on login so a
+                #    non-English locale will not rename the directories.
+                (config_dir / 'user-dirs.conf').write_text('enabled=False\n')
+
+                # 3. Create the actual directories.
+                for dirname in _xdg_dirs.values():
+                    (home / dirname).mkdir(exist_ok=True)
+
+                # 4. Fix ownership (files were created as root).
                 subprocess.run(
                     ['arch-chroot', str(mountpoint),
-                     'runuser', '-l', user.username, '-c', xdg_cmd],
+                     'chown', '-R', f'{user.username}:{user.username}',
+                     f'/home/{user.username}/.config/user-dirs.dirs',
+                     f'/home/{user.username}/.config/user-dirs.conf',
+                     ] + [f'/home/{user.username}/{d}' for d in _xdg_dirs.values()],
                     check=False,
                 )
                 _debug(f'XDG user directories set to English for {user.username}')

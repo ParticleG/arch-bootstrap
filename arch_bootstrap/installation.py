@@ -1254,12 +1254,12 @@ def perform_installation(
                 with open(code_path, 'w') as f:
                     f.write(ELECTRON_WAYLAND_FLAGS)
                 flag_files.append(f'{home}/.config/code-flags.conf')
-            # qq-flags.conf: only when QQ is selected
+            # qq-electron-flags.conf: only when QQ is selected
             if 'linuxqq-nt-bwrap' in state.cn_apps:
-                qq_path = os.path.join(config_dir, 'qq-flags.conf')
+                qq_path = os.path.join(config_dir, 'qq-electron-flags.conf')
                 with open(qq_path, 'w') as f:
                     f.write(ELECTRON_WAYLAND_FLAGS)
-                flag_files.append(f'{home}/.config/qq-flags.conf')
+                flag_files.append(f'{home}/.config/qq-electron-flags.conf')
             # Fix ownership
             run_with_retry(
                 ['arch-chroot', str(chroot_dir),

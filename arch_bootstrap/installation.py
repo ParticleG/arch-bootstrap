@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import shlex
 import shutil
@@ -1357,6 +1358,21 @@ def perform_installation(
             tracker.record('summary.step.virtual_machine', StepStatus.SUCCESS)
         else:
             tracker.record('summary.step.virtual_machine', StepStatus.SKIPPED)
+
+        # Post-install: Docker + KVM compatibility
+        # Docker sets iptables FORWARD policy to DROP, which blocks libvirt
+        # NAT traffic (virbr0). The ip-forward-no-drop option (Docker 28.0+)
+        # prevents this, allowing KVM VMs to access the network.
+        if 'docker' in state.dev_environments and 'kvm_base' in state.vm_options:
+            docker_conf_dir = chroot_dir / 'etc' / 'docker'
+            docker_conf_dir.mkdir(parents=True, exist_ok=True)
+            daemon_json = docker_conf_dir / 'daemon.json'
+            if daemon_json.exists():
+                conf = json.loads(daemon_json.read_text())
+            else:
+                conf = {}
+            conf['ip-forward-no-drop'] = True
+            daemon_json.write_text(json.dumps(conf, indent=4) + '\n')
 
         # Post-install: KVM network setup first-boot service
         if 'kvm_base' in state.vm_options:

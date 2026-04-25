@@ -294,7 +294,7 @@ DMS_MANUAL_SYSTEM_PACKAGES: list[str] = [
     'quickshell', 'greetd', 'xdg-desktop-portal-gtk',
     'accountsservice', 'matugen',
     'dgop', 'cava', 'cups-pk-helper', 'kimageformats',
-    'libavif', 'libheif', 'libjxl', 'qt6ct',
+    'libavif', 'libheif', 'libjxl', 'qt6ct', 'wtype',
 ]
 
 DMS_MANUAL_COMPOSITOR_PACKAGES: dict[str, list[str]] = {
@@ -342,8 +342,9 @@ TERMINAL_ENHANCEMENT_PACKAGES: list[str] = ['fastfetch', 'fzf']
 INPUT_METHOD_PACKAGES: dict[str, dict] = {
     'fcitx5_zh': {
         'label': 'Fcitx5 (Chinese)',
-        'packages': ['fcitx5', 'fcitx5-chinese-addons', 'fcitx5-configtool'],
+        'packages': ['fcitx5', 'fcitx5-chinese-addons', 'fcitx5-configtool', 'fcitx5-pinyin-zhwiki'],
         'aur': False,
+        'aur_extras': ['fcitx5-pinyin-sougou-dict-git', 'fcitx5-pinyin-moegirl'],
     },
     'fcitx5_ja_mozc': {
         'label': 'Fcitx5 + Mozc (Japanese, recommended)',

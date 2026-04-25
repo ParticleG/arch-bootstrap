@@ -177,6 +177,7 @@ _DMS_EXTRA_PACKAGES = [
     'libjxl',           # JPEG XL support for kimageformats
     'cava',             # audio visualizer
     'qt6ct',            # Qt6 platform theme configuration
+    'wtype',            # clipboard paste text support
 ]
 
 

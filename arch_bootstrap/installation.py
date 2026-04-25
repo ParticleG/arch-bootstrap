@@ -40,6 +40,7 @@ from .constants import (
     DEV_ENVIRONMENT_OPTIONS,
     ELECTRON_WAYLAND_FLAGS,
     FCITX5_ENVIRONMENT,
+    INPUT_METHOD_PACKAGES,
     OMZ_INSTALL_URL,
     OMZ_REMOTE_GITHUB,
     KEYRING_OPTIONS,
@@ -1330,6 +1331,13 @@ def perform_installation(
         for vm_key in state.vm_options:
             if vm_key in VM_OPTIONS:
                 for pkg in VM_OPTIONS[vm_key].get('aur_packages', []):
+                    if pkg not in aur_packages:
+                        aur_packages.append(pkg)
+
+        # Input method AUR extras (e.g. Sougou/Moegirl dictionaries for Chinese pinyin)
+        for im_key in state.input_methods:
+            if im_key in INPUT_METHOD_PACKAGES:
+                for pkg in INPUT_METHOD_PACKAGES[im_key].get('aur_extras', []):
                     if pkg not in aur_packages:
                         aur_packages.append(pkg)
 

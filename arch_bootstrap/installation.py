@@ -42,6 +42,7 @@ from .constants import (
     FCITX5_ENVIRONMENT,
     OMZ_INSTALL_URL,
     OMZ_REMOTE_GITHUB,
+    KEYRING_OPTIONS,
     PROXY_TOOL_OPTIONS,
     REFLECTOR_CONF,
     REMOTE_DESKTOP_OPTIONS,
@@ -1527,6 +1528,20 @@ cgroup_device_acl = [
                 max_retries=1, retry_delay=0,
                 description='enable p11-kit-server.socket',
             )
+
+        # Post-install: configure PAM for keyring auto-unlock at login
+        if state and state.keyring and state.keyring in KEYRING_OPTIONS:
+            keyring_cfg = KEYRING_OPTIONS[state.keyring]
+            pam_auth = keyring_cfg['pam_auth']
+            pam_session = keyring_cfg['pam_session']
+            for pam_file in ('greetd', 'login'):
+                pam_path = chroot_dir / 'etc' / 'pam.d' / pam_file
+                if pam_path.exists():
+                    content = pam_path.read_text()
+                    if keyring_cfg['pam_module'] not in content:
+                        _info(f'Configuring PAM ({pam_file}) for {state.keyring} keyring...')
+                        content = content.rstrip('\n') + '\n' + pam_auth + '\n' + pam_session + '\n'
+                        pam_path.write_text(content)
 
         tracker.record('summary.step.snapper', StepStatus.SUCCESS)
 

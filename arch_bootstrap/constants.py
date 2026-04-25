@@ -447,10 +447,16 @@ KEYRING_OPTIONS: dict[str, dict] = {
     'gnome': {
         'label': 'GNOME Keyring (recommended)',
         'packages': ['gnome-keyring'],
+        'pam_module': 'pam_gnome_keyring.so',
+        'pam_auth': 'auth       optional     pam_gnome_keyring.so',
+        'pam_session': 'session    optional     pam_gnome_keyring.so auto_start',
     },
     'kwallet': {
         'label': 'KWallet (KDE)',
-        'packages': ['kwallet'],
+        'packages': ['kwallet', 'kwallet-pam'],
+        'pam_module': 'pam_kwallet5.so',
+        'pam_auth': 'auth       optional     pam_kwallet5.so',
+        'pam_session': 'session    optional     pam_kwallet5.so auto_start',
     },
 }
 

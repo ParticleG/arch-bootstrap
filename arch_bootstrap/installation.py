@@ -17,6 +17,8 @@ from archinstall.lib.authentication.authentication_handler import Authentication
 from archinstall.lib.disk.filesystem import FilesystemHandler
 from archinstall.lib.disk.utils import disk_layouts
 from archinstall.lib.general.general_menu import PostInstallationAction, select_post_installation
+from archinstall.lib.menu.helpers import Confirmation
+from archinstall.lib.tui.types import MenuItem, ResultType
 from archinstall.lib.global_menu import GlobalMenu
 from archinstall.lib.installer import Installer, run_custom_user_commands
 from archinstall.lib.mirror.mirror_handler import MirrorListHandler
@@ -414,6 +416,26 @@ def _setup_cn_git_proxy(chroot_dir: Path) -> None:
 
     # Also install the download agent for makepkg's DLAGENTS (non-git sources)
     install_github_proxy_dl(chroot_dir, proxy)
+
+
+def _remove_cn_git_proxy(chroot_dir: Path) -> None:
+    """Remove GitHub proxy URL rewrite from the new system's git configs.
+
+    This undoes what :func:`_setup_cn_git_proxy` wrote, so that git
+    operations go directly to GitHub (useful when a local proxy/VPN
+    like FlClash is available).
+    """
+    removed = False
+    for path in (
+        chroot_dir / 'etc' / 'gitconfig',
+        chroot_dir / 'etc' / 'makepkg.d' / 'gitconfig',
+    ):
+        if path.exists():
+            path.unlink()
+            _debug(f'Removed git proxy config: {path}')
+            removed = True
+    if removed:
+        _info(t('post.git_proxy_removed'))
 
 
 # =============================================================================
@@ -1627,6 +1649,28 @@ cgroup_device_acl = [
             tracker.record('summary.step.hibernation', StepStatus.SUCCESS)
         else:
             tracker.record('summary.step.hibernation', StepStatus.SKIPPED)
+
+        # Post-install: optionally remove CN git proxy (ghfast.top)
+        # If proxy was set up AND user installed a clash-like proxy tool,
+        # they likely don't need the GitHub mirror anymore.
+        if country == 'CN':
+            has_proxy_tool = bool(state and state.proxy_tool
+                                 and state.proxy_tool in PROXY_TOOL_OPTIONS)
+            result = tui.run(lambda: Confirmation(
+                header=t('post.remove_git_proxy_prompt'),
+                allow_skip=False,
+                preset=has_proxy_tool,
+            ).show())
+
+            should_remove = (result.type_ == ResultType.Selection
+                             and result.item() == MenuItem.yes())
+            if should_remove:
+                _remove_cn_git_proxy(chroot_dir)
+                tracker.record('summary.step.remove_git_proxy', StepStatus.SUCCESS)
+            else:
+                tracker.record('summary.step.remove_git_proxy', StepStatus.SKIPPED)
+        else:
+            tracker.record('summary.step.remove_git_proxy', StepStatus.SKIPPED)
 
     finally:
         # Post-install: remove temporary NOPASSWD sudo rule

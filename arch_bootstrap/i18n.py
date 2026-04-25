@@ -245,6 +245,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'post.hibernation': 'Setting up hibernation...',
         'post.hibernation_hook_warning': 'Warning: Could not add resume hook to mkinitcpio.conf. You may need to add it manually.',
         'post.hibernation_cmdline_warning': 'Warning: /etc/kernel/cmdline not found. Resume parameters not added.',
+        'post.remove_git_proxy_prompt': 'Remove GitHub proxy (ghfast.top) from git config?\n'
+                                        'Recommended if you have a local proxy tool (e.g. FlClash).',
+        'post.git_proxy_removed': 'CN: removed GitHub proxy from git config',
         # -- xdg-user-dirs --
         'post.xdg_user_dirs': 'Forcing English XDG user directories ...',
         # -- Logging --
@@ -277,6 +280,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'summary.step.snapper': 'Snapper + Keyring',
         'summary.step.reflector': 'Mirror configuration',
         'summary.step.hibernation': 'Hibernation',
+        'summary.step.remove_git_proxy': 'Remove GitHub proxy',
     },
     'zh': {
         # -- Category names (progress display) --
@@ -518,6 +522,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'post.hibernation': '正在配置休眠...',
         'post.hibernation_hook_warning': '警告：无法将 resume hook 添加到 mkinitcpio.conf，可能需要手动添加。',
         'post.hibernation_cmdline_warning': '警告：未找到 /etc/kernel/cmdline，未添加 resume 参数。',
+        'post.remove_git_proxy_prompt': '是否移除 git 配置中的 GitHub 代理（ghfast.top）？\n'
+                                        '如果已安装本地代理工具（如 FlClash），建议移除。',
+        'post.git_proxy_removed': 'CN：已移除 git 配置中的 GitHub 代理',
         # -- xdg-user-dirs --
         'post.xdg_user_dirs': '正在强制设置英文 XDG 用户目录 ...',
         # -- 日志 --
@@ -550,6 +557,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'summary.step.snapper': 'Snapper + 密钥环',
         'summary.step.reflector': '镜像源配置',
         'summary.step.hibernation': '休眠',
+        'summary.step.remove_git_proxy': '移除 GitHub 代理',
     },
     'ja': {
         # -- Category names (progress display) --
@@ -791,6 +799,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'post.hibernation': 'ハイバネーションを設定中...',
         'post.hibernation_hook_warning': '警告：mkinitcpio.conf に resume フックを追加できませんでした。手動で追加が必要な場合があります。',
         'post.hibernation_cmdline_warning': '警告：/etc/kernel/cmdline が見つかりません。resume パラメータは追加されませんでした。',
+        'post.remove_git_proxy_prompt': 'git 設定から GitHub プロキシ（ghfast.top）を削除しますか？\n'
+                                        'ローカルプロキシツール（FlClash など）がある場合は削除を推奨します。',
+        'post.git_proxy_removed': 'CN：git 設定から GitHub プロキシを削除しました',
         # -- xdg-user-dirs --
         'post.xdg_user_dirs': '英語の XDG ユーザーディレクトリを強制設定中 ...',
         # -- ログ --
@@ -823,6 +834,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'summary.step.snapper': 'Snapper + キーリング',
         'summary.step.reflector': 'ミラー設定',
         'summary.step.hibernation': 'ハイバネーション',
+        'summary.step.remove_git_proxy': 'GitHub プロキシ削除',
     },
 }
 

@@ -238,8 +238,11 @@ def _configure_dms_environment(chroot_dir: Path) -> None:
 
 
 def _configure_i2c(chroot_dir: Path, username: str) -> None:
-    """Add user to the i2c group for DDC monitor brightness control."""
+    """Add user to the i2c group and load i2c-dev module at boot for DDC monitor brightness control."""
     _info(t('dms.configuring_i2c'))
+    modules_load_dir = chroot_dir / 'etc' / 'modules-load.d'
+    modules_load_dir.mkdir(parents=True, exist_ok=True)
+    (modules_load_dir / 'i2c-dev.conf').write_text('i2c-dev\n')
     run_with_retry(
         ['arch-chroot', str(chroot_dir), 'usermod', '-a', '-G', 'i2c', username],
         description='add user to i2c group',

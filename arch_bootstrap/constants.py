@@ -210,6 +210,20 @@ KMSCON_DEFAULT_FONT_SIZE = 18
 # Common CJK font names that should be aliased to the user-selected font.
 # When these fonts are requested but not installed, fontconfig will substitute
 # the selected CJK font instead of falling back to a random glyph provider.
+# Monospace CJK variant for each font that ships one in the same package.
+# Used by generate_fontconfig() to set the monospace generic family correctly.
+# Fonts without a mono variant are omitted — monospace will not be overridden.
+FONTCONFIG_CJK_MONO: dict[str, str] = {
+    'Noto Sans CJK SC': 'Noto Sans Mono CJK SC',
+    'Noto Sans CJK JP': 'Noto Sans Mono CJK JP',
+    'Noto Sans CJK TC': 'Noto Sans Mono CJK TC',
+    'Noto Sans CJK HK': 'Noto Sans Mono CJK HK',
+    'Noto Sans CJK KR': 'Noto Sans Mono CJK KR',
+    'Sarasa Gothic SC': 'Sarasa Mono SC',
+    'Sarasa Gothic TC': 'Sarasa Mono TC',
+    'Sarasa Gothic JP': 'Sarasa Mono JP',
+}
+
 FONTCONFIG_CJK_ALIASES: dict[str, list[str]] = {
     'zh': [
         'WenQuanYi Zen Hei',
@@ -394,14 +408,17 @@ NERD_FONT_OPTIONS: dict[str, dict] = {
     'jetbrains-mono': {
         'label': 'JetBrains Mono Nerd Font (recommended)',
         'packages': ['ttf-jetbrains-mono-nerd'],
+        'family': 'JetBrainsMono Nerd Font',
     },
     'firacode': {
         'label': 'Fira Code Nerd Font',
         'packages': ['ttf-firacode-nerd'],
+        'family': 'FiraCode Nerd Font',
     },
     'hack': {
         'label': 'Hack Nerd Font',
         'packages': ['ttf-hack-nerd'],
+        'family': 'Hack Nerd Font',
     },
 }
 

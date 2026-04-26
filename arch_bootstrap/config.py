@@ -40,6 +40,7 @@ from .constants import (
     DEV_ENVIRONMENT_OPTIONS,
     FILE_MANAGER_OPTIONS,
     FONTCONFIG_CJK_ALIASES,
+    FONTCONFIG_CJK_MONO,
     GAMING_OPTIONS,
     GPU_PACKAGES,
     INPUT_METHOD_PACKAGES,
@@ -236,7 +237,7 @@ def _fontconfig_lang_override(lang: str, generic: str, font_name: str) -> str:
     )
 
 
-def generate_fontconfig(cjk_font_name: str, locale: str) -> str:
+def generate_fontconfig(cjk_font_name: str, locale: str, nerd_font_families: list[str] | None = None) -> str:
     """Generate ~/.config/fontconfig/fonts.conf for CJK locale users.
 
     Sets the selected CJK font as the preferred font for the locale's language,
@@ -249,6 +250,10 @@ def generate_fontconfig(cjk_font_name: str, locale: str) -> str:
     """
     # Determine language code for fontconfig lang matching
     lang = locale.split('_')[0]  # 'zh' or 'ja'
+
+    # Derive monospace CJK variant from explicit mapping.
+    # Fonts without a mono variant in the same package won't override monospace.
+    mono_cjk_font_name = FONTCONFIG_CJK_MONO.get(cjk_font_name)
 
     sections: list[str] = [
         '<?xml version="1.0"?>',
@@ -266,8 +271,13 @@ def generate_fontconfig(cjk_font_name: str, locale: str) -> str:
         '  <!-- CJK font defaults for serif/sans-serif/monospace -->',
         _fontconfig_lang_override(lang, 'serif', cjk_font_name),
         _fontconfig_lang_override(lang, 'sans-serif', cjk_font_name),
-        _fontconfig_lang_override(lang, 'monospace', cjk_font_name),
     ]
+
+    if nerd_font_families:
+        for nf in nerd_font_families:
+            sections.append(_fontconfig_generic_override('monospace', nf))
+    if mono_cjk_font_name:
+        sections.append(_fontconfig_lang_override(lang, 'monospace', mono_cjk_font_name))
 
     # Font alias mappings: redirect common CJK font names to the selected font
     aliases = FONTCONFIG_CJK_ALIASES.get(lang, [])

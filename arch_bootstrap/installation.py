@@ -44,6 +44,7 @@ from .constants import (
     OMZ_INSTALL_URL,
     OMZ_REMOTE_GITHUB,
     KEYRING_OPTIONS,
+    NERD_FONT_OPTIONS,
     PROXY_TOOL_OPTIONS,
     REFLECTOR_CONF,
     REMOTE_DESKTOP_OPTIONS,
@@ -1037,7 +1038,12 @@ def perform_installation(
 
     # Post-install: write user fontconfig for CJK locales
     if needs_kmscon(locale) and kmscon_font_name and username:
-        fontconfig_content = generate_fontconfig(kmscon_font_name, locale)
+        nerd_font_families = [
+            NERD_FONT_OPTIONS[k]['family']
+            for k in state.nerd_fonts
+            if k in NERD_FONT_OPTIONS
+        ]
+        fontconfig_content = generate_fontconfig(kmscon_font_name, locale, nerd_font_families)
         user_home = chroot_dir / 'home' / username
         fontconfig_dir = user_home / '.config' / 'fontconfig'
         fontconfig_dir.mkdir(parents=True, exist_ok=True)

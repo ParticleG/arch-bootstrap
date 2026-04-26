@@ -224,6 +224,19 @@ FONTCONFIG_CJK_MONO: dict[str, str] = {
     'Sarasa Gothic JP': 'Sarasa Mono JP',
 }
 
+# Common monospace font names that may not be installed on a fresh Arch system.
+# When a Nerd Font is selected, these are aliased to it so applications requesting
+# e.g. "Droid Sans Mono" or "Consolas" get the Nerd Font instead of a random fallback.
+FONTCONFIG_MONO_ALIASES: list[str] = [
+    'Droid Sans Mono',
+    'Consolas',
+    'Courier New',
+    'Courier',
+    'Menlo',
+    'Monaco',
+    'SF Mono',
+]
+
 FONTCONFIG_CJK_ALIASES: dict[str, list[str]] = {
     'zh': [
         'WenQuanYi Zen Hei',

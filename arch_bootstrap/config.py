@@ -41,6 +41,7 @@ from .constants import (
     FILE_MANAGER_OPTIONS,
     FONTCONFIG_CJK_ALIASES,
     FONTCONFIG_CJK_MONO,
+    FONTCONFIG_MONO_ALIASES,
     GAMING_OPTIONS,
     GPU_PACKAGES,
     INPUT_METHOD_PACKAGES,
@@ -286,6 +287,14 @@ def generate_fontconfig(cjk_font_name: str, locale: str, nerd_font_families: lis
         sections.append(f'  <!-- Alias common {lang.upper()} fonts to {cjk_font_name} -->')
         for alias_name in aliases:
             sections.append(_fontconfig_match_alias(alias_name, cjk_font_name))
+
+    # Alias common missing monospace fonts to the first Nerd Font
+    if nerd_font_families:
+        primary_nf = nerd_font_families[0]
+        sections.append('')
+        sections.append(f'  <!-- Alias common monospace fonts to {primary_nf} -->')
+        for alias_name in FONTCONFIG_MONO_ALIASES:
+            sections.append(_fontconfig_match_alias(alias_name, primary_nf))
 
     sections.extend([
         '',

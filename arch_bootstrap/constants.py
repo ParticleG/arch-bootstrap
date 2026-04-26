@@ -321,7 +321,7 @@ DMS_MANUAL_SYSTEM_PACKAGES: list[str] = [
     'quickshell', 'greetd', 'xdg-desktop-portal-gtk',
     'accountsservice', 'matugen',
     'dgop', 'cava', 'cups-pk-helper', 'kimageformats',
-    'libavif', 'libheif', 'libjxl', 'qt6ct', 'wtype',
+    'libavif', 'libheif', 'libjxl', 'qt6ct', 'wtype', 'i2c-tools',
 ]
 
 DMS_MANUAL_COMPOSITOR_PACKAGES: dict[str, list[str]] = {

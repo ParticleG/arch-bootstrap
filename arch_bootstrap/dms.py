@@ -178,6 +178,7 @@ _DMS_EXTRA_PACKAGES = [
     'cava',             # audio visualizer
     'qt6ct',            # Qt6 platform theme configuration
     'wtype',            # clipboard paste text support
+    'i2c-tools',       # I2C/DDC monitor brightness control
 ]
 
 
@@ -234,6 +235,16 @@ def _configure_dms_environment(chroot_dir: Path) -> None:
         _debug('Environment variables already set, skipping')
 
     _info('DMS environment variables configured')
+
+
+def _configure_i2c(chroot_dir: Path, username: str) -> None:
+    """Add user to the i2c group for DDC monitor brightness control."""
+    _info(t('dms.configuring_i2c'))
+    run_with_retry(
+        ['arch-chroot', str(chroot_dir), 'usermod', '-a', '-G', 'i2c', username],
+        description='add user to i2c group',
+    )
+    _info(t('dms.i2c_configured'))
 
 
 # ---------------------------------------------------------------------------
@@ -317,3 +328,6 @@ def install_dms(
 
     # 7. Configure environment variables for DMS
     _configure_dms_environment(chroot_dir)
+
+    # 8. Add user to i2c group for DDC monitor brightness control
+    _configure_i2c(chroot_dir, username)

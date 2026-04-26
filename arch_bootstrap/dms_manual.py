@@ -367,4 +367,12 @@ def install_dms_manual(
     # 8. Fix file ownership
     _fix_ownership(chroot_dir, username)
 
+    # 9. Add user to i2c group for DDC monitor brightness control
+    _info(t('dms.configuring_i2c'))
+    run_with_retry(
+        ['arch-chroot', str(chroot_dir), 'usermod', '-a', '-G', 'i2c', username],
+        description='add user to i2c group',
+    )
+    _info(t('dms.i2c_configured'))
+
     _info(t('dms_manual.complete'))

@@ -130,6 +130,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'dms.running_dankinstall': 'Running dankinstall (headless)...',
         'dms.complete': 'DMS desktop environment installed successfully',
         'dms.failed': 'dankinstall failed (exit %d)',
+        'dms.configuring_i2c': 'Configuring I2C/DDC for monitor brightness control...',
+        'dms.i2c_configured': 'I2C/DDC configured (user added to i2c group)',
         # -- DMS Manual --
         'step.desktop.dms_manual':       'DankMaterialShell (Manual)',
         'dms_manual.setting_up_sudoers': 'Setting up temporary sudo access...',
@@ -407,6 +409,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'dms.running_dankinstall': '正在运行 dankinstall（无头模式）...',
         'dms.complete': 'DMS 桌面环境安装完成',
         'dms.failed': 'dankinstall 执行失败（退出码 %d）',
+        'dms.configuring_i2c': '正在配置 I2C/DDC 以支持显示器亮度控制...',
+        'dms.i2c_configured': 'I2C/DDC 已配置（用户已加入 i2c 组）',
         # -- DMS 手动安装 --
         'step.desktop.dms_manual':       'DankMaterialShell（手动安装）',
         'dms_manual.setting_up_sudoers': '设置临时 sudo 权限...',
@@ -684,6 +688,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'dms.running_dankinstall': 'dankinstall を実行中（ヘッドレスモード）...',
         'dms.complete': 'DMS デスクトップ環境のインストールが完了しました',
         'dms.failed': 'dankinstall の実行に失敗しました（終了コード %d）',
+        'dms.configuring_i2c': 'I2C/DDC を設定中（モニター輝度制御用）...',
+        'dms.i2c_configured': 'I2C/DDC の設定が完了しました（ユーザーを i2c グループに追加）',
         # -- DMS 手動インストール --
         'step.desktop.dms_manual':       'DankMaterialShell（手動インストール）',
         'dms_manual.setting_up_sudoers': '一時的なsudo権限を設定中...',

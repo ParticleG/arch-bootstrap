@@ -1217,6 +1217,7 @@ def perform_installation(
                 terminal=dms_terminal,
                 country=country,
                 gpu_vendors=gpu_vendors,
+                file_managers=state.file_managers,
             )
             tracker.record('summary.step.desktop', StepStatus.SUCCESS)
 

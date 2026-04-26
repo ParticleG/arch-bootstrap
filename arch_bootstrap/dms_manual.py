@@ -13,6 +13,7 @@ from .constants import (
     DMS_MANUAL_PREREQ_PACKAGES,
     DMS_MANUAL_SYSTEM_PACKAGES,
     DMS_MANUAL_TERMINAL_PACKAGES,
+    FILE_MANAGER_OPTIONS,
 )
 from .i18n import t
 from .utils import run_with_retry
@@ -150,6 +151,49 @@ def _run_dms_setup(
         _debug(f'dms setup exited with code {result.returncode}')
 
 
+def _extra_niri_binds(terminal: str, file_managers: list[str]) -> list[str]:
+    """Return the list of extra niri key binding lines.
+
+    Mod+B is always a static browser shortcut.
+    Mod+E opens a file manager: GUI managers use xdg-open, TUI-only (yazi)
+    wraps in the chosen terminal emulator.
+    """
+    has_gui_fm = any(
+        not FILE_MANAGER_OPTIONS.get(fm, {}).get('tui', False)
+        for fm in file_managers
+    )
+    if has_gui_fm:
+        mod_e = '    Mod+E repeat=false { spawn "xdg-open" "~"; }'
+    else:
+        mod_e = f'    Mod+E repeat=false {{ spawn "{terminal}" "-e" "yazi" "~"; }}'
+    return [
+        '    Mod+B repeat=false { spawn "xdg-open" "https://"; }',
+        mod_e,
+    ]
+
+
+def _patch_niri_binds(chroot_dir: Path, username: str, compositor: str, terminal: str, file_managers: list[str]) -> None:
+    """Append custom key bindings to the DMS niri binds.kdl file."""
+    if compositor != 'niri':
+        return
+
+    binds_path = (
+        chroot_dir / 'home' / username / '.config' / 'niri' / 'dms' / 'binds.kdl'
+    )
+    if not binds_path.exists():
+        _debug(f'{binds_path} not found, skipping custom binds')
+        return
+
+    content = binds_path.read_text()
+    # Insert new bindings before the closing brace of the binds block
+    for line in _extra_niri_binds(terminal, file_managers):
+        if line.strip().split('{')[0].strip() not in content:
+            content = content.rstrip().rstrip('}').rstrip() + '\n' + line + '\n}\n'
+
+    binds_path.write_text(content)
+    _debug('Patched niri binds.kdl with custom key bindings')
+
+
 def _configure_greetd(chroot_dir: Path, compositor: str) -> None:
     """Write greetd configuration for dms-greeter."""
     _info(t('dms_manual.configuring_greetd'))
@@ -259,6 +303,7 @@ def install_dms_manual(
     terminal: str = 'ghostty',
     country: str | None = None,
     gpu_vendors: list[str] | None = None,
+    file_managers: list[str] | None = None,
 ) -> None:
     """Install DMS desktop environment manually (without dankinstall).
 
@@ -280,6 +325,7 @@ def install_dms_manual(
         gpu_vendors: List of GPU vendor identifiers (e.g. ['nvidia_open', 'amd']).
     """
     gpu_vendors = gpu_vendors or []
+    file_managers = file_managers or []
     sudoers_path = chroot_dir / 'etc' / 'sudoers.d' / _SUDOERS_FILE
 
     try:
@@ -299,6 +345,9 @@ def install_dms_manual(
 
         # 4. Run dms setup for initial configuration
         _run_dms_setup(chroot_dir, username, compositor, terminal)
+
+        # 4a. Patch niri binds with custom key bindings
+        _patch_niri_binds(chroot_dir, username, compositor, terminal, file_managers)
 
     finally:
         # Always remove temporary sudoers

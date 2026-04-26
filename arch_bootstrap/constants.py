@@ -527,21 +527,25 @@ FILE_MANAGER_OPTIONS: dict[str, dict] = {
         'label': 'Yazi (terminal)',
         'packages': ['yazi'],
         'aur': False,
+        'tui': True,
     },
     'nautilus': {
         'label': 'Nautilus (GNOME)',
         'packages': ['nautilus'],
         'aur': False,
+        'tui': False,
     },
     'dolphin': {
         'label': 'Dolphin (KDE)',
         'packages': ['dolphin'],
         'aur': False,
+        'tui': False,
     },
     'thunar': {
         'label': 'Thunar (XFCE)',
         'packages': ['thunar'],
         'aur': False,
+        'tui': False,
     },
 }
 

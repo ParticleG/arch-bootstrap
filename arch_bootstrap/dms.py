@@ -250,6 +250,61 @@ def _configure_i2c(chroot_dir: Path, username: str) -> None:
     _info(t('dms.i2c_configured'))
 
 
+def _enable_dsearch(
+    chroot_dir: Path,
+    username: str,
+    compositor: str,
+) -> None:
+    """Enable the DankSearch user service and generate the initial index.
+
+    Creates a symlink so dsearch starts with the compositor session,
+    writes a default config if none exists, and runs ``dsearch index
+    generate`` to build the initial search index.
+    """
+    _info(t('dms.dsearch_enabling'))
+
+    # Enable dsearch.service under the compositor's wants directory
+    if compositor == 'niri':
+        wants_dir_name = 'niri.service.wants'
+    elif compositor == 'hyprland':
+        wants_dir_name = 'hyprland-session.target.wants'
+    else:
+        _debug(f'Unknown compositor {compositor!r}, skipping dsearch service')
+        return
+
+    user_wants_dir = (
+        chroot_dir / 'home' / username / '.config' / 'systemd' / 'user'
+        / wants_dir_name
+    )
+    user_wants_dir.mkdir(parents=True, exist_ok=True)
+    dsearch_link = user_wants_dir / 'dsearch.service'
+    dsearch_unit = Path('/usr/lib/systemd/user/dsearch.service')
+    if not dsearch_link.exists():
+        dsearch_link.symlink_to(dsearch_unit)
+        _debug(f'Symlinked {wants_dir_name}/dsearch.service -> {dsearch_unit}')
+    else:
+        _debug(f'{wants_dir_name}/dsearch.service already exists, skipping')
+
+    # Fix ownership
+    subprocess.run(
+        ['arch-chroot', str(chroot_dir), 'chown', '-R',
+         f'{username}:{username}', f'/home/{username}/.config/systemd'],
+        check=False,
+    )
+
+    # Generate initial index
+    _info(t('dms.dsearch_indexing'))
+    result = subprocess.run(
+        ['arch-chroot', str(chroot_dir),
+         'runuser', '-l', username, '-c', 'dsearch index generate'],
+        check=False,
+    )
+    if result.returncode == 0:
+        _info(t('dms.dsearch_complete'))
+    else:
+        _debug(f'dsearch index generate failed (exit {result.returncode}), index will be built on first login')
+
+
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
@@ -334,3 +389,6 @@ def install_dms(
 
     # 8. Add user to i2c group for DDC monitor brightness control
     _configure_i2c(chroot_dir, username)
+
+    # 9. Enable DankSearch user service and generate initial index
+    _enable_dsearch(chroot_dir, username, compositor)

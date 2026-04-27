@@ -292,6 +292,49 @@ def _fix_ownership(chroot_dir: Path, username: str) -> None:
     _debug(f'Fixed ownership of ~/.config for {username}')
 
 
+def _enable_dsearch(
+    chroot_dir: Path,
+    username: str,
+    compositor: str,
+) -> None:
+    """Enable the DankSearch user service and generate the initial index."""
+    _info(t('dms.dsearch_enabling'))
+
+    # Enable dsearch.service under the compositor's wants directory
+    if compositor == 'niri':
+        wants_dir_name = 'niri.service.wants'
+    elif compositor == 'hyprland':
+        wants_dir_name = 'hyprland-session.target.wants'
+    else:
+        _debug(f'Unknown compositor {compositor!r}, skipping dsearch service')
+        return
+
+    user_wants_dir = (
+        chroot_dir / 'home' / username / '.config' / 'systemd' / 'user'
+        / wants_dir_name
+    )
+    user_wants_dir.mkdir(parents=True, exist_ok=True)
+    dsearch_link = user_wants_dir / 'dsearch.service'
+    dsearch_unit = Path('/usr/lib/systemd/user/dsearch.service')
+    if not dsearch_link.exists():
+        dsearch_link.symlink_to(dsearch_unit)
+        _debug(f'Symlinked {wants_dir_name}/dsearch.service -> {dsearch_unit}')
+    else:
+        _debug(f'{wants_dir_name}/dsearch.service already exists, skipping')
+
+    # Generate initial index
+    _info(t('dms.dsearch_indexing'))
+    result = subprocess.run(
+        ['arch-chroot', str(chroot_dir),
+         'runuser', '-l', username, '-c', 'dsearch index generate'],
+        check=False,
+    )
+    if result.returncode == 0:
+        _info(t('dms.dsearch_complete'))
+    else:
+        _debug(f'dsearch index generate failed (exit {result.returncode}), index will be built on first login')
+
+
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
@@ -377,5 +420,8 @@ def install_dms_manual(
         description='add user to i2c group',
     )
     _info(t('dms.i2c_configured'))
+
+    # 10. Enable DankSearch user service and generate initial index
+    _enable_dsearch(chroot_dir, username, compositor)
 
     _info(t('dms_manual.complete'))

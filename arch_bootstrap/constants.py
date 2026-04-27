@@ -322,6 +322,7 @@ DMS_MANUAL_SYSTEM_PACKAGES: list[str] = [
     'accountsservice', 'matugen',
     'dgop', 'cava', 'cups-pk-helper', 'kimageformats',
     'libavif', 'libheif', 'libjxl', 'qt6ct', 'wtype', 'i2c-tools',
+    'dsearch-bin',
 ]
 
 DMS_MANUAL_COMPOSITOR_PACKAGES: dict[str, list[str]] = {

@@ -132,6 +132,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'dms.failed': 'dankinstall failed (exit %d)',
         'dms.configuring_i2c': 'Configuring I2C/DDC for monitor brightness control...',
         'dms.i2c_configured': 'I2C/DDC configured (user added to i2c group)',
+        'dms.dsearch_enabling': 'Enabling DankSearch filesystem search service...',
+        'dms.dsearch_indexing': 'Generating initial DankSearch index...',
+        'dms.dsearch_complete': 'DankSearch enabled and initial index built',
         # -- DMS Manual --
         'step.desktop.dms_manual':       'DankMaterialShell (Manual)',
         'dms_manual.setting_up_sudoers': 'Setting up temporary sudo access...',
@@ -411,6 +414,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'dms.failed': 'dankinstall 执行失败（退出码 %d）',
         'dms.configuring_i2c': '正在配置 I2C/DDC 以支持显示器亮度控制...',
         'dms.i2c_configured': 'I2C/DDC 已配置（用户已加入 i2c 组）',
+        'dms.dsearch_enabling': '正在启用 DankSearch 文件搜索服务...',
+        'dms.dsearch_indexing': '正在生成 DankSearch 初始索引...',
+        'dms.dsearch_complete': 'DankSearch 已启用并完成初始索引构建',
         # -- DMS 手动安装 --
         'step.desktop.dms_manual':       'DankMaterialShell（手动安装）',
         'dms_manual.setting_up_sudoers': '设置临时 sudo 权限...',
@@ -690,6 +696,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'dms.failed': 'dankinstall の実行に失敗しました（終了コード %d）',
         'dms.configuring_i2c': 'I2C/DDC を設定中（モニター輝度制御用）...',
         'dms.i2c_configured': 'I2C/DDC の設定が完了しました（ユーザーを i2c グループに追加）',
+        'dms.dsearch_enabling': 'DankSearch ファイル検索サービスを有効化中...',
+        'dms.dsearch_indexing': 'DankSearch の初期インデックスを生成中...',
+        'dms.dsearch_complete': 'DankSearch が有効化され、初期インデックスが構築されました',
         # -- DMS 手動インストール --
         'step.desktop.dms_manual':       'DankMaterialShell（手動インストール）',
         'dms_manual.setting_up_sudoers': '一時的なsudo権限を設定中...',

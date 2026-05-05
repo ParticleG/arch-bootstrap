@@ -138,7 +138,15 @@ release_hugepages() {
 # --- GPU passthrough control ---
 
 # Ensure running compositor ignores dGPU DRM devices and renders on iGPU.
-# Currently supports niri; extend for other compositors if needed.
+# Currently only niri is handled because it uniquely enumerates and opens ALL
+# DRM devices on startup.  Most other compositors (Hyprland, Sway, KDE, GNOME)
+# only open the primary GPU by default, so they are unaffected by GPU passthrough.
+#
+# To add support for another compositor:
+#   1. Add a detection block (pgrep -x <compositor>) below the niri section.
+#   2. Apply the compositor-specific config to restrict it to the iGPU, e.g.:
+#      - wlroots-based (Hyprland, Sway): set WLR_DRM_DEVICES env var
+#      - KDE/GNOME/X11: typically no action needed
 configure_compositor_ignore_dgpu() {
     local -a gpu_pci_slots=("$@")
 

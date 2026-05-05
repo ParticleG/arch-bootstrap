@@ -7,6 +7,7 @@ from __future__ import annotations
 BASE_PACKAGES: list[str] = [
     '7zip',
     'base-devel',
+    'exfatprogs',
     'neovim',
     'git',
     'openssh',

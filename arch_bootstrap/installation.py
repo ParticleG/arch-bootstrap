@@ -457,8 +457,8 @@ def _install_aur_browsers(
     aur_packages = []
     for key in browsers:
         browser_info = BROWSER_OPTIONS.get(key, {})
-        if browser_info.get('aur', False):
-            aur_packages.append(browser_info['package'])
+        if 'aur_package' in browser_info:
+            aur_packages.append(browser_info['aur_package'])
 
     if not aur_packages:
         return
@@ -605,6 +605,156 @@ release_hugepages() {
 
 # --- GPU passthrough control ---
 
+# Ensure running compositor ignores dGPU DRM devices and renders on iGPU.
+# Currently supports niri; extend for other compositors if needed.
+configure_compositor_ignore_dgpu() {
+    local -a gpu_pci_slots=("$@")
+
+    # Only handle niri for now
+    pgrep -x niri &>/dev/null || return 0
+
+    # Find niri config for the user who owns the niri process
+    local niri_pid niri_user niri_config
+    niri_pid=$(pgrep -x niri | head -1)
+    niri_user=$(stat -c '%U' "/proc/$niri_pid" 2>/dev/null || echo "")
+    [[ -n "$niri_user" ]] || return 0
+
+    if [[ "$niri_user" == "root" ]]; then
+        niri_config="/root/.config/niri/config.kdl"
+    else
+        niri_config="/home/$niri_user/.config/niri/config.kdl"
+    fi
+
+    [[ -f "$niri_config" ]] || return 0
+
+    local changed=false
+
+    # Build the lines to insert
+    local -a new_lines=()
+
+    # --- Set render-drm-device to iGPU (non-dGPU render device) ---
+    if ! grep -q 'render-drm-device' "$niri_config" 2>/dev/null; then
+        local igpu_render=""
+        for rdev in /dev/dri/by-path/*-render; do
+            [[ -e "$rdev" ]] || continue
+            local is_dgpu=false
+            for slot in "${gpu_pci_slots[@]}"; do
+                local base_slot="${slot%.*}.0"
+                if [[ "$rdev" == *"$base_slot"* ]]; then
+                    is_dgpu=true
+                    break
+                fi
+            done
+            if [[ "$is_dgpu" == "false" ]]; then
+                igpu_render="$rdev"
+                break
+            fi
+        done
+
+        if [[ -n "$igpu_render" ]]; then
+            new_lines+=("    render-drm-device \\"$igpu_render\\"")
+            echo "  Set render-drm-device to $igpu_render"
+        fi
+    fi
+
+    # --- Add ignore-drm-device for each dGPU PCI slot ---
+    for slot in "${gpu_pci_slots[@]}"; do
+        local base_slot="${slot%.*}.0"
+        local card_path="/dev/dri/by-path/pci-${base_slot}-card"
+        local render_path="/dev/dri/by-path/pci-${base_slot}-render"
+
+        if ! grep -qF "$card_path" "$niri_config" 2>/dev/null; then
+            new_lines+=("    ignore-drm-device \\"$card_path\\"")
+            new_lines+=("    ignore-drm-device \\"$render_path\\"")
+            echo "  Added ignore-drm-device for $base_slot"
+        fi
+    done
+
+    if [[ ${#new_lines[@]} -eq 0 ]]; then
+        echo "  Compositor config already up to date"
+        return 0
+    fi
+
+    # Insert lines into the debug {} block using a temp file (avoids sed escaping issues)
+    local tmpfile
+    tmpfile=$(mktemp)
+    local inserted=false
+    while IFS= read -r line; do
+        echo "$line" >> "$tmpfile"
+        if [[ "$inserted" == "false" ]] && [[ "$line" =~ ^[[:space:]]*debug[[:space:]]*\\{ ]]; then
+            for nl in "${new_lines[@]}"; do
+                echo "$nl" >> "$tmpfile"
+            done
+            inserted=true
+        fi
+    done < "$niri_config"
+
+    if [[ "$inserted" == "false" ]]; then
+        # No debug {} block found, append one
+        echo "" >> "$tmpfile"
+        echo "debug {" >> "$tmpfile"
+        for nl in "${new_lines[@]}"; do
+            echo "$nl" >> "$tmpfile"
+        done
+        echo "}" >> "$tmpfile"
+    fi
+
+    cp "$tmpfile" "$niri_config"
+    rm -f "$tmpfile"
+    changed=true
+
+    if [[ "$changed" == "true" ]]; then
+        echo "  Reloading niri config..."
+        if command -v niri &>/dev/null; then
+            runuser -l "$niri_user" -c 'niri msg action do-screen-transition && niri msg reload' 2>/dev/null || true
+        fi
+    fi
+}
+
+# Safely kill processes using /dev/nvidia* without killing compositor/desktop sessions.
+safe_kill_nvidia_users() {
+    # Collect PIDs using /dev/nvidia*
+    local -a pids=()
+    local raw
+    raw=$(fuser /dev/nvidia* 2>/dev/null) || true
+    for p in $raw; do
+        # strip trailing access mode chars (e.g. "1234m")
+        p="${p%%[a-zA-Z]*}"
+        [[ -n "$p" ]] && pids+=("$p")
+    done
+
+    if [[ ${#pids[@]} -eq 0 ]]; then
+        return 0
+    fi
+
+    # Compositors / desktop sessions we must never kill
+    local -a protected_re=(
+        'niri' 'hyprland' 'sway' 'kwin' 'gnome-shell' 'mutter'
+        'weston' 'labwc' 'wayfire' 'Xorg' 'Xwayland'
+        'xwayland-satellite' 'quickshell' 'dms-shell'
+        'gdm' 'sddm' 'greetd' 'tuigreet' 'login'
+    )
+    local re
+    re=$(IFS='|'; echo "${protected_re[*]}")
+
+    for pid in "${pids[@]}"; do
+        local comm
+        comm=$(cat "/proc/$pid/comm" 2>/dev/null || echo "")
+        if [[ -z "$comm" ]]; then
+            continue
+        fi
+        if echo "$comm" | grep -qEi "($re)"; then
+            echo "  Skipping protected process: $comm (PID $pid)"
+            continue
+        fi
+        echo "  Killing: $comm (PID $pid)"
+        kill -9 "$pid" 2>/dev/null || true
+    done
+
+    # Give processes a moment to die
+    sleep 0.5
+}
+
 passthrough_on() {
     echo "=== Enabling GPU passthrough ==="
 
@@ -617,6 +767,10 @@ passthrough_on() {
     mapfile -t gpu_addrs < <(echo "$detection" | tail -n +2)
 
     echo "Detected ${gpu_type} GPU at: ${gpu_addrs[*]}"
+
+    # Configure compositor to ignore dGPU DRM devices BEFORE killing anything
+    echo "Ensuring compositor ignores dGPU..."
+    configure_compositor_ignore_dgpu "${gpu_addrs[@]}"
 
     # Collect ALL IOMMU group devices
     local -a all_devices=()
@@ -632,16 +786,46 @@ passthrough_on() {
 
     echo "IOMMU group devices: ${all_devices[*]}"
 
-    # Kill GPU processes and unload driver modules
+    if [[ ${#all_devices[@]} -eq 0 ]]; then
+        echo "ERROR: No IOMMU group devices found. Cannot proceed." >&2
+        return 1
+    fi
+
     case "$gpu_type" in
         nvidia)
-            echo "Killing NVIDIA processes..."
-            fuser -k -9 /dev/nvidia* 2>/dev/null || true
+            # Retry loop: kill GPU users, then try to unload modules.
+            # Some processes respawn or take time to release the device.
+            local max_attempts=5
+            local attempt=0
+            while (( attempt < max_attempts )); do
+                attempt=$(( attempt + 1 ))
+                echo "Attempt $attempt/$max_attempts: stopping NVIDIA GPU users..."
+                safe_kill_nvidia_users
 
-            echo "Unloading NVIDIA modules..."
-            for mod in nvidia_drm nvidia_modeset nvidia_uvm nvidia; do
-                rmmod "$mod" 2>/dev/null || true
+                echo "Unloading NVIDIA modules..."
+                for mod in nvidia_drm nvidia_modeset nvidia_uvm nvidia; do
+                    rmmod "$mod" 2>/dev/null || true
+                done
+
+                if ! lsmod | grep -q '^nvidia'; then
+                    echo "NVIDIA modules unloaded successfully."
+                    break
+                fi
+
+                if (( attempt < max_attempts )); then
+                    echo "  Modules still loaded, retrying in 2s..."
+                    # Show what's still holding the device
+                    fuser -v /dev/nvidia* 2>/dev/null || true
+                    sleep 2
+                fi
             done
+
+            if lsmod | grep -q '^nvidia'; then
+                echo "WARNING: nvidia module still loaded after $max_attempts attempts."
+                echo "  Remaining users:"
+                fuser -v /dev/nvidia* 2>/dev/null || true
+                echo "  Proceeding with forced unbind via sysfs..."
+            fi
             ;;
         amd)
             echo "Unloading AMD GPU module..."
@@ -691,6 +875,7 @@ passthrough_off() {
         for dev in /sys/bus/pci/drivers/vfio-pci/*/; do
             local pci_addr
             pci_addr=$(basename "$dev")
+            [[ "$pci_addr" =~ ^[0-9a-fA-F]{4}: ]] || continue
             local vendor
             vendor=$(cat "/sys/bus/pci/devices/$pci_addr/vendor" 2>/dev/null || echo "")
             case "$vendor" in
@@ -713,6 +898,8 @@ passthrough_off() {
         [[ -d "$dev_path" ]] || continue
         local pci_addr
         pci_addr=$(basename "$dev_path")
+        # Skip non-PCI entries like "module"
+        [[ "$pci_addr" =~ ^[0-9a-fA-F]{4}: ]] || continue
         # Only process GPU-related devices (vendor 10de or 1002)
         local vendor
         vendor=$(cat "/sys/bus/pci/devices/$pci_addr/vendor" 2>/dev/null || echo "")
@@ -761,7 +948,7 @@ passthrough_status() {
     # Show GPU devices and their current drivers
     echo ""
     echo "GPU Devices:"
-    lspci -D -nn -k | grep -A 2 -Ei 'VGA|3D|Display' | head -30
+    lspci -D -nn -k 2>/dev/null | grep -A 2 -Ei 'VGA|3D|Display' | head -30
 
     echo ""
     echo "VFIO-PCI bound devices:"
@@ -770,6 +957,8 @@ passthrough_status() {
             [[ -d "$dev_path" ]] || { echo "  (none)"; break; }
             local pci_addr
             pci_addr=$(basename "$dev_path")
+            # Skip non-PCI entries like "module"
+            [[ "$pci_addr" =~ ^[0-9a-fA-F]{4}: ]] || continue
             echo "  $pci_addr: $(lspci -s "${pci_addr#*:}" 2>/dev/null || echo 'unknown')"
         done
     else
@@ -1314,25 +1503,25 @@ def perform_installation(
         aur_packages: list[str] = []
 
         for rd_key in state.remote_desktop:
-            if rd_key in REMOTE_DESKTOP_OPTIONS and REMOTE_DESKTOP_OPTIONS[rd_key].get('aur', False):
-                aur_packages.extend(REMOTE_DESKTOP_OPTIONS[rd_key]['packages'])
+            if rd_key in REMOTE_DESKTOP_OPTIONS:
+                aur_packages.extend(REMOTE_DESKTOP_OPTIONS[rd_key].get('aur_packages', []))
 
         # Proxy tools are installed here (both AUR and archlinuxcn) since
         # archlinuxcn repo and paru are already configured at this point.
         if state.proxy_tool and state.proxy_tool in PROXY_TOOL_OPTIONS:
             opt = PROXY_TOOL_OPTIONS[state.proxy_tool]
-            aur_packages.extend(opt['packages'])
+            aur_packages.extend(opt.get('packages', []) + opt.get('aur_packages', []))
 
         for de_key in state.dev_editors:
-            if de_key in DEV_EDITOR_OPTIONS and DEV_EDITOR_OPTIONS[de_key].get('aur', False):
-                aur_packages.extend(DEV_EDITOR_OPTIONS[de_key]['packages'])
+            if de_key in DEV_EDITOR_OPTIONS:
+                aur_packages.extend(DEV_EDITOR_OPTIONS[de_key].get('aur_packages', []))
 
         # CN communication apps (all AUR)
         if state and state.cn_apps:
             for app_key in state.cn_apps:
                 app = CN_APP_OPTIONS.get(app_key)
-                if app and app.get('aur'):
-                    aur_packages.extend(app['packages'])
+                if app:
+                    aur_packages.extend(app.get('aur_packages', []))
 
         # VM AUR packages (looking_glass)
         for vm_key in state.vm_options:
@@ -1344,7 +1533,7 @@ def perform_installation(
         # Input method AUR extras (e.g. Sougou/Moegirl dictionaries for Chinese pinyin)
         for im_key in state.input_methods:
             if im_key in INPUT_METHOD_PACKAGES:
-                for pkg in INPUT_METHOD_PACKAGES[im_key].get('aur_extras', []):
+                for pkg in INPUT_METHOD_PACKAGES[im_key].get('aur_packages', []):
                     if pkg not in aur_packages:
                         aur_packages.append(pkg)
 

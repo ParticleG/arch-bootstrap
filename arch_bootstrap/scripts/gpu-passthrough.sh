@@ -288,11 +288,14 @@ safe_kill_nvidia_users() {
     re=$(IFS='|'; echo "${protected_re[*]}")
 
     # Categorize processes: service-managed vs user processes
+    # For user processes, find the top-level application process to kill the whole app.
+    # Electron/Chromium spawn GPU subprocesses; killing only the subprocess causes respawn.
     local -a service_pids=()
     local -a service_units=()
     local -a killable_pids=()
     local -a killable_names=()
     local -A seen_units=()
+    local -A seen_app_pids=()
 
     for pid in "${pids[@]}"; do
         local comm
@@ -308,7 +311,6 @@ safe_kill_nvidia_users() {
 
         # Check if this process belongs to a systemd service
         local unit=""
-        # Use /proc/PID/cgroup — most reliable method
         if [[ -f "/proc/$pid/cgroup" ]]; then
             unit=$(grep -oE '[^/]+\.service$' "/proc/$pid/cgroup" 2>/dev/null | head -1 || true)
         fi
@@ -318,8 +320,36 @@ safe_kill_nvidia_users() {
             service_pids+=("$pid")
             service_units+=("$unit")
         elif [[ -z "$unit" ]]; then
-            killable_pids+=("$pid")
-            killable_names+=("$comm")
+            # Trace parent chain to find the top-level application process.
+            # Walk up as long as parent has the same comm name (e.g. msedge → msedge).
+            # This finds the main process of multi-process apps (electron, chromium).
+            local app_pid="$pid"
+            local app_comm="$comm"
+            while true; do
+                local ppid
+                ppid=$(awk '/PPid/ {print $2}' "/proc/$app_pid/status" 2>/dev/null || echo "1")
+                [[ "$ppid" != "1" && "$ppid" != "0" && -d "/proc/$ppid" ]] || break
+                local parent_comm
+                parent_comm=$(cat "/proc/$ppid/comm" 2>/dev/null || echo "")
+                [[ -n "$parent_comm" ]] || break
+                # Only follow parents with the same comm name
+                if [[ "$parent_comm" == "$app_comm" ]]; then
+                    app_pid="$ppid"
+                else
+                    break
+                fi
+            done
+
+            if [[ -z "${seen_app_pids[$app_pid]:-}" ]]; then
+                seen_app_pids[$app_pid]=1
+                # Final check: don't add if the app itself is protected
+                if echo "$app_comm" | grep -qEi "($re)"; then
+                    echo "  Protected (will not kill): $app_comm (PID $app_pid)"
+                    continue
+                fi
+                killable_pids+=("$app_pid")
+                killable_names+=("$app_comm")
+            fi
         fi
     done
 
@@ -350,10 +380,10 @@ safe_kill_nvidia_users() {
         return 0
     fi
 
-    # Display non-service processes and ask for confirmation
+    # Display applications and ask for confirmation
     echo ""
-    echo "  The following user processes are still using the NVIDIA GPU:"
-    echo "  ─────────────────────────────────────────────────────────────"
+    echo "  The following applications are using the NVIDIA GPU:"
+    echo "  ────────────────────────────────────────────────────"
     for i in "${!remaining_pids[@]}"; do
         local pid="${remaining_pids[$i]}"
         local comm="${remaining_names[$i]}"
@@ -379,9 +409,11 @@ safe_kill_nvidia_users() {
         fi
     fi
 
-    # SIGTERM first (graceful shutdown)
+    # SIGTERM first (graceful shutdown) — kill app and its children
     echo "  Sending SIGTERM..."
     for pid in "${remaining_pids[@]}"; do
+        # Kill all descendants first, then the app itself
+        pkill -TERM -P "$pid" 2>/dev/null || true
         kill -TERM "$pid" 2>/dev/null || true
     done
 
@@ -403,13 +435,14 @@ safe_kill_nvidia_users() {
         waited=$(( waited + 1 ))
     done
 
-    # SIGKILL remaining
+    # SIGKILL remaining process trees
     echo "  Some processes didn't exit, sending SIGKILL..."
     for pid in "${remaining_pids[@]}"; do
         if [[ -d "/proc/$pid" ]]; then
             local comm
             comm=$(cat "/proc/$pid/comm" 2>/dev/null || echo "PID $pid")
-            echo "    Force killing: $comm (PID $pid)"
+            echo "    Force killing: $comm (PID $pid) and children"
+            pkill -9 -P "$pid" 2>/dev/null || true
             kill -9 "$pid" 2>/dev/null || true
         fi
     done

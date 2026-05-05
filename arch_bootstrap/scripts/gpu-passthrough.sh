@@ -245,15 +245,24 @@ configure_compositor_ignore_dgpu() {
 
 # Safely kill processes using /dev/nvidia* without killing compositor/desktop sessions.
 # Shows user a list and asks for confirmation. Uses SIGTERM first, then SIGKILL.
+# Automatically stops systemd services whose processes use the GPU (restarted on off).
+
+# Global array to track stopped services for restart during passthrough_off
+_stopped_gpu_services=()
+_STOPPED_SERVICES_FILE="/run/gpu-passthrough-stopped-services"
+
 safe_kill_nvidia_users() {
-    # Collect PIDs using /dev/nvidia*
+    # Collect unique PIDs using /dev/nvidia*
+    local -A seen_pids=()
     local -a pids=()
     local raw
     raw=$(fuser /dev/nvidia* 2>/dev/null) || true
     for p in $raw; do
-        # strip trailing access mode chars (e.g. "1234m")
         p="${p%%[a-zA-Z]*}"
-        [[ -n "$p" ]] && pids+=("$p")
+        if [[ -n "$p" && -z "${seen_pids[$p]:-}" ]]; then
+            pids+=("$p")
+            seen_pids[$p]=1
+        fi
     done
 
     if [[ ${#pids[@]} -eq 0 ]]; then
@@ -270,9 +279,12 @@ safe_kill_nvidia_users() {
     local re
     re=$(IFS='|'; echo "${protected_re[*]}")
 
-    # Categorize processes
+    # Categorize processes: service-managed vs user processes
+    local -a service_pids=()
+    local -a service_units=()
     local -a killable_pids=()
     local -a killable_names=()
+    local -A seen_units=()
 
     for pid in "${pids[@]}"; do
         local comm
@@ -280,25 +292,63 @@ safe_kill_nvidia_users() {
         if [[ -z "$comm" ]]; then
             continue
         fi
+        # Skip protected processes
         if echo "$comm" | grep -qEi "($re)"; then
             echo "  Protected (will not kill): $comm (PID $pid)"
             continue
         fi
-        killable_pids+=("$pid")
-        killable_names+=("$comm")
+
+        # Check if this process belongs to a systemd service
+        local unit=""
+        # Use /proc/PID/cgroup — most reliable method
+        if [[ -f "/proc/$pid/cgroup" ]]; then
+            unit=$(grep -oE '[^/]+\.service$' "/proc/$pid/cgroup" 2>/dev/null | head -1 || true)
+        fi
+
+        if [[ -n "$unit" && -z "${seen_units[$unit]:-}" ]]; then
+            seen_units[$unit]=1
+            service_pids+=("$pid")
+            service_units+=("$unit")
+        elif [[ -z "$unit" ]]; then
+            killable_pids+=("$pid")
+            killable_names+=("$comm")
+        fi
     done
 
-    if [[ ${#killable_pids[@]} -eq 0 ]]; then
+    # Auto-stop systemd services (no user prompt needed)
+    if [[ ${#service_units[@]} -gt 0 ]]; then
+        echo ""
+        echo "  Stopping systemd services using the GPU:"
+        for unit in "${service_units[@]}"; do
+            echo "    • $unit"
+            systemctl stop "$unit" 2>/dev/null || true
+            _stopped_gpu_services+=("$unit")
+        done
+        # Persist stopped services list for passthrough_off
+        printf '%s\n' "${_stopped_gpu_services[@]}" > "$_STOPPED_SERVICES_FILE"
+    fi
+
+    # Re-check remaining PIDs after stopping services
+    local -a remaining_pids=()
+    local -a remaining_names=()
+    for i in "${!killable_pids[@]}"; do
+        if [[ -d "/proc/${killable_pids[$i]}" ]]; then
+            remaining_pids+=("${killable_pids[$i]}")
+            remaining_names+=("${killable_names[$i]}")
+        fi
+    done
+
+    if [[ ${#remaining_pids[@]} -eq 0 ]]; then
         return 0
     fi
 
-    # Display processes and ask for confirmation
+    # Display non-service processes and ask for confirmation
     echo ""
-    echo "  The following processes are using the NVIDIA GPU:"
-    echo "  ─────────────────────────────────────────────────"
-    for i in "${!killable_pids[@]}"; do
-        local pid="${killable_pids[$i]}"
-        local comm="${killable_names[$i]}"
+    echo "  The following user processes are still using the NVIDIA GPU:"
+    echo "  ─────────────────────────────────────────────────────────────"
+    for i in "${!remaining_pids[@]}"; do
+        local pid="${remaining_pids[$i]}"
+        local comm="${remaining_names[$i]}"
         local cmdline
         cmdline=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | head -c 80 || echo "")
         printf "    [%d] %s (PID %s)\n" "$((i+1))" "$comm" "$pid"
@@ -323,7 +373,7 @@ safe_kill_nvidia_users() {
 
     # SIGTERM first (graceful shutdown)
     echo "  Sending SIGTERM..."
-    for pid in "${killable_pids[@]}"; do
+    for pid in "${remaining_pids[@]}"; do
         kill -TERM "$pid" 2>/dev/null || true
     done
 
@@ -331,7 +381,7 @@ safe_kill_nvidia_users() {
     local waited=0
     while (( waited < 5 )); do
         local still_running=false
-        for pid in "${killable_pids[@]}"; do
+        for pid in "${remaining_pids[@]}"; do
             if [[ -d "/proc/$pid" ]]; then
                 still_running=true
                 break
@@ -347,7 +397,7 @@ safe_kill_nvidia_users() {
 
     # SIGKILL remaining
     echo "  Some processes didn't exit, sending SIGKILL..."
-    for pid in "${killable_pids[@]}"; do
+    for pid in "${remaining_pids[@]}"; do
         if [[ -d "/proc/$pid" ]]; then
             local comm
             comm=$(cat "/proc/$pid/comm" 2>/dev/null || echo "PID $pid")
@@ -356,6 +406,61 @@ safe_kill_nvidia_users() {
         fi
     done
     sleep 0.5
+}
+
+# Restart services that were stopped for GPU passthrough.
+# Attempts to start each; logs success/failure. Retries once on failure.
+# Does NOT remove the tracking file (caller decides when to clean up).
+_restart_stopped_services() {
+    if [[ ! -f "$_STOPPED_SERVICES_FILE" ]]; then
+        return 0
+    fi
+    echo "Restarting GPU-related services..."
+
+    # Start all services
+    local -a started_svcs=()
+    while IFS= read -r svc; do
+        [[ -n "$svc" ]] || continue
+        # Reset failed state to avoid start-limit-hit from prior failures
+        systemctl reset-failed "$svc" 2>/dev/null || true
+        if systemctl start "$svc" 2>/dev/null; then
+            started_svcs+=("$svc")
+        else
+            echo "  ✗ $svc failed to start"
+        fi
+    done < "$_STOPPED_SERVICES_FILE"
+
+    if [[ ${#started_svcs[@]} -eq 0 ]]; then
+        return 0
+    fi
+
+    # Wait once, then check all
+    sleep 2
+    for svc in "${started_svcs[@]}"; do
+        if systemctl is-active "$svc" &>/dev/null; then
+            echo "  ✓ $svc running"
+        else
+            echo "  ✗ $svc exited shortly after start (GPU may be unavailable)"
+        fi
+    done
+}
+
+# Stop services listed in the stopped-services file (for passthrough_off).
+_stop_tracked_services() {
+    if [[ ! -f "$_STOPPED_SERVICES_FILE" ]]; then
+        return 0
+    fi
+    echo "Stopping GPU-related services before driver switch..."
+    while IFS= read -r svc; do
+        [[ -n "$svc" ]] || continue
+        if systemctl is-active "$svc" &>/dev/null; then
+            if systemctl stop "$svc" 2>/dev/null; then
+                echo "  ✓ $svc stopped"
+            else
+                echo "  ✗ $svc failed to stop"
+            fi
+        fi
+    done < "$_STOPPED_SERVICES_FILE"
 }
 
 passthrough_on() {
@@ -415,6 +520,21 @@ passthrough_on() {
 
                 if ! lsmod | grep -q '^nvidia'; then
                     echo "NVIDIA modules unloaded successfully."
+                    # Verify device is actually unbound
+                    local still_bound=false
+                    for addr in "${gpu_addrs[@]}"; do
+                        local drv
+                        drv=$(get_current_driver "$addr")
+                        if [[ "$drv" == "nvidia" ]]; then
+                            still_bound=true
+                            break
+                        fi
+                    done
+                    if [[ "$still_bound" == "true" ]]; then
+                        echo "  WARNING: Module removed but device still shows nvidia binding."
+                        echo "  Waiting for kernel to release..."
+                        sleep 2
+                    fi
                     break
                 fi
 
@@ -440,6 +560,10 @@ passthrough_on() {
     esac
 
     # Unbind all devices from current drivers
+    # NOTE: If rmmod succeeded, devices are already auto-unbound by the kernel.
+    # Only unbind devices still bound to OTHER drivers (e.g. snd_hda_intel for audio).
+    # NEVER attempt to unbind from nvidia/amdgpu — if rmmod failed, unbind will
+    # deadlock the kernel; if rmmod succeeded, they're already unbound.
     echo "Unbinding devices from current drivers..."
     for dev in "${all_devices[@]}"; do
         local current_driver
@@ -447,13 +571,18 @@ passthrough_on() {
         if [[ "$current_driver" == "none" || "$current_driver" == "vfio-pci" ]]; then
             continue
         fi
-        # Skip if the driver module was already removed (device auto-unbound)
+        # Skip GPU drivers — rmmod handles these; manual unbind risks kernel deadlock
+        if [[ "$current_driver" == "nvidia" || "$current_driver" == "amdgpu" || "$current_driver" == "nouveau" ]]; then
+            echo "  $dev: still bound to $current_driver (rmmod may have failed)"
+            echo "  ERROR: Cannot safely unbind GPU driver. Aborting." >&2
+            return 1
+        fi
+        # Non-GPU drivers (e.g. snd_hda_intel) are safe to unbind
         if [[ ! -d "/sys/bus/pci/drivers/$current_driver" ]]; then
             echo "  $dev: driver $current_driver already removed, skipping"
             continue
         fi
         echo "  Unbinding $dev from $current_driver"
-        # Use timeout to avoid hanging on kernel deadlocks
         timeout 5 bash -c "echo '$dev' > '/sys/bus/pci/drivers/$current_driver/unbind'" 2>/dev/null || {
             echo "  WARNING: unbind of $dev timed out or failed (may already be unbound)"
         }
@@ -478,12 +607,18 @@ passthrough_on() {
     # Allocate hugepages
     allocate_hugepages
 
+    # Restart stopped services — they will now bind to iGPU since dGPU is gone
+    _restart_stopped_services
+
     echo "=== GPU passthrough enabled ==="
     echo "You can now start your VM with GPU passthrough."
 }
 
 passthrough_off() {
     echo "=== Disabling GPU passthrough ==="
+
+    # Stop services that were restarted on iGPU, before switching driver back
+    _stop_tracked_services
 
     # Detect GPU type
     local detection
@@ -559,6 +694,10 @@ passthrough_off() {
 
     # Release hugepages
     release_hugepages
+
+    # Restart services — dGPU is now available again
+    _restart_stopped_services
+    rm -f "$_STOPPED_SERVICES_FILE"
 
     echo "=== GPU passthrough disabled ==="
 }

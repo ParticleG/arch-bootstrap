@@ -417,9 +417,10 @@ safe_kill_nvidia_users() {
         kill -TERM "$pid" 2>/dev/null || true
     done
 
-    # Wait up to 5 seconds for graceful exit
+    # Wait up to 15 seconds for graceful exit
+    local timeout=15
     local waited=0
-    while (( waited < 5 )); do
+    while (( waited < timeout )); do
         local still_running=false
         for pid in "${remaining_pids[@]}"; do
             if [[ -d "/proc/$pid" ]]; then
@@ -431,9 +432,12 @@ safe_kill_nvidia_users() {
             echo "  All processes exited gracefully."
             return 0
         fi
+        local remaining=$(( timeout - waited ))
+        printf "\r  Waiting for processes to exit... %ds remaining" "$remaining"
         sleep 1
         waited=$(( waited + 1 ))
     done
+    echo ""
 
     # SIGKILL remaining process trees
     echo "  Some processes didn't exit, sending SIGKILL..."

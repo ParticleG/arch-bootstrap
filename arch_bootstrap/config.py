@@ -382,10 +382,9 @@ def apply_wizard_state_to_config(
     # Browser packages (pacman only; AUR browsers handled in post-install)
     for browser_key in state.browsers:
         browser_info = BROWSER_OPTIONS.get(browser_key, {})
-        if not browser_info.get('aur', False):
-            pkg = browser_info.get('package', '')
-            if pkg and pkg not in all_packages:
-                all_packages.append(pkg)
+        pkg = browser_info.get('package', '')
+        if pkg and pkg not in all_packages:
+            all_packages.append(pkg)
     # upower for desktop environments that require it
     if state.desktop_env in ('dms', 'dms_manual', 'exo') and 'upower' not in all_packages:
         all_packages.append('upower')
@@ -438,7 +437,7 @@ def apply_wizard_state_to_config(
 
     # File managers (non-AUR only; AUR ones handled in installation.py)
     for fm_key in state.file_managers:
-        if fm_key in FILE_MANAGER_OPTIONS and not FILE_MANAGER_OPTIONS[fm_key].get('aur', False):
+        if fm_key in FILE_MANAGER_OPTIONS:
             all_packages.extend(FILE_MANAGER_OPTIONS[fm_key]['packages'])
 
     # Minimal install: default to yazi as file manager
@@ -447,22 +446,22 @@ def apply_wizard_state_to_config(
 
     # Remote desktop (non-AUR only)
     for rd_key in state.remote_desktop:
-        if rd_key in REMOTE_DESKTOP_OPTIONS and not REMOTE_DESKTOP_OPTIONS[rd_key].get('aur', False):
+        if rd_key in REMOTE_DESKTOP_OPTIONS and 'packages' in REMOTE_DESKTOP_OPTIONS[rd_key]:
             all_packages.extend(REMOTE_DESKTOP_OPTIONS[rd_key]['packages'])
 
     # Dev environment packages (non-AUR only)
     for de_key in state.dev_environments:
-        if de_key in DEV_ENVIRONMENT_OPTIONS and not DEV_ENVIRONMENT_OPTIONS[de_key].get('aur', False):
+        if de_key in DEV_ENVIRONMENT_OPTIONS:
             all_packages.extend(DEV_ENVIRONMENT_OPTIONS[de_key]['packages'])
 
     # Gaming packages (non-AUR only)
     for g_key in state.gaming_tools:
-        if g_key in GAMING_OPTIONS and not GAMING_OPTIONS[g_key].get('aur', False):
+        if g_key in GAMING_OPTIONS:
             all_packages.extend(GAMING_OPTIONS[g_key]['packages'])
 
     # VM packages (non-AUR only)
     for vm_key in state.vm_options:
-        if vm_key in VM_OPTIONS and not VM_OPTIONS[vm_key].get('aur', False):
+        if vm_key in VM_OPTIONS:
             all_packages.extend(VM_OPTIONS[vm_key]['packages'])
 
     # Deduplicate packages while preserving order

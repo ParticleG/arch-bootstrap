@@ -343,12 +343,12 @@ DMS_MANUAL_TERMINAL_PACKAGES: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 # Browser packages available for installation.
-# key: internal identifier, package: pacman/AUR package name, aur: True if AUR
+# key: internal identifier, package: pacman package name, aur_package: AUR package name
 BROWSER_OPTIONS: dict[str, dict] = {
-    'firefox': {'label': 'Firefox', 'package': 'firefox', 'aur': False},
-    'chromium': {'label': 'Chromium', 'package': 'chromium', 'aur': False},
-    'chrome': {'label': 'Google Chrome (AUR)', 'package': 'google-chrome', 'aur': True},
-    'edge': {'label': 'Microsoft Edge (AUR)', 'package': 'microsoft-edge-stable-bin', 'aur': True},
+    'firefox': {'label': 'Firefox', 'package': 'firefox'},
+    'chromium': {'label': 'Chromium', 'package': 'chromium'},
+    'chrome': {'label': 'Google Chrome (AUR)', 'aur_package': 'google-chrome'},
+    'edge': {'label': 'Microsoft Edge (AUR)', 'aur_package': 'microsoft-edge-stable-bin'},
 }
 
 # ---------------------------------------------------------------------------
@@ -373,18 +373,15 @@ INPUT_METHOD_PACKAGES: dict[str, dict] = {
     'fcitx5_zh': {
         'label': 'Fcitx5 (Chinese)',
         'packages': ['fcitx5', 'fcitx5-chinese-addons', 'fcitx5-configtool', 'fcitx5-pinyin-zhwiki'],
-        'aur': False,
-        'aur_extras': ['fcitx5-pinyin-sougou-dict-git', 'fcitx5-pinyin-moegirl'],
+        'aur_packages': ['fcitx5-pinyin-sougou-dict-git', 'fcitx5-pinyin-moegirl'],
     },
     'fcitx5_ja_mozc': {
         'label': 'Fcitx5 + Mozc (Japanese, recommended)',
         'packages': ['fcitx5', 'fcitx5-mozc', 'fcitx5-configtool'],
-        'aur': False,
     },
     'fcitx5_ja_anthy': {
         'label': 'Fcitx5 + Anthy (Japanese)',
         'packages': ['fcitx5', 'fcitx5-anthy', 'fcitx5-configtool'],
-        'aur': False,
     },
 }
 
@@ -502,22 +499,18 @@ REMOTE_DESKTOP_OPTIONS: dict[str, dict] = {
     'remmina': {
         'label': 'Remmina + FreeRDP',
         'packages': ['remmina', 'freerdp'],
-        'aur': False,
     },
     'parsec': {
         'label': 'Parsec (AUR)',
-        'packages': ['parsec-bin'],
-        'aur': True,
+        'aur_packages': ['parsec-bin'],
     },
     'moonlight': {
         'label': 'Moonlight',
         'packages': ['moonlight-qt'],
-        'aur': False,
     },
     'rustdesk': {
         'label': 'RustDesk (AUR)',
-        'packages': ['rustdesk'],
-        'aur': True,
+        'aur_packages': ['rustdesk'],
     },
 }
 
@@ -529,25 +522,21 @@ FILE_MANAGER_OPTIONS: dict[str, dict] = {
     'yazi': {
         'label': 'Yazi (terminal)',
         'packages': ['yazi'],
-        'aur': False,
         'tui': True,
     },
     'nautilus': {
         'label': 'Nautilus (GNOME)',
         'packages': ['nautilus'],
-        'aur': False,
         'tui': False,
     },
     'dolphin': {
         'label': 'Dolphin (KDE)',
         'packages': ['dolphin'],
-        'aur': False,
         'tui': False,
     },
     'thunar': {
         'label': 'Thunar (XFCE)',
         'packages': ['thunar'],
-        'aur': False,
         'tui': False,
     },
 }
@@ -559,23 +548,19 @@ FILE_MANAGER_OPTIONS: dict[str, dict] = {
 CN_APP_OPTIONS: dict[str, dict] = {
     'linuxqq-nt-bwrap': {
         'label': 'QQ',
-        'packages': ['linuxqq-nt-bwrap'],
-        'aur': True,
+        'aur_packages': ['linuxqq-nt-bwrap'],
     },
     'wechat': {
         'label': 'WeChat',
-        'packages': ['wechat-universal-bwrap'],
-        'aur': True,
+        'aur_packages': ['wechat-universal-bwrap'],
     },
     'feishu': {
         'label': 'Feishu / Lark',
-        'packages': ['feishu-bin'],
-        'aur': True,
+        'aur_packages': ['feishu-bin'],
     },
     'dingtalk': {
         'label': 'DingTalk',
-        'packages': ['dingtalk-bin'],
-        'aur': True,
+        'aur_packages': ['dingtalk-bin'],
     },
 }
 
@@ -583,22 +568,18 @@ PROXY_TOOL_OPTIONS: dict[str, dict] = {
     'flclash': {
         'label': 'FlClash (recommended, in archlinuxcn)',
         'packages': ['flclash'],
-        'aur': False,
     },
     'mihomo': {
         'label': 'Mihomo (CLI, in archlinuxcn)',
         'packages': ['mihomo'],
-        'aur': False,
     },
     'mihomo_party': {
         'label': 'Mihomo Party (AUR)',
-        'packages': ['mihomo-party-bin'],
-        'aur': True,
+        'aur_packages': ['mihomo-party-bin'],
     },
     'clash_verge': {
         'label': 'Clash Verge Rev (AUR)',
-        'packages': ['clash-verge-rev-bin'],
-        'aur': True,
+        'aur_packages': ['clash-verge-rev-bin'],
     },
 }
 
@@ -618,25 +599,21 @@ VM_OPTIONS: dict[str, dict] = {
     'kvm_base': {
         'label': 'KVM/QEMU + virt-manager',
         'packages': ['qemu-full', 'virt-manager', 'swtpm', 'dnsmasq', 'edk2-ovmf'],
-        'aur': False,
         'services': ['libvirtd'],
     },
     'nested_virt': {
         'label': 'Nested Virtualization',
         'packages': [],
-        'aur': False,
         'services': [],
     },
     'gpu_passthrough': {
         'label': 'GPU Hot-Switch Passthrough',
         'packages': [],
-        'aur': False,
         'services': [],
     },
     'looking_glass': {
         'label': 'LookingGlass (KVMFR)',
         'packages': ['linux-headers'],
-        'aur': False,
         'services': [],
         'aur_packages': ['looking-glass-module-dkms-git', 'looking-glass-git'],
     },
@@ -646,62 +623,52 @@ DEV_ENVIRONMENT_OPTIONS: dict[str, dict] = {
     'docker': {
         'label': 'Docker',
         'packages': ['docker', 'docker-compose'],
-        'aur': False,
         'services': ['docker'],
     },
     'go': {
         'label': 'Go',
         'packages': ['go'],
-        'aur': False,
         'services': [],
     },
     'bun': {
         'label': 'Bun',
         'packages': ['bun'],
-        'aur': False,
         'services': [],
     },
     'nodejs': {
         'label': 'Node.js (LTS)',
         # NOTE: Update LTS codename when new LTS is released (current: Jod/v22)
         'packages': ['nodejs-lts-jod', 'npm'],
-        'aur': False,
         'services': [],
     },
     'python': {
         'label': 'Python',
         'packages': ['python', 'python-pip'],
-        'aur': False,
         'services': [],
     },
     'rustup': {
         'label': 'Rust (rustup)',
         'packages': ['rustup'],
-        'aur': False,
         'services': [],
     },
     'bat': {
         'label': 'bat (cat replacement)',
         'packages': ['bat'],
-        'aur': False,
         'services': [],
     },
     'eza': {
         'label': 'eza (ls replacement)',
         'packages': ['eza'],
-        'aur': False,
         'services': [],
     },
     'ripgrep': {
         'label': 'ripgrep (grep replacement)',
         'packages': ['ripgrep'],
-        'aur': False,
         'services': [],
     },
     'chezmoi': {
         'label': 'Chezmoi',
         'packages': ['chezmoi'],
-        'aur': False,
         'services': [],
     },
 }
@@ -709,13 +676,11 @@ DEV_ENVIRONMENT_OPTIONS: dict[str, dict] = {
 DEV_EDITOR_OPTIONS: dict[str, dict] = {
     'vscode': {
         'label': 'Visual Studio Code (AUR)',
-        'packages': ['visual-studio-code-bin'],
-        'aur': True,
+        'aur_packages': ['visual-studio-code-bin'],
     },
     'jetbrains': {
         'label': 'JetBrains Toolbox (AUR)',
-        'packages': ['jetbrains-toolbox'],
-        'aur': True,
+        'aur_packages': ['jetbrains-toolbox'],
     },
 }
 
@@ -723,22 +688,18 @@ GAMING_OPTIONS: dict[str, dict] = {
     'steam': {
         'label': 'Steam',
         'packages': ['steam'],
-        'aur': False,
     },
     'lutris': {
         'label': 'Lutris',
         'packages': ['lutris'],
-        'aur': False,
     },
     'gamemode': {
         'label': 'GameMode',
         'packages': ['gamemode', 'lib32-gamemode'],
-        'aur': False,
     },
     'mangohud': {
         'label': 'MangoHud',
         'packages': ['mangohud', 'lib32-mangohud'],
-        'aur': False,
     },
 }
 

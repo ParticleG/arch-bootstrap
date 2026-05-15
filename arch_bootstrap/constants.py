@@ -13,6 +13,7 @@ BASE_PACKAGES: list[str] = [
     'openssh',
     'udisks2',
     'xdg-user-dirs',
+    'tmux',
     'zsh'
 ]
 

@@ -376,7 +376,7 @@ Note: The file may already exist (installed by libvirt package). Need to check i
 
 If `'gpu_passthrough' in state.vm_options`:
 
-Write `/usr/local/bin/gpu-passthrough` (chmod 755):
+Write `/usr/local/bin/gpu-hotswitch-vfio` (chmod 755):
 
 The script should be a self-contained bash script with three subcommands: `on`, `off`, `status`.
 

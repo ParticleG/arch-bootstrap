@@ -233,6 +233,53 @@ def _resolve_omz_remote(country: str | None) -> str | None:
 
 
 # =============================================================================
+# Zsh plugin activation
+# =============================================================================
+
+_ZSH_AUTOSUGGESTIONS_SOURCE = (
+    '\n# zsh-autosuggestions installed by pacman (outside Oh My Zsh search path)\n'
+    '[[ -r /usr/share/zsh/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh ]]'
+    ' && source /usr/share/zsh/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh\n'
+)
+
+
+def _patch_zshrc_plugins(zshrc_path: str) -> None:
+    """Patch the default oh-my-zsh .zshrc to enable installed plugins.
+
+    - Adds fast-syntax-highlighting to the plugins=() array.
+    - Appends a source line for zsh-autosuggestions (pacman installs it to
+      /usr/share/zsh/plugins/ which Oh My Zsh does not search).
+    """
+    path = Path(zshrc_path)
+    if not path.exists():
+        _debug(f'.zshrc not found at {zshrc_path}, skipping plugin patch')
+        return
+
+    content = path.read_text()
+    import re
+
+    # Add fast-syntax-highlighting to plugins=(...) if not already present
+    if 'fast-syntax-highlighting' not in content:
+        content = re.sub(
+            r'plugins=\(([^)]*)\)',
+            lambda m: f'plugins=({m.group(1)} fast-syntax-highlighting)',
+            content,
+            count=1,
+        )
+
+    # Append zsh-autosuggestions source after "source $ZSH/oh-my-zsh.sh"
+    if 'zsh-autosuggestions' not in content:
+        content = content.replace(
+            'source $ZSH/oh-my-zsh.sh',
+            'source $ZSH/oh-my-zsh.sh' + _ZSH_AUTOSUGGESTIONS_SOURCE,
+            1,
+        )
+
+    path.write_text(content)
+    _debug('Patched .zshrc with zsh plugin configuration')
+
+
+# =============================================================================
 # WiFi connection transfer
 # =============================================================================
 
@@ -871,6 +918,13 @@ def perform_installation(
                 max_retries=3, retry_delay=5,
                 description='fast-syntax-highlighting plugin',
             )
+
+            # Patch .zshrc to enable plugins:
+            # - fast-syntax-highlighting lives in $ZSH_CUSTOM/plugins so add to plugins=()
+            # - zsh-autosuggestions is installed by pacman to /usr/share/zsh/plugins/,
+            #   which is outside Oh My Zsh's search path, so source it explicitly
+            zshrc = f'{chroot_dir}/{home}/.zshrc'
+            _patch_zshrc_plugins(zshrc)
 
             if _zsh_ok:
                 tracker.record('summary.step.zsh', StepStatus.SUCCESS)

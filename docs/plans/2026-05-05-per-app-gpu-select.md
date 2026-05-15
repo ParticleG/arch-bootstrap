@@ -55,7 +55,7 @@ A lightweight tool (`gpu-select` or similar) that:
    gpu-select detect                 # auto-detect GPUs and show env vars for each
    ```
 
-4. **GPU passthrough integration**: `gpu-passthrough on` could call `gpu-select check` before proceeding, warning about apps configured to use dGPU that are currently running.
+4. **GPU passthrough integration**: `gpu-hotswitch-vfio on` could call `gpu-select check` before proceeding, warning about apps configured to use dGPU that are currently running.
 
 ## Architecture Considerations
 

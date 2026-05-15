@@ -525,22 +525,6 @@ def _install_aur_browsers(
 
 
 # =============================================================================
-# GPU passthrough script
-# =============================================================================
-
-
-def _read_script(name: str) -> str:
-    """Read a bundled shell script from the scripts/ package.
-
-    Uses importlib.resources so it works both from source and inside a zipapp.
-    """
-    import importlib.resources
-    return importlib.resources.files('arch_bootstrap.scripts').joinpath(name).read_text()
-
-
-
-
-# =============================================================================
 # Installation
 # =============================================================================
 
@@ -1203,11 +1187,30 @@ def perform_installation(
 
         # Post-install: GPU hot-switch script
         if 'gpu_passthrough' in state.vm_options:
-            gpu_script_dir = chroot_dir / 'usr' / 'local' / 'bin'
-            gpu_script_dir.mkdir(parents=True, exist_ok=True)
-            gpu_script = gpu_script_dir / 'gpu-passthrough'
-            gpu_script.write_text(_read_script('gpu-passthrough.sh'))
-            gpu_script.chmod(0o755)
+            # Try to install from AUR via paru
+            try:
+                subprocess.run(
+                    ['arch-chroot', str(chroot_dir),
+                     'runuser', '-l', state.username, '-c',
+                     'paru -S --noconfirm --needed gpu-hotswitch-vfio'],
+                    check=True, capture_output=True)
+                _info('gpu-hotswitch-vfio installed from AUR')
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                # Fallback: download from GitHub release
+                _info('AUR install failed, downloading gpu-hotswitch-vfio from GitHub...')
+                _gh_url = 'https://github.com/ParticleG/gpu-hotswitch-vfio/releases/latest/download/gpu-hotswitch-vfio'
+                gpu_script_dir = chroot_dir / 'usr' / 'local' / 'bin'
+                gpu_script_dir.mkdir(parents=True, exist_ok=True)
+                gpu_script = gpu_script_dir / 'gpu-hotswitch-vfio'
+                try:
+                    subprocess.run(
+                        ['curl', '-fsSL', '-o', str(gpu_script), _gh_url],
+                        check=True, capture_output=True)
+                    gpu_script.chmod(0o755)
+                    _info('gpu-hotswitch-vfio downloaded from GitHub')
+                except subprocess.CalledProcessError:
+                    _info('WARNING: Failed to install gpu-hotswitch-vfio. '
+                          'Install manually: paru -S gpu-hotswitch-vfio')
 
         # Post-install: LookingGlass KVMFR configuration
         if 'looking_glass' in state.vm_options:

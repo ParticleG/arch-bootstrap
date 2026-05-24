@@ -59,20 +59,20 @@ def build_disk_layout(device: BDevice) -> DiskLayoutConfiguration:
 
     efi_partition = PartitionModification(
         status=ModificationStatus.CREATE,
-        type=PartitionType.Primary,
+        type=PartitionType.PRIMARY,
         start=efi_start,
         length=efi_length,
-        fs_type=FilesystemType.Fat32,
+        fs_type=FilesystemType.FAT32,
         mountpoint=Path('/boot'),
         flags=[PartitionFlag.BOOT, PartitionFlag.ESP],
     )
 
     root_partition = PartitionModification(
         status=ModificationStatus.CREATE,
-        type=PartitionType.Primary,
+        type=PartitionType.PRIMARY,
         start=root_start,
         length=root_length,
-        fs_type=FilesystemType.Btrfs,
+        fs_type=FilesystemType.BTRFS,
         mountpoint=None,  # mountpoint handled by subvolumes
         mount_options=[BtrfsMountOption.compress.value],
         btrfs_subvols=[

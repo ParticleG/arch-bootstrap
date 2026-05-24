@@ -1420,6 +1420,28 @@ cgroup_device_acl = [
                 max_retries=1, retry_delay=0,
                 description='regenerate initramfs for hibernation',
             )
+
+            # Enable NVIDIA sleep services if NVIDIA GPU is present.
+            # Without these, nvidia_drm blocks the S4 power-off path (causing the
+            # system to hang with keyboard backlight on) and GPU state is not properly
+            # saved/restored (causing display freeze after suspend/hibernate resume).
+            has_nvidia = any(v in ('nvidia_open', 'nvidia')
+                            for v in gpu_vendors)
+            if has_nvidia:
+                nvidia_sleep_services = [
+                    'nvidia-suspend',
+                    'nvidia-hibernate',
+                    'nvidia-resume',
+                    'nvidia-suspend-then-hibernate',
+                ]
+                for svc in nvidia_sleep_services:
+                    run_with_retry(
+                        ['arch-chroot', str(chroot_dir),
+                         'systemctl', 'enable', f'{svc}.service'],
+                        max_retries=1, retry_delay=0,
+                        description=f'enable {svc}.service',
+                    )
+
             tracker.record('summary.step.hibernation', StepStatus.SUCCESS)
         else:
             tracker.record('summary.step.hibernation', StepStatus.SKIPPED)

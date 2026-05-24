@@ -58,7 +58,7 @@ def build_disk_layout(device: BDevice) -> DiskLayoutConfiguration:
     root_length = Size(max(root_length_mib, 1), Unit.MiB, sector_size)
 
     efi_partition = PartitionModification(
-        status=ModificationStatus.Create,
+        status=ModificationStatus.CREATE,
         type=PartitionType.Primary,
         start=efi_start,
         length=efi_length,
@@ -68,7 +68,7 @@ def build_disk_layout(device: BDevice) -> DiskLayoutConfiguration:
     )
 
     root_partition = PartitionModification(
-        status=ModificationStatus.Create,
+        status=ModificationStatus.CREATE,
         type=PartitionType.Primary,
         start=root_start,
         length=root_length,

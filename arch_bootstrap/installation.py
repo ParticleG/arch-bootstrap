@@ -18,7 +18,8 @@ from archinstall.lib.disk.filesystem import FilesystemHandler
 from archinstall.lib.disk.utils import disk_layouts
 from archinstall.lib.general.general_menu import PostInstallationAction, select_post_installation
 from archinstall.lib.menu.helpers import Confirmation
-from archinstall.lib.tui.types import MenuItem, ResultType
+from archinstall.tui.ui.menu_item import MenuItem
+from archinstall.tui.ui.result import ResultType
 from archinstall.lib.global_menu import GlobalMenu
 from archinstall.lib.installer import Installer, run_custom_user_commands
 from archinstall.lib.mirror.mirror_handler import MirrorListHandler

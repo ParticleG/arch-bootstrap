@@ -97,15 +97,16 @@ REGION_MENU_COUNTRIES: list[str] = [
 
 # CERNET smart-routing CDN — automatically redirects to the nearest Chinese
 # educational mirror, effectively acting as a built-in mirror pool.
-ARCHLINUXCN_URL = 'https://mirrors.cernet.edu.cn/archlinuxcn/$arch'
+# ARCHLINUXCN_URL = 'https://mirrors.cernet.edu.cn/archlinuxcn/$arch'
+ARCHLINUXCN_URL = 'https://mirrors.ustc.edu.cn/archlinuxcn/$arch'
 
 # Hardcoded official Arch mirrors for CN — bypasses archinstall's mirror
 # speed-testing entirely.  CERNET CDN first (smart-routes to nearest edu
 # mirror), with TUNA and USTC as fallbacks.
 CN_OFFICIAL_MIRRORS: list[str] = [
-    'https://mirrors.cernet.edu.cn/archlinux/$repo/os/$arch',  # CERNET smart CDN
-    'https://mirrors.tuna.tsinghua.edu.cn/archlinux/$repo/os/$arch',  # Tsinghua TUNA
     'https://mirrors.ustc.edu.cn/archlinux/$repo/os/$arch',  # USTC
+    'https://mirrors.tuna.tsinghua.edu.cn/archlinux/$repo/os/$arch',  # Tsinghua TUNA
+    'https://mirrors.cernet.edu.cn/archlinux/$repo/os/$arch',  # CERNET smart CDN
 ]
 
 # oh-my-zsh
@@ -120,9 +121,9 @@ OMZ_REMOTE_GITHUB = 'https://github.com/ohmyzsh/ohmyzsh.git'
 # for the optional_repositories path.
 FALLBACK_MIRRORS: dict[str, list[str]] = {
     'CN': [
-        'https://mirrors.cernet.edu.cn/archlinux/$repo/os/$arch',
         'https://mirrors.ustc.edu.cn/archlinux/$repo/os/$arch',
         'https://mirrors.tuna.tsinghua.edu.cn/archlinux/$repo/os/$arch',
+        'https://mirrors.cernet.edu.cn/archlinux/$repo/os/$arch',
         'https://mirrors.bfsu.edu.cn/archlinux/$repo/os/$arch',
         'https://mirrors.aliyun.com/archlinux/$repo/os/$arch',
         'https://mirrors.hit.edu.cn/archlinux/$repo/os/$arch',

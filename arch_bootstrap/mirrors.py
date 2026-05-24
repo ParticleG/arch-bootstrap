@@ -24,10 +24,10 @@ def _debug(msg: str) -> None:
 def format_cn_mirrorlist() -> str:
     """Return the formatted CN mirrorlist string (comment header + Server lines).
 
-    Uses CN_OFFICIAL_MIRRORS from constants (CERNET CDN + TUNA/USTC).
+    Uses CN_OFFICIAL_MIRRORS from constants (USTC/TUNA/CERNET).
     Does not write to file — the caller handles that.
     """
-    lines = ['# CN mirrors - CERNET CDN + fallbacks']
+    lines = ['# CN mirrors - USTC + TUNA + CERNET']
     for url in CN_OFFICIAL_MIRRORS:
         lines.append(f'Server = {url}')
     return '\n'.join(lines) + '\n'
@@ -88,7 +88,7 @@ def apply_mirrors_to_live_iso(
     """Apply mirrors to live ISO's /etc/pacman.d/mirrorlist.
 
     For CN: bypasses archinstall's mirror resolution entirely and writes
-    a hardcoded mirrorlist (CERNET CDN + TUNA/USTC fallbacks).
+    a hardcoded mirrorlist (USTC/TUNA/CERNET).
 
     For other regions: uses speed_sort=False (archlinux.org score-sorted
     data is sufficient for the interactive wizard; full speed testing
@@ -108,7 +108,7 @@ def apply_mirrors_to_live_iso(
     # CN: skip online mirror fetching — write hardcoded mirrorlist directly
     if country == 'CN':
         info('[arch-bootstrap] CN region: writing hardcoded mirrorlist '
-             '(CERNET CDN + TUNA/USTC)')
+             '(USTC + TUNA + CERNET)')
         mirrorlist.parent.mkdir(parents=True, exist_ok=True)
         tmp = mirrorlist.with_suffix('.tmp')
         tmp.write_text(format_cn_mirrorlist())

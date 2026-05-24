@@ -202,8 +202,7 @@ def _write_cn_mirrorlist(path: Path) -> None:
     """Write hardcoded CN official mirrors to the given mirrorlist path.
 
     Bypasses archinstall's mirror speed-testing entirely for CN region.
-    CERNET CDN is listed first (smart-routes to nearest edu mirror),
-    followed by TUNA and USTC as fallbacks.
+    USTC is listed first, followed by TUNA and CERNET as fallbacks.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(format_cn_mirrorlist())
@@ -384,8 +383,7 @@ def _install_paru(
 def _setup_archlinuxcn(chroot_dir: Path) -> None:
     """Configure archlinuxcn repository and install keyring in the chroot.
 
-    Uses CERNET smart-routing CDN which redirects to the nearest Chinese
-    educational mirror.  A temporary ``SigLevel = Never`` is used to
+    Uses USTC mirror for archlinuxcn.  A temporary ``SigLevel = Never`` is used to
     bootstrap ``archlinuxcn-keyring`` and then removed.
     """
     _info('Configuring archlinuxcn repository...')

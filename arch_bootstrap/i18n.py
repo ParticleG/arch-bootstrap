@@ -174,17 +174,17 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         # --- Extra install steps ---
         # -- Input method --
         'step.input_method': 'Input Method',
-        'opt.input_method.title': 'Select input method (multi-select, press Enter to skip)',
+        'opt.input_method.title': 'Select input method (multi-select, press Esc to skip)',
         # -- Fonts --
         'step.fonts': 'Fonts',
-        'opt.fonts.base_title': 'Select base fonts (multi-select, press Enter to skip)',
-        'opt.fonts.nerd_title': 'Select Nerd Fonts (multi-select, press Enter to skip)',
+        'opt.fonts.base_title': 'Select base fonts (multi-select, press Esc to skip)',
+        'opt.fonts.nerd_title': 'Select Nerd Fonts (multi-select, press Esc to skip)',
         # -- Proxy tools --
         'step.proxy_tools': 'Proxy Tools',
-        'opt.proxy_tools.title': 'Select proxy tool (single-select, press Enter to skip)',
+        'opt.proxy_tools.title': 'Select proxy tool (single-select, press Esc to skip)',
         # -- Audio firmware --
         'step.audio_firmware': 'Audio Firmware',
-        'opt.audio_firmware.title': 'Select audio firmware (multi-select, press Enter to skip)',
+        'opt.audio_firmware.title': 'Select audio firmware (multi-select, press Esc to skip)',
         # -- Polkit agent --
         'step.polkit_agent': 'Polkit Agent',
         'opt.polkit_agent.title': 'Select polkit agent',
@@ -193,20 +193,20 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'opt.keyring.title': 'Select keyring implementation',
         # -- File manager --
         'step.file_manager': 'File Manager',
-        'opt.file_manager.title': 'Select file manager (multi-select, press Enter to skip)',
+        'opt.file_manager.title': 'Select file manager (multi-select, press Esc to skip)',
         # -- Device purpose --
         'step.device_purpose': 'Device Purpose',
-        'opt.device_purpose.title': 'Select device purpose (multi-select, press Enter to skip)',
+        'opt.device_purpose.title': 'Select device purpose (multi-select, press Esc to skip)',
         # -- Dev tools --
         'step.dev_tools': 'Development Tools',
-        'opt.dev_env.title': 'Select development environment (multi-select, press Enter to skip)',
-        'opt.dev_editor.title': 'Select development editor (multi-select, press Enter to skip)',
+        'opt.dev_env.title': 'Select development environment (multi-select, press Esc to skip)',
+        'opt.dev_editor.title': 'Select development editor (multi-select, press Esc to skip)',
         # -- Gaming --
         'step.gaming': 'Gaming',
-        'opt.gaming.title': 'Select gaming tools (multi-select, press Enter to skip)',
+        'opt.gaming.title': 'Select gaming tools (multi-select, press Esc to skip)',
         # -- Remote desktop --
         'step.remote_desktop': 'Remote Desktop',
-        'opt.remote_desktop.title': 'Select remote desktop tools (multi-select, press Enter to skip)',
+        'opt.remote_desktop.title': 'Select remote desktop tools (multi-select, press Esc to skip)',
         # -- Virtual machine --
         'opt.vm.title': 'Virtual Machine Setup',
         'opt.vm.desc': 'Select VM components to install',
@@ -456,17 +456,17 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         # --- Extra install steps ---
         # -- 输入法 --
         'step.input_method': '输入法',
-        'opt.input_method.title': '选择输入法（多选，按回车跳过）',
+        'opt.input_method.title': '选择输入法（多选，按 Esc 跳过）',
         # -- 字体 --
         'step.fonts': '字体',
-        'opt.fonts.base_title': '选择基础字体（多选，按回车跳过）',
-        'opt.fonts.nerd_title': '选择 Nerd 字体（多选，按回车跳过）',
+        'opt.fonts.base_title': '选择基础字体（多选，按 Esc 跳过）',
+        'opt.fonts.nerd_title': '选择 Nerd 字体（多选，按 Esc 跳过）',
         # -- 代理工具 --
         'step.proxy_tools': '代理工具',
-        'opt.proxy_tools.title': '选择代理工具（单选，按回车跳过）',
+        'opt.proxy_tools.title': '选择代理工具（单选，按 Esc 跳过）',
         # -- 声卡固件 --
         'step.audio_firmware': '声卡固件',
-        'opt.audio_firmware.title': '选择声卡固件（多选，按回车跳过）',
+        'opt.audio_firmware.title': '选择声卡固件（多选，按 Esc 跳过）',
         # -- Polkit 代理 --
         'step.polkit_agent': 'Polkit 代理',
         'opt.polkit_agent.title': '选择 Polkit 代理',
@@ -475,20 +475,20 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'opt.keyring.title': '选择密钥环实现',
         # -- 文件管理器 --
         'step.file_manager': '文件管理器',
-        'opt.file_manager.title': '选择文件管理器（多选，按回车跳过）',
+        'opt.file_manager.title': '选择文件管理器（多选，按 Esc 跳过）',
         # -- 设备用途 --
         'step.device_purpose': '设备用途',
-        'opt.device_purpose.title': '选择设备主要用途（多选，按回车跳过）',
+        'opt.device_purpose.title': '选择设备主要用途（多选，按 Esc 跳过）',
         # -- 开发工具 --
         'step.dev_tools': '开发工具',
-        'opt.dev_env.title': '选择开发环境（多选，按回车跳过）',
-        'opt.dev_editor.title': '选择开发编辑器（多选，按回车跳过）',
+        'opt.dev_env.title': '选择开发环境（多选，按 Esc 跳过）',
+        'opt.dev_editor.title': '选择开发编辑器（多选，按 Esc 跳过）',
         # -- 游戏 --
         'step.gaming': '游戏',
-        'opt.gaming.title': '选择游戏工具（多选，按回车跳过）',
+        'opt.gaming.title': '选择游戏工具（多选，按 Esc 跳过）',
         # -- 远程桌面 --
         'step.remote_desktop': '远程桌面',
-        'opt.remote_desktop.title': '选择远程桌面工具（多选，按回车跳过）',
+        'opt.remote_desktop.title': '选择远程桌面工具（多选，按 Esc 跳过）',
         # -- 虚拟机 --
         'opt.vm.title': '虚拟机配置',
         'opt.vm.desc': '选择要安装的虚拟机组件',
@@ -738,17 +738,17 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         # --- Extra install steps ---
         # -- 入力メソッド --
         'step.input_method': '入力メソッド',
-        'opt.input_method.title': '入力メソッドを選択（複数選択可、Enterでスキップ）',
+        'opt.input_method.title': '入力メソッドを選択（複数選択可、Escでスキップ）',
         # -- フォント --
         'step.fonts': 'フォント',
-        'opt.fonts.base_title': '基本フォントを選択（複数選択可、Enterでスキップ）',
-        'opt.fonts.nerd_title': 'Nerd Fontsを選択（複数選択可、Enterでスキップ）',
+        'opt.fonts.base_title': '基本フォントを選択（複数選択可、Escでスキップ）',
+        'opt.fonts.nerd_title': 'Nerd Fontsを選択（複数選択可、Escでスキップ）',
         # -- プロキシツール --
         'step.proxy_tools': 'プロキシツール',
-        'opt.proxy_tools.title': 'プロキシツールを選択（単一選択、Enterでスキップ）',
+        'opt.proxy_tools.title': 'プロキシツールを選択（単一選択、Escでスキップ）',
         # -- オーディオファームウェア --
         'step.audio_firmware': 'オーディオファームウェア',
-        'opt.audio_firmware.title': 'オーディオファームウェアを選択（複数選択可、Enterでスキップ）',
+        'opt.audio_firmware.title': 'オーディオファームウェアを選択（複数選択可、Escでスキップ）',
         # -- Polkit エージェント --
         'step.polkit_agent': 'Polkit エージェント',
         'opt.polkit_agent.title': 'Polkit エージェントを選択',
@@ -757,20 +757,20 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'opt.keyring.title': 'キーリング実装を選択',
         # -- ファイルマネージャー --
         'step.file_manager': 'ファイルマネージャー',
-        'opt.file_manager.title': 'ファイルマネージャーを選択（複数選択可、Enterでスキップ）',
+        'opt.file_manager.title': 'ファイルマネージャーを選択（複数選択可、Escでスキップ）',
         # -- デバイスの用途 --
         'step.device_purpose': 'デバイスの用途',
-        'opt.device_purpose.title': 'デバイスの用途を選択（複数選択可、Enterでスキップ）',
+        'opt.device_purpose.title': 'デバイスの用途を選択（複数選択可、Escでスキップ）',
         # -- 開発ツール --
         'step.dev_tools': '開発ツール',
-        'opt.dev_env.title': '開発環境を選択（複数選択可、Enterでスキップ）',
-        'opt.dev_editor.title': '開発エディタを選択（複数選択可、Enterでスキップ）',
+        'opt.dev_env.title': '開発環境を選択（複数選択可、Escでスキップ）',
+        'opt.dev_editor.title': '開発エディタを選択（複数選択可、Escでスキップ）',
         # -- ゲーム --
         'step.gaming': 'ゲーム',
-        'opt.gaming.title': 'ゲームツールを選択（複数選択可、Enterでスキップ）',
+        'opt.gaming.title': 'ゲームツールを選択（複数選択可、Escでスキップ）',
         # -- リモートデスクトップ --
         'step.remote_desktop': 'リモートデスクトップ',
-        'opt.remote_desktop.title': 'リモートデスクトップツールを選択（複数選択可、Enterでスキップ）',
+        'opt.remote_desktop.title': 'リモートデスクトップツールを選択（複数選択可、Escでスキップ）',
         # -- 仮想マシン --
         'opt.vm.title': '仮想マシン設定',
         'opt.vm.desc': 'インストールするVMコンポーネントを選択',

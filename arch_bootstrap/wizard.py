@@ -484,12 +484,13 @@ async def step_gpu_drivers(state: WizardState) -> str:
 
     match result.type_:
         case ResultType.Skip:
-            return 'back'
+            state.gpu_vendors = []
+            return 'next'
         case ResultType.Selection:
             state.gpu_vendors = result.get_values()
             return 'next'
         case _:
-            return 'back'
+            return 'next'
 
 
 async def step_desktop_env(state: WizardState) -> str:
@@ -601,12 +602,13 @@ async def step_browser(state: WizardState) -> str:
 
     match result.type_:
         case ResultType.Skip:
-            return 'back'
+            state.browsers = []
+            return 'next'
         case ResultType.Selection:
             state.browsers = result.get_values()
             return 'next'
         case _:
-            return 'back'
+            return 'next'
 
 
 async def step_input_method(state: WizardState) -> str:
@@ -645,12 +647,13 @@ async def step_input_method(state: WizardState) -> str:
 
     match result.type_:
         case ResultType.Skip:
-            return 'back'
+            state.input_methods = []
+            return 'next'
         case ResultType.Selection:
             state.input_methods = result.get_values()
             return 'next'
         case _:
-            return 'back'
+            return 'next'
 
 
 async def step_fonts(state: WizardState) -> str:
@@ -676,7 +679,7 @@ async def step_fonts(state: WizardState) -> str:
 
     match base_result.type_:
         case ResultType.Skip:
-            return 'back'
+            state.base_fonts = []
         case ResultType.Selection:
             state.base_fonts = base_result.get_values()
         case _:
@@ -703,12 +706,13 @@ async def step_fonts(state: WizardState) -> str:
 
     match nerd_result.type_:
         case ResultType.Skip:
-            return 'back'
+            state.nerd_fonts = []
+            return 'next'
         case ResultType.Selection:
             state.nerd_fonts = nerd_result.get_values()
             return 'next'
         case _:
-            return 'back'
+            return 'next'
 
 
 async def step_proxy_tools(state: WizardState) -> str:
@@ -765,12 +769,13 @@ async def step_audio_firmware(state: WizardState) -> str:
 
     match result.type_:
         case ResultType.Skip:
-            return 'back'
+            state.audio_firmware = []
+            return 'next'
         case ResultType.Selection:
             state.audio_firmware = result.get_values()
             return 'next'
         case _:
-            return 'back'
+            return 'next'
 
 
 async def step_polkit_agent(state: WizardState) -> str:
@@ -860,12 +865,13 @@ async def step_file_manager(state: WizardState) -> str:
 
     match result.type_:
         case ResultType.Skip:
-            return 'back'
+            state.file_managers = []
+            return 'next'
         case ResultType.Selection:
             state.file_managers = result.get_values()
             return 'next'
         case _:
-            return 'back'
+            return 'next'
 
 
 async def step_device_purpose(state: WizardState) -> str:
@@ -888,12 +894,13 @@ async def step_device_purpose(state: WizardState) -> str:
 
     match result.type_:
         case ResultType.Skip:
-            return 'back'
+            state.device_purposes = []
+            return 'next'
         case ResultType.Selection:
             state.device_purposes = result.get_values()
             return 'next'
         case _:
-            return 'back'
+            return 'next'
 
 
 async def step_dev_tools(state: WizardState) -> str:
@@ -920,7 +927,7 @@ async def step_dev_tools(state: WizardState) -> str:
 
     match env_result.type_:
         case ResultType.Skip:
-            return 'back'
+            state.dev_environments = []
         case ResultType.Selection:
             state.dev_environments = env_result.get_values()
         case _:
@@ -945,12 +952,13 @@ async def step_dev_tools(state: WizardState) -> str:
 
     match editor_result.type_:
         case ResultType.Skip:
-            return 'back'
+            state.dev_editors = []
+            return 'next'
         case ResultType.Selection:
             state.dev_editors = editor_result.get_values()
             return 'next'
         case _:
-            return 'back'
+            return 'next'
 
 
 async def step_gaming(state: WizardState) -> str:
@@ -978,14 +986,13 @@ async def step_gaming(state: WizardState) -> str:
 
     match result.type_:
         case ResultType.Skip:
-            return 'back'
+            state.gaming_tools = []
+            return 'next'
         case ResultType.Selection:
             state.gaming_tools = result.get_values()
             return 'next'
         case _:
-            return 'back'
-
-
+            return 'next'
 async def step_virtual_machine(state: WizardState) -> str:
     """Select VM components (only if virtual_machine purpose selected)."""
     if 'virtual_machine' not in state.device_purposes:
@@ -1027,7 +1034,8 @@ async def step_virtual_machine(state: WizardState) -> str:
 
     match result.type_:
         case ResultType.Skip:
-            return 'back'
+            state.vm_options = []
+            return 'next'
         case ResultType.Selection:
             selected = result.get_values()
 
@@ -1038,7 +1046,7 @@ async def step_virtual_machine(state: WizardState) -> str:
             state.vm_options = selected
             return 'next'
         case _:
-            return 'back'
+            return 'next'
 
 
 async def step_remote_desktop(state: WizardState) -> str:
@@ -1061,12 +1069,13 @@ async def step_remote_desktop(state: WizardState) -> str:
 
     match result.type_:
         case ResultType.Skip:
-            return 'back'
+            state.remote_desktop = []
+            return 'next'
         case ResultType.Selection:
             state.remote_desktop = result.get_values()
             return 'next'
         case _:
-            return 'back'
+            return 'next'
 
 
 async def step_cn_apps(state: WizardState) -> str:
@@ -1092,12 +1101,13 @@ async def step_cn_apps(state: WizardState) -> str:
 
     match result.type_:
         case ResultType.Skip:
-            return 'back'
+            state.cn_apps = []
+            return 'next'
         case ResultType.Selection:
             state.cn_apps = result.get_values()
             return 'next'
         case _:
-            return 'back'
+            return 'next'
 
 
 async def step_username(state: WizardState) -> str:

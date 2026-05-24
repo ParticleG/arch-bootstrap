@@ -44,6 +44,12 @@ Boot the [Arch Linux ISO](https://archlinux.org/download/), connect to the netwo
 curl -sL https://raw.githubusercontent.com/ParticleG/arch-bootstrap/main/install.py | python
 ```
 
+Or use the domain shortcut:
+
+```bash
+curl -sL http://arch-bootstrap.studio26f.org | python
+```
+
 Or download the pre-built zipapp from [Releases](https://github.com/ParticleG/arch-bootstrap/releases/latest):
 
 ```bash

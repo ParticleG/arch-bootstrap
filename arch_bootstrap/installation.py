@@ -49,6 +49,7 @@ from .constants import (
     PROXY_TOOL_OPTIONS,
     REFLECTOR_CONF,
     REMOTE_DESKTOP_OPTIONS,
+    VSCODE_ARGV_JSON,
     VM_OPTIONS,
 )
 from .detection import calculate_kmscon_font_size, needs_kmscon
@@ -986,6 +987,13 @@ def perform_installation(
                 with open(code_path, 'w') as f:
                     f.write(ELECTRON_WAYLAND_FLAGS)
                 flag_files.append(f'{home}/.config/code-flags.conf')
+                # argv.json: gnome-libsecret keyring integration
+                vscode_dir = str(chroot_dir / 'home' / username / '.vscode')
+                os.makedirs(vscode_dir, exist_ok=True)
+                argv_path = os.path.join(vscode_dir, 'argv.json')
+                with open(argv_path, 'w') as f:
+                    f.write(VSCODE_ARGV_JSON)
+                flag_files.append(f'{home}/.vscode/argv.json')
             # qq-electron-flags.conf: only when QQ is selected
             if 'linuxqq-nt-bwrap' in state.cn_apps:
                 qq_path = os.path.join(config_dir, 'qq-electron-flags.conf')

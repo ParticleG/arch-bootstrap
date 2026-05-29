@@ -714,6 +714,16 @@ ELECTRON_WAYLAND_FLAGS: str = """\
 --ozone-platform-hint=auto
 --enable-wayland-ime
 """
+# ---------------------------------------------------------------------------
+# VS Code argv.json (gnome-libsecret keyring integration)
+# ---------------------------------------------------------------------------
+
+VSCODE_ARGV_JSON: str = """\
+{
+\t"enable-crash-reporter": true,
+\t"password-store": "gnome-libsecret"
+}
+"""
 
 # ---------------------------------------------------------------------------
 # Reflector configuration (non-CN users)

@@ -162,22 +162,29 @@ def _run_matugen(chroot_dir: Path, username: str) -> None:
 
 
 def _set_gtk_theme(chroot_dir: Path, username: str) -> None:
-    """Set the GTK theme to adw-gtk3 via gsettings.
+    """Set the GTK theme to adw-gtk3 with dark color scheme via gsettings.
 
     This may fail inside chroot due to missing dbus session, which is
     expected — the theme will be applied on first login.
     """
-    result = subprocess.run(
-        ['arch-chroot', str(chroot_dir),
-         'runuser', '-l', username, '-c',
-         'gsettings set org.gnome.desktop.interface gtk-theme "adw-gtk3"'],
-        check=False,
-    )
+    commands = [
+        'gsettings set org.gnome.desktop.interface gtk-theme "adw-gtk3"',
+        'gsettings set org.gnome.desktop.interface color-scheme "prefer-dark"',
+    ]
+    failed = False
+    for cmd in commands:
+        result = subprocess.run(
+            ['arch-chroot', str(chroot_dir),
+             'runuser', '-l', username, '-c', cmd],
+            check=False,
+        )
+        if result.returncode != 0:
+            failed = True
 
-    if result.returncode != 0:
+    if failed:
         _debug('gsettings failed (expected in chroot, theme will apply on login)')
     else:
-        _debug('GTK theme set to adw-gtk3')
+        _debug('GTK theme set to adw-gtk3 with prefer-dark color scheme')
 
 
 def _configure_greetd(chroot_dir: Path, username: str) -> None:

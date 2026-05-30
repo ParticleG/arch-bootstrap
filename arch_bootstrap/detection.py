@@ -92,6 +92,90 @@ def detect_gpu() -> list[str]:
 
     return detected
 
+def _vga_switcheroo_has_dgpu() -> bool:
+    """Detect dGPU through kernel vga_switcheroo metadata."""
+    switch_file = Path('/sys/kernel/debug/vgaswitcheroo/switch')
+    try:
+        lines = switch_file.read_text().splitlines()
+    except OSError:
+        return False
+
+    # Example: "1:DIS: :Pwr:0000:03:00.0".
+    # Match DIS only; DIS-AUX is an audio/helper function.
+    return any(re.match(r'^\d+:DIS:', line) for line in lines)
+
+
+def _switcherooctl_has_dgpu() -> bool:
+    """Detect dGPU through switcheroo-control, like gpu-select does."""
+    try:
+        output = subprocess.check_output(
+            ['switcherooctl', 'list'], text=True, stderr=subprocess.DEVNULL,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return False
+
+    discrete = ''
+    default = ''
+    has_gpu_env = False
+
+    def flush_device() -> bool:
+        if discrete == 'yes':
+            return True
+        # Older switcherooctl may omit Discrete.  In a hybrid setup, the
+        # non-default GPU with a DRI_PRIME env is the offload/dGPU device.
+        return not discrete and default == 'no' and has_gpu_env
+
+    for line in output.splitlines():
+        if line.startswith('Device:'):
+            if flush_device():
+                return True
+            discrete = ''
+            default = ''
+            has_gpu_env = False
+            continue
+
+        if match := re.match(r'\s*Discrete:\s*(yes|no)', line):
+            discrete = match.group(1)
+        elif match := re.match(r'\s*Default:\s*(yes|no)', line):
+            default = match.group(1)
+        elif re.match(r'\s*Environment:\s*.*DRI_PRIME=', line):
+            has_gpu_env = True
+
+    return flush_device()
+
+
+def _multiple_pci_gpus_present() -> bool:
+    """Fallback: count PCI display controllers from known GPU vendors."""
+    try:
+        lspci_output = subprocess.check_output(
+            ['lspci', '-D', '-nn'], text=True, stderr=subprocess.DEVNULL,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return False
+
+    gpu_lines = [
+        line for line in lspci_output.splitlines()
+        if re.search(r'\b(VGA|3D|Display)\b', line)
+        and re.search(r'\[(1002|10de|8086):[0-9a-fA-F]{4}\]', line)
+    ]
+    return len(gpu_lines) >= 2
+
+
+def detect_dgpu_available() -> bool:
+    """Return True when the machine appears to have a dGPU.
+
+    Prefer switcheroo metadata (the same source gpu-select relies on), then
+    fall back to PCI display-controller count for systems without
+    switcheroo-control/debugfs support.  The fallback is intentionally about
+    device count rather than vendor count so same-vendor AMD iGPU+dGPU systems
+    still expose GPU passthrough and LookingGlass options.
+    """
+    return (
+        _vga_switcheroo_has_dgpu()
+        or _switcherooctl_has_dgpu()
+        or _multiple_pci_gpus_present()
+    )
+
 
 def detect_audio() -> list[str]:
     """Detect audio hardware via lspci and return recommended firmware keys.

@@ -99,6 +99,7 @@ class WizardState:
         self.root_password: Password | None = None
         self.detected_country: str | None = None
         self.detected_gpu: list[str] = []
+        self.detected_dgpu: bool = False
         self.preferred_disk: Path | None = None
         self.mirror_list_handler: MirrorListHandler | None = None
         # kmscon font selection
@@ -998,14 +999,9 @@ async def step_virtual_machine(state: WizardState) -> str:
     if 'virtual_machine' not in state.device_purposes:
         return 'next'
 
-    # Detect if discrete GPU is available for passthrough
-    has_dgpu = (
-        len(state.detected_gpu) > 1
-        or (
-            any(g in state.detected_gpu for g in ['nvidia_open', 'nouveau'])
-            and any(g in state.detected_gpu for g in ['amd', 'intel'])
-        )
-    )
+    # Show GPU passthrough features when multiple display controller devices
+    # exist, including same-vendor hybrid systems (AMD iGPU + AMD dGPU).
+    has_dgpu = state.detected_dgpu
 
     # Build option items - only show GPU-related options if dGPU detected
     items = []

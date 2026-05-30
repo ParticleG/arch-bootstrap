@@ -142,7 +142,7 @@ These are baked into every installation and are **not configurable** through the
 ## Features
 
 - **archinstall native TUI** — uses archinstall's textual-based Selection, Input, and Confirmation components
-- **Auto-detection** — IP geolocation for mirror region, `lspci` for GPU vendor (NVIDIA Turing+ detection via PCI Device ID), `lsblk` for target disks
+- **Auto-detection** — IP geolocation for mirror region, GPU vendor via `lspci`, dGPU presence via `vga_switcheroo`/`switcherooctl` with PCI fallback, `lsblk` for target disks
 - **Smart mirrors** — per-country fallback mirror pools (CN, US, JP, DE); applied to live ISO before any `pacman` operation
 - **i18n** — English, Simplified Chinese, and Japanese (auto-fallback to English on raw TTY where CJK cannot render)
 - **Advanced escape hatch** — archinstall's GlobalMenu available from the confirmation panel for full manual override
@@ -165,7 +165,7 @@ These are baked into every installation and are **not configurable** through the
 |------------|-------|
 | Python 3.11+ | Pre-installed on Arch ISO |
 | archinstall 4.1+ | Auto-upgraded by the bootstrap script |
-| pciutils (`lspci`) | Pre-installed on Arch ISO |
+| pciutils (`lspci`) + switcheroo-control | `lspci` is pre-installed; `switcheroo-control` is auto-installed on Arch ISO for reliable dGPU detection |
 | Root privileges | Required |
 | Network connection | Required for mirrors and packages |
 

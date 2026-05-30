@@ -610,8 +610,8 @@ VM_OPTIONS: dict[str, dict] = {
     },
     'gpu_passthrough': {
         'label': 'GPU Hot-Switch Passthrough',
-        'packages': [],
-        'services': [],
+        'packages': ['switcheroo-control'],
+        'services': ['switcheroo-control'],
     },
     'looking_glass': {
         'label': 'LookingGlass (KVMFR)',

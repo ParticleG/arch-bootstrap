@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
 import sys
+from pathlib import Path
 
 from archinstall.lib.disk.filesystem import FilesystemHandler
 from archinstall.lib.menu.util import delayed_warning
@@ -20,6 +23,7 @@ from .detection import (
     cleanup_disk_locks,
     detect_audio,
     detect_country,
+    detect_dgpu_available,
     detect_gpu,
     detect_preferred_disk,
     detect_screen_resolution,
@@ -34,6 +38,32 @@ def _info(msg: str) -> None:
     """Log an info message with a colored [arch-bootstrap] prefix."""
     info(f'{_PREFIX} {msg}', fg='cyan', font=[Font.bold])
 
+
+def _ensure_switcheroo_control_on_iso() -> None:
+    """Best-effort install/start switcheroo-control before GPU probing.
+
+    Arch ISO does not guarantee switcherooctl is present.  Installing it in
+    the live environment lets the wizard use the same dGPU metadata source as
+    gpu-select before deciding whether to show passthrough options.
+    """
+    if not Path('/run/archiso').exists():
+        return
+
+    if shutil.which('switcherooctl') is None:
+        _info('Installing switcheroo-control for reliable dGPU detection...')
+        subprocess.run(
+            ['pacman', '-Sy', '--noconfirm', '--needed', 'switcheroo-control'],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+
+    subprocess.run(
+        ['systemctl', 'start', 'switcheroo-control.service'],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
 
 def main() -> None:
     """Main entry point for the installer."""
@@ -68,9 +98,14 @@ def main() -> None:
     if detected_country:
         _info(f'Detected country: {detected_country} ({COUNTRY_NAMES.get(detected_country, "Unknown")})')
 
+    _ensure_switcheroo_control_on_iso()
     detected_gpu = detect_gpu()
     if detected_gpu:
         _info(f'Detected GPU: {", ".join(GPU_LABELS.get(v, v) for v in detected_gpu)}')
+
+    detected_dgpu = detect_dgpu_available()
+    if detected_dgpu:
+        _info('Detected multiple GPU display controllers: GPU passthrough options enabled')
 
     detected_audio = detect_audio()
     if detected_audio:
@@ -97,6 +132,7 @@ def main() -> None:
     state.detected_country = detected_country
     state.country = detected_country
     state.locale = initial_locale
+    state.detected_dgpu = detected_dgpu
     state.detected_gpu = detected_gpu
     state.gpu_vendors = list(detected_gpu)
     state.detected_audio = detected_audio

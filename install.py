@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import importlib
 import os
+import shutil
 import re
 import subprocess
 import sys
@@ -228,6 +229,32 @@ def _upgrade_archinstall() -> None:
         del sys.modules[key]
     importlib.invalidate_caches()
 
+
+def _ensure_switcheroo_control() -> None:
+    """Install/start switcheroo-control on Arch ISO for reliable dGPU detection."""
+    if not Path('/run/archiso').exists():
+        return
+
+    if shutil.which('switcherooctl') is None:
+        print('arch-bootstrap: Installing switcheroo-control for reliable dGPU detection...')
+        result = subprocess.run(
+            ['pacman', '-Sy', '--noconfirm', '--needed', 'switcheroo-control'],
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        if result.returncode != 0:
+            print(
+                f'WARNING: Failed to install switcheroo-control: {result.stderr.strip()}',
+                file=sys.stderr,
+            )
+            return
+
+    subprocess.run(
+        ['systemctl', 'start', 'switcheroo-control.service'],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
 
 # ---------------------------------------------------------------------------
 # GitHub proxy resolution
@@ -449,6 +476,10 @@ def _main() -> None:
     # Upgrade archinstall on ISO if needed
     if _needs_archinstall_upgrade():
         _upgrade_archinstall()
+
+    # Install switcherooctl in the live ISO before the full installer probes
+    # GPUs.  Arch ISO does not ship it by default.
+    _ensure_switcheroo_control()
 
     # Try to import from local package (development / source tree)
     try:

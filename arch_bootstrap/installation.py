@@ -524,6 +524,38 @@ def _install_aur_browsers(
         _info(f'AUR browser installation failed (exit {result.returncode}), skipping')
 
 
+def _collect_dev_environment_groups(dev_environments: list[str]) -> list[str]:
+    """Return user groups required by selected development tools."""
+    groups: list[str] = []
+    for de_key in dev_environments:
+        option = DEV_ENVIRONMENT_OPTIONS.get(de_key)
+        if not option:
+            continue
+        for group in option.get('groups', []):
+            if group not in groups:
+                groups.append(group)
+    return groups
+
+
+def _ensure_user_in_groups(chroot_dir: Path, username: str, groups: list[str]) -> bool:
+    """Ensure user groups exist and add the target user to them."""
+    for group in groups:
+        result = run_with_retry(
+            ['arch-chroot', str(chroot_dir), 'groupadd', '-f', group],
+            max_retries=1, retry_delay=0,
+            description=f'ensure {group} group',
+        )
+        if result.returncode != 0:
+            return False
+
+    result = run_with_retry(
+        ['arch-chroot', str(chroot_dir),
+         'usermod', '-aG', ','.join(groups), username],
+        max_retries=1, retry_delay=0,
+        description=f'add {username} to {", ".join(groups)} groups',
+    )
+    return result.returncode == 0
+
 # =============================================================================
 # Installation
 # =============================================================================
@@ -1108,6 +1140,27 @@ def perform_installation(
             tracker.record('summary.step.dev_services', StepStatus.SUCCESS)
         else:
             tracker.record('summary.step.dev_services', StepStatus.SKIPPED)
+
+        # Post-install: add user to development tool groups (Docker, etc.)
+        dev_groups = _collect_dev_environment_groups(state.dev_environments)
+        if dev_groups and username:
+            _info(t('post.dev_groups'))
+            if _ensure_user_in_groups(chroot_dir, username, dev_groups):
+                tracker.record('summary.step.dev_groups', StepStatus.SUCCESS)
+            else:
+                tracker.record(
+                    'summary.step.dev_groups',
+                    StepStatus.FAILED,
+                    'could not configure user groups',
+                )
+        elif dev_groups:
+            tracker.record(
+                'summary.step.dev_groups',
+                StepStatus.FAILED,
+                'username not configured',
+            )
+        else:
+            tracker.record('summary.step.dev_groups', StepStatus.SKIPPED)
 
         # Post-install: VM services
         if state.vm_options:

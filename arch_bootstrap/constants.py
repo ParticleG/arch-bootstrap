@@ -626,6 +626,7 @@ DEV_ENVIRONMENT_OPTIONS: dict[str, dict] = {
         'label': 'Docker',
         'packages': ['docker', 'docker-compose'],
         'services': ['docker'],
+        'groups': ['docker'],
     },
     'go': {
         'label': 'Go',

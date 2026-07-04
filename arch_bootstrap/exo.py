@@ -2,7 +2,7 @@
 
 Exo is a Material Design 3 desktop shell for the Niri compositor, built
 with Ignis (Python/GTK4 widget framework).  This module clones the Exo
-repository, installs its AUR dependencies via paru, copies configuration
+repository, installs its repository/AUR dependencies, copies configuration
 files into the user's home directory, configures greetd for autologin
 into the Niri session, and enables the required systemd services.
 
@@ -24,7 +24,7 @@ from .constants import (
     EXO_SYSTEM_PACKAGES,
 )
 from .i18n import t
-from .utils import get_clone_url, run_with_retry
+from .utils import build_paru_aur_install_command, get_clone_url, run_with_retry
 
 _PREFIX = '[Exo]'
 
@@ -58,24 +58,21 @@ def _debug(msg: str) -> None:
 # ---------------------------------------------------------------------------
 
 def _install_aur_packages(chroot_dir: Path, username: str) -> bool:
-    """Install Exo's AUR dependencies via paru.
+    """Install Exo's repository and AUR dependencies.
+
+    Repository packages are installed with pacman; AUR packages are installed
+    with paru constrained to exact AUR targets to avoid provider prompts.
 
     Returns True on success, False on failure.
     """
     _info(t('exo.installing_deps'))
-    all_packages = EXO_AUR_PACKAGES + EXO_SYSTEM_PACKAGES
-    _debug(f'Packages: {", ".join(all_packages)}')
-
-    cmd = (
-        'GIT_CONFIG_SYSTEM=/etc/gitconfig '
-        'MAKEPKG_GIT_CONFIG=/etc/gitconfig '
-        'LANG=C.UTF-8 paru -S --noconfirm --needed --skipreview '
-        + ' '.join(all_packages)
-    )
+    _debug(f'Repository packages: {", ".join(EXO_SYSTEM_PACKAGES)}')
+    _debug(f'AUR packages: {", ".join(EXO_AUR_PACKAGES)}')
 
     result = run_with_retry(
         ['arch-chroot', str(chroot_dir),
-         'runuser', '-l', username, '-c', cmd],
+         'env', 'LANG=C.UTF-8',
+         'pacman', '-S', '--noconfirm', '--needed', *EXO_SYSTEM_PACKAGES],
         description=t('exo.installing_deps'),
     )
 
@@ -83,8 +80,43 @@ def _install_aur_packages(chroot_dir: Path, username: str) -> bool:
         _info(t('exo.failed') % (result.returncode or -1))
         return False
 
+    if EXO_AUR_PACKAGES:
+        cmd = (
+            'GIT_CONFIG_SYSTEM=/etc/gitconfig '
+            'MAKEPKG_GIT_CONFIG=/etc/gitconfig '
+            + build_paru_aur_install_command(EXO_AUR_PACKAGES)
+        )
+        result = run_with_retry(
+            ['arch-chroot', str(chroot_dir),
+             'runuser', '-l', username, '-c', cmd],
+            description=t('exo.installing_deps'),
+        )
+
+        if result.returncode != 0:
+            _info(t('exo.failed') % (result.returncode or -1))
+            return False
+
     return True
 
+
+
+def _patch_wallpaper_commands(chroot_dir: Path, username: str) -> None:
+    """Rewrite Exo's copied configs for Arch's swww -> awww rename."""
+    config_root = chroot_dir / 'home' / username / '.config'
+    for root in (config_root / 'ignis', config_root / 'matugen', config_root / 'niri'):
+        if not root.exists():
+            continue
+        for path in root.rglob('*'):
+            if not path.is_file():
+                continue
+            try:
+                content = path.read_text()
+            except UnicodeDecodeError:
+                continue
+            patched = content.replace('swww-daemon', 'awww-daemon').replace('swww', 'awww')
+            if patched != content:
+                path.write_text(patched)
+                _debug(f'Patched wallpaper command names in {path}')
 
 def _clone_and_copy_configs(
     chroot_dir: Path,
@@ -284,10 +316,10 @@ def install_exo(
 ) -> None:
     """Install the Exo desktop shell for Niri.
 
-    Installs Exo's AUR dependencies via paru, clones the Exo repository,
-    copies configuration files, runs matugen for initial color generation,
-    configures greetd for autologin into the Niri session, and enables
-    systemd services.
+    Installs Exo's repository and AUR dependencies, clones the Exo repository,
+    patches copied configs for Arch package renames, runs matugen for initial
+    color generation, configures greetd for autologin into the Niri session,
+    and enables systemd services.
 
     The CN GitHub proxy (if applicable) should already be configured in
     /etc/gitconfig by the caller before this function is invoked, so
@@ -308,7 +340,7 @@ def install_exo(
     _debug('Temporary NOPASSWD sudoers rule created')
 
     try:
-        # 1. Install AUR dependencies via paru
+        # 1. Install repository and AUR dependencies
         if not _install_aur_packages(chroot_dir, username):
             return
 
@@ -317,28 +349,31 @@ def install_exo(
             _cleanup_repo(chroot_dir)
             return
 
-        # 3. Run matugen for initial color generation
+        # 3. Patch copied configs for Arch package renames
+        _patch_wallpaper_commands(chroot_dir, username)
+
+        # 4. Run matugen for initial color generation
         _run_matugen(chroot_dir, username)
 
-        # 4. Set GTK theme
+        # 5. Set GTK theme
         _set_gtk_theme(chroot_dir, username)
 
-        # 5. Install exoupdate command
+        # 6. Install exoupdate command
         _install_exoupdate(chroot_dir)
 
-        # 6. Cleanup cloned repo
+        # 7. Cleanup cloned repo
         _cleanup_repo(chroot_dir)
     finally:
         sudoers_file.unlink(missing_ok=True)
         _debug('Removed temporary NOPASSWD sudoers rule')
 
-    # 7. Configure greetd for Niri autologin
+    # 8. Configure greetd for Niri autologin
     _configure_greetd(chroot_dir, username)
 
-    # 8. Enable systemd services (manual symlinks)
+    # 9. Enable systemd services (manual symlinks)
     _enable_services(chroot_dir)
 
-    # 9. Fix file ownership
+    # 10. Fix file ownership
     _fix_ownership(chroot_dir, username)
 
     _info(t('exo.complete'))

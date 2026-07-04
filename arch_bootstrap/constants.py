@@ -286,16 +286,12 @@ GHPROXY_FALLBACK = 'https://ghfast.top'
 
 EXO_REPO_URL = 'https://github.com/debuggyo/Exo.git'
 
-# Essential AUR packages for Exo desktop
+# AUR-only packages for Exo desktop
 EXO_AUR_PACKAGES: list[str] = [
     'python-ignis-git',
     'ignis-gvc',
     'ttf-material-symbols-variable-git',
     'matugen-bin',
-    'swww',
-    'gnome-bluetooth-3.0',
-    'adw-gtk-theme',
-    'dart-sass',
 ]
 
 # Portal backends for graphical sessions.  GTK remains the generic fallback;
@@ -315,6 +311,10 @@ EXO_SYSTEM_PACKAGES: list[str] = [
     'nautilus',
     'playerctl',
     'brightnessctl',
+    'awww',
+    'gnome-bluetooth-3.0',
+    'adw-gtk-theme',
+    'dart-sass',
 ]
 
 # ---------------------------------------------------------------------------
@@ -326,6 +326,7 @@ DMS_MANUAL_PREREQ_PACKAGES: list[str] = []
 
 DMS_MANUAL_AUR_PACKAGES: list[str] = [
     'greetd-dms-greeter-git',
+    'dsearch-bin',
 ]
 
 DMS_MANUAL_SYSTEM_PACKAGES: list[str] = [
@@ -333,7 +334,6 @@ DMS_MANUAL_SYSTEM_PACKAGES: list[str] = [
     'accountsservice', 'matugen',
     'dgop', 'cava', 'cups-pk-helper', 'kimageformats',
     'libavif', 'libheif', 'libjxl', 'qt6ct', 'wtype', 'i2c-tools',
-    'dsearch-bin',
 ]
 
 DMS_MANUAL_COMPOSITOR_PACKAGES: dict[str, list[str]] = {
@@ -382,7 +382,13 @@ INPUT_METHOD_PACKAGES: dict[str, dict] = {
     'fcitx5_zh': {
         'label': 'Fcitx5 (Chinese)',
         'packages': ['fcitx5', 'fcitx5-chinese-addons', 'fcitx5-configtool', 'fcitx5-pinyin-zhwiki'],
-        'aur_packages': ['fcitx5-pinyin-sougou-dict-git', 'fcitx5-pinyin-moegirl'],
+        'aur_packages': ['fcitx5-pinyin-moegirl'],
+        'prebuilt_dictionaries': [
+            {
+                'url': 'https://github.com/blackteahamburger/fcitx5-pinyin-sougou-dict/releases/latest/download/sougou.dict',
+                'target': '.local/share/fcitx5/pinyin/dictionaries/sougou.dict',
+            },
+        ],
     },
     'fcitx5_ja_mozc': {
         'label': 'Fcitx5 + Mozc (Japanese, recommended)',
@@ -575,11 +581,13 @@ CN_APP_OPTIONS: dict[str, dict] = {
 
 PROXY_TOOL_OPTIONS: dict[str, dict] = {
     'flclash': {
-        'label': 'FlClash (recommended, in archlinuxcn)',
+        'label': 'FlClash (recommended, archlinuxcn)',
+        'repo': 'archlinuxcn',
         'packages': ['flclash'],
     },
     'mihomo': {
-        'label': 'Mihomo (CLI, in archlinuxcn)',
+        'label': 'Mihomo (CLI, archlinuxcn)',
+        'repo': 'archlinuxcn',
         'packages': ['mihomo'],
     },
     'mihomo_party': {

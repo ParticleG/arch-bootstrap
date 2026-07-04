@@ -16,7 +16,7 @@ from .constants import (
     FILE_MANAGER_OPTIONS,
 )
 from .i18n import t
-from .utils import run_with_retry
+from .utils import build_paru_aur_install_command, run_with_retry
 
 
 _PREFIX = '[dms-manual]'
@@ -63,16 +63,10 @@ def _install_prereq_packages(chroot_dir: Path, username: str) -> bool:
     _info(t('dms_manual.installing_prereqs'))
     _debug(f'Packages: {", ".join(DMS_MANUAL_PREREQ_PACKAGES)}')
 
-    cmd = (
-        'GIT_CONFIG_SYSTEM=/etc/gitconfig '
-        'MAKEPKG_GIT_CONFIG=/etc/gitconfig '
-        'LANG=C.UTF-8 paru -S --noconfirm --needed --skipreview '
-        + ' '.join(DMS_MANUAL_PREREQ_PACKAGES)
-    )
-
     result = run_with_retry(
         ['arch-chroot', str(chroot_dir),
-         'runuser', '-l', username, '-c', cmd],
+         'env', 'LANG=C.UTF-8',
+         'pacman', '-S', '--noconfirm', '--needed', *DMS_MANUAL_PREREQ_PACKAGES],
         description=t('dms_manual.installing_prereqs'),
     )
 
@@ -89,35 +83,48 @@ def _install_packages(
     compositor: str,
     terminal: str,
 ) -> bool:
-    """Install all remaining DMS packages via paru.
+    """Install all remaining DMS packages.
+
+    Repository packages are installed with pacman; AUR packages are installed
+    with paru constrained to exact AUR targets to avoid provider prompts.
 
     Returns True on success, False on failure.
     """
     _info(t('dms_manual.installing_deps'))
 
-    # Build the full package list
     compositor_pkgs = DMS_MANUAL_COMPOSITOR_PACKAGES.get(compositor, [])
     terminal_pkg = DMS_MANUAL_TERMINAL_PACKAGES.get(terminal, '')
-    all_packages = (
-        DMS_MANUAL_AUR_PACKAGES
-        + DMS_MANUAL_SYSTEM_PACKAGES
+    repo_packages = (
+        DMS_MANUAL_SYSTEM_PACKAGES
         + list(compositor_pkgs)
         + ([terminal_pkg] if terminal_pkg else [])
     )
-    _debug(f'Packages: {", ".join(all_packages)}')
-
-    cmd = (
-        'GIT_CONFIG_SYSTEM=/etc/gitconfig '
-        'MAKEPKG_GIT_CONFIG=/etc/gitconfig '
-        'LANG=C.UTF-8 paru -S --noconfirm --needed --skipreview '
-        + ' '.join(all_packages)
-    )
+    aur_packages = DMS_MANUAL_AUR_PACKAGES
+    _debug(f'Repository packages: {", ".join(repo_packages)}')
+    _debug(f'AUR packages: {", ".join(aur_packages)}')
 
     result = run_with_retry(
         ['arch-chroot', str(chroot_dir),
-         'runuser', '-l', username, '-c', cmd],
+         'env', 'LANG=C.UTF-8',
+         'pacman', '-S', '--noconfirm', '--needed', *repo_packages],
         description=t('dms_manual.installing_deps'),
     )
+
+    if result.returncode != 0:
+        _info(t('dms_manual.failed') % result.returncode)
+        return False
+
+    if aur_packages:
+        cmd = (
+            'GIT_CONFIG_SYSTEM=/etc/gitconfig '
+            'MAKEPKG_GIT_CONFIG=/etc/gitconfig '
+            + build_paru_aur_install_command(aur_packages)
+        )
+        result = run_with_retry(
+            ['arch-chroot', str(chroot_dir),
+             'runuser', '-l', username, '-c', cmd],
+            description=t('dms_manual.installing_deps'),
+        )
 
     if result.returncode != 0:
         _info(t('dms_manual.failed') % result.returncode)
@@ -350,8 +357,8 @@ def install_dms_manual(
 ) -> None:
     """Install DMS desktop environment manually (without dankinstall).
 
-    Installs DMS packages via paru in two phases (prerequisite packages
-    first if any, then everything else), runs ``dms setup``
+    Installs repository packages with pacman and AUR packages with paru,
+    runs ``dms setup``
     with stdin piping for automation, configures greetd with dms-greeter,
     and enables systemd services via manual symlinks.
 

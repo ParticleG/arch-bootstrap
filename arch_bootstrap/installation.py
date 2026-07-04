@@ -56,7 +56,7 @@ from .detection import calculate_kmscon_font_size, needs_kmscon
 from .i18n import get_lang, t
 from .log import copy_log_to_target
 from .mirrors import format_cn_mirrorlist
-from .utils import get_clone_url, install_github_proxy_dl, resolve_github_proxy, run_with_retry
+from .utils import build_paru_aur_install_command, get_clone_url, install_github_proxy_dl, resolve_github_proxy, run_with_retry
 
 
 # =============================================================================
@@ -510,18 +510,85 @@ def _install_aur_browsers(
     if not aur_packages:
         return
 
-    pkg_str = ' '.join(shlex.quote(p) for p in aur_packages)
     _info(f'Installing AUR browsers: {", ".join(aur_packages)}')
+    aur_cmd = build_paru_aur_install_command(aur_packages)
 
     result = run_with_retry(
         ['arch-chroot', str(chroot_dir),
-         'runuser', '-l', username, '-c',
-         f'LANG=C.UTF-8 paru -S --noconfirm --needed --skipreview {pkg_str}'],
+         'runuser', '-l', username, '-c', aur_cmd],
         description=f'AUR browsers: {", ".join(aur_packages)}',
         check=False,
     )
     if result.returncode != 0:
         _info(f'AUR browser installation failed (exit {result.returncode}), skipping')
+
+
+def _install_prebuilt_input_dictionaries(
+    chroot_dir: Path,
+    username: str,
+    input_methods: list[str],
+    country: str | None,
+) -> None:
+    """Best-effort install for prebuilt input method dictionaries."""
+    dictionaries: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+
+    for im_key in input_methods:
+        option = INPUT_METHOD_PACKAGES.get(im_key, {})
+        for dictionary in option.get('prebuilt_dictionaries', []):
+            url = dictionary.get('url')
+            target = dictionary.get('target')
+            if not url or not target:
+                continue
+            key = (url, target)
+            if key in seen:
+                continue
+            seen.add(key)
+            dictionaries.append({'url': url, 'target': target})
+
+    if not dictionaries:
+        return
+
+    _info(t('post.input_method_dicts'))
+    proxy = resolve_github_proxy(country == 'CN')
+
+    for dictionary in dictionaries:
+        original_url = dictionary['url']
+        download_urls = [original_url]
+        if proxy and original_url.startswith('https://github.com/'):
+            download_urls.insert(0, f'{proxy}/{original_url}')
+        url_args = ' '.join(shlex.quote(url) for url in download_urls)
+
+        target_rel = dictionary['target'].lstrip('/')
+        if '..' in Path(target_rel).parts:
+            _debug(f'Skipping unsafe input method dictionary path: {target_rel}')
+            continue
+
+        target_path = f'/home/{username}/{target_rel}'
+        target_dir = target_path.rsplit('/', 1)[0]
+        cmd = (
+            f'target={shlex.quote(target_path)}; '
+            f'dir={shlex.quote(target_dir)}; '
+            'mkdir -p "$dir"; '
+            'tmp="$(mktemp "$target.tmp.XXXXXX")"; '
+            'status=1; '
+            f'for url in {url_args}; do '
+            'if curl -fsSL --retry 3 --retry-delay 5 --connect-timeout 15 --max-time 900 -o "$tmp" "$url"; then '
+            'status=0; break; fi; '
+            'status=$?; rm -f "$tmp"; tmp="$(mktemp "$target.tmp.XXXXXX")"; '
+            'done; '
+            'if [ "$status" -eq 0 ]; then mv "$tmp" "$target"; '
+            'else rm -f "$tmp"; exit "$status"; fi'
+        )
+
+        result = subprocess.run(
+            ['arch-chroot', str(chroot_dir), 'runuser', '-l', username, '-c', cmd],
+            check=False,
+        )
+        if result.returncode == 0:
+            _info(t('post.input_method_dict_installed', target_rel))
+        else:
+            _info(t('post.input_method_dict_failed', target_rel, result.returncode))
 
 
 def _collect_dev_environment_groups(dev_environments: list[str]) -> list[str]:
@@ -867,7 +934,7 @@ def perform_installation(
         # Post-install: clipboard Wayland AUR packages
         if has_paru and desktop_env != 'minimal' and username:
             _info(t('post.clipboard'))
-            aur_cmd = f"LANG=C.UTF-8 paru -S --noconfirm --needed --skipreview {' '.join(CLIPBOARD_WAYLAND_AUR_PACKAGES)}"
+            aur_cmd = build_paru_aur_install_command(CLIPBOARD_WAYLAND_AUR_PACKAGES)
             run_with_retry(
                 ['arch-chroot', str(chroot_dir), 'runuser', '-l', username, '-c', aur_cmd],
                 max_retries=3, retry_delay=5,
@@ -1069,23 +1136,31 @@ def perform_installation(
                      'runuser', '-l', username, '-c', gtk_im_cmd],
                     check=False,
                 )
+                _install_prebuilt_input_dictionaries(
+                    chroot_dir,
+                    username,
+                    state.input_methods,
+                    country,
+                )
 
             tracker.record('summary.step.input_method', StepStatus.SUCCESS)
         else:
             tracker.record('summary.step.input_method', StepStatus.SKIPPED)
 
-        # Post-install: additional AUR/archlinuxcn packages (remote desktop, proxy, dev editors)
+        # Post-install: additional repository/AUR packages
+        repo_packages: list[str] = []
         aur_packages: list[str] = []
 
-        for rd_key in state.remote_desktop:
-            if rd_key in REMOTE_DESKTOP_OPTIONS:
-                aur_packages.extend(REMOTE_DESKTOP_OPTIONS[rd_key].get('aur_packages', []))
-
-        # Proxy tools are installed here (both AUR and archlinuxcn) since
-        # archlinuxcn repo and paru are already configured at this point.
+        # Proxy tools are installed here since archlinuxcn and paru are already
+        # configured at this point.
         if state.proxy_tool and state.proxy_tool in PROXY_TOOL_OPTIONS:
             opt = PROXY_TOOL_OPTIONS[state.proxy_tool]
-            aur_packages.extend(opt.get('packages', []) + opt.get('aur_packages', []))
+            repo = opt.get('repo')
+            repo_packages.extend(
+                f'{repo}/{pkg}' if repo else pkg
+                for pkg in opt.get('packages', [])
+            )
+            aur_packages.extend(opt.get('aur_packages', []))
 
         for de_key in state.dev_editors:
             if de_key in DEV_EDITOR_OPTIONS:
@@ -1112,16 +1187,37 @@ def perform_installation(
                     if pkg not in aur_packages:
                         aur_packages.append(pkg)
 
-        if has_paru and aur_packages and username:
-            aur_cmd = f"LANG=C.UTF-8 paru -S --noconfirm --needed --skipreview {' '.join(aur_packages)}"
-            run_with_retry(
-                ['arch-chroot', str(chroot_dir), 'runuser', '-l', username, '-c', aur_cmd],
+        additional_packages = bool(repo_packages or aur_packages)
+        additional_failed = False
+
+        if repo_packages:
+            result = run_with_retry(
+                ['arch-chroot', str(chroot_dir),
+                 'env', 'LANG=C.UTF-8',
+                 'pacman', '-S', '--noconfirm', '--needed', *repo_packages],
                 max_retries=3, retry_delay=5,
-                description='additional AUR packages',
+                description='additional repository packages',
+                check=False,
             )
+            additional_failed = result.returncode != 0
+
+        if aur_packages:
+            if has_paru and username:
+                aur_cmd = build_paru_aur_install_command(aur_packages)
+                result = run_with_retry(
+                    ['arch-chroot', str(chroot_dir), 'runuser', '-l', username, '-c', aur_cmd],
+                    max_retries=3, retry_delay=5,
+                    description='additional AUR packages',
+                    check=False,
+                )
+                additional_failed = additional_failed or result.returncode != 0
+            else:
+                additional_failed = True
+
+        if additional_failed:
+            tracker.record('summary.step.aur_packages', StepStatus.FAILED, 'additional package installation failed')
+        elif additional_packages:
             tracker.record('summary.step.aur_packages', StepStatus.SUCCESS)
-        elif aur_packages:
-            tracker.record('summary.step.aur_packages', StepStatus.FAILED, 'paru not available')
         else:
             tracker.record('summary.step.aur_packages', StepStatus.SKIPPED)
 
@@ -1252,7 +1348,7 @@ def perform_installation(
                 subprocess.run(
                     ['arch-chroot', str(chroot_dir),
                      'runuser', '-l', state.username, '-c',
-                     'paru -S --noconfirm --needed gpu-hotswitch-vfio'],
+                     build_paru_aur_install_command(['gpu-hotswitch-vfio'])],
                     check=True, capture_output=True)
                 _info('gpu-hotswitch-vfio installed from AUR')
             except (subprocess.CalledProcessError, FileNotFoundError):
@@ -1270,7 +1366,7 @@ def perform_installation(
                     _info('gpu-hotswitch-vfio downloaded from GitHub')
                 except subprocess.CalledProcessError:
                     _info('WARNING: Failed to install gpu-hotswitch-vfio. '
-                          'Install manually: paru -S gpu-hotswitch-vfio')
+                          'Install manually: paru -S --aur --noprovides gpu-hotswitch-vfio')
 
         # Post-install: LookingGlass KVMFR configuration
         if 'looking_glass' in state.vm_options:

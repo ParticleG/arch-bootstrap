@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import re
+import shlex
 import subprocess
 import time
 import urllib.request
+from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, TypeVar
@@ -114,6 +116,24 @@ def get_clone_url(repo: str, is_cn: bool) -> str:
         return f'{proxy}/{base_url}'
 
     return base_url
+
+def shell_join(args: Iterable[str]) -> str:
+    """Return shell-quoted arguments for commands executed through ``sh -c``."""
+    return ' '.join(shlex.quote(arg) for arg in args)
+
+
+def build_paru_aur_install_command(packages: Iterable[str]) -> str:
+    """Build a non-interactive paru command for exact AUR package targets.
+
+    ``--aur`` prevents repository/source selection, and ``--noprovides``
+    prevents provider prompts such as clash-party-bin providing
+    mihomo-party-bin.
+    """
+    package_args = shell_join(packages)
+    return (
+        'LANG=C.UTF-8 paru -S --aur --noprovides '
+        f'--noconfirm --needed --skipreview {package_args}'
+    )
 
 
 def run_with_retry(

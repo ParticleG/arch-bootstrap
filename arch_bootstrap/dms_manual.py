@@ -5,7 +5,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from archinstall.lib.output import Font, debug, info
+from .archinstall_compat import Font, debug, info
 
 from .constants import (
     DMS_MANUAL_AUR_PACKAGES,

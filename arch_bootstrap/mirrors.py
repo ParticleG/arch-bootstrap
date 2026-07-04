@@ -5,7 +5,7 @@ from pathlib import Path
 
 from archinstall.lib.mirror.mirror_handler import MirrorListHandler
 from archinstall.lib.models.mirrors import CustomServer, MirrorConfiguration, MirrorRegion
-from archinstall.lib.output import debug
+from .archinstall_compat import debug
 
 from .constants import CN_OFFICIAL_MIRRORS, COUNTRY_NAMES, FALLBACK_MIRRORS
 
@@ -96,7 +96,7 @@ def apply_mirrors_to_live_iso(
 
     Returns number of servers written, or 0 if not in ISO environment.
     """
-    from archinstall.lib.output import info
+    from .archinstall_compat import info
 
     from .detection import is_iso_environment
 

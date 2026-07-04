@@ -16,7 +16,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from archinstall.lib.output import Font, debug, info
+from .archinstall_compat import Font, debug, info
 
 from .constants import (
     EXO_AUR_PACKAGES,

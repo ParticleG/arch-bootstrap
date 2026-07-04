@@ -9,10 +9,8 @@ import sys
 from pathlib import Path
 
 from archinstall.lib.disk.filesystem import FilesystemHandler
-from archinstall.lib.menu.util import delayed_warning
 from archinstall.lib.mirror.mirror_handler import MirrorListHandler
-from archinstall.lib.output import Font, info
-from archinstall.tui.ui.components import tui
+from .archinstall_compat import Font, delayed_warning, info, tui
 
 from . import __version__
 from .config import build_default_config

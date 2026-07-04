@@ -8,7 +8,7 @@ from pathlib import Path
 from archinstall.lib.disk.device_handler import device_handler
 from archinstall.lib.models.device import BDevice, Unit
 
-from archinstall.lib.output import debug
+from .archinstall_compat import debug
 
 from .constants import (
     AUDIO_DETECT_PATTERNS,

@@ -21,7 +21,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from archinstall.lib.output import Font, debug, error, info
+from .archinstall_compat import Font, debug, error, info
 
 from .constants import (
     DANKINSTALL_RELEASE_BASE,

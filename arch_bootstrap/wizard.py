@@ -12,9 +12,7 @@ from archinstall.lib.mirror.mirror_handler import MirrorListHandler
 from archinstall.lib.models.device import BDevice, Unit
 from archinstall.lib.models.network import NicType
 from archinstall.lib.models.users import Password
-from archinstall.tui.ui.components import OptionListScreen
-from archinstall.tui.ui.menu_item import MenuItem, MenuItemGroup
-from archinstall.tui.ui.result import ResultType
+from .archinstall_compat import MenuItem, MenuItemGroup, OptionListScreen, ResultType
 
 from .config import apply_wizard_state_to_config
 from .disk import EFI_PARTITION_MIB, GPT_BACKUP_MIB, MIN_DISK_SIZE_MIB

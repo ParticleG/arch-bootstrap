@@ -18,8 +18,7 @@ from archinstall.lib.disk.filesystem import FilesystemHandler
 from archinstall.lib.disk.utils import disk_layouts
 from archinstall.lib.general.general_menu import PostInstallationAction, select_post_installation
 from archinstall.lib.menu.helpers import Confirmation
-from archinstall.tui.ui.menu_item import MenuItem
-from archinstall.tui.ui.result import ResultType
+from .archinstall_compat import MenuItem, ResultType
 from archinstall.lib.global_menu import GlobalMenu
 from archinstall.lib.installer import Installer, run_custom_user_commands
 from archinstall.lib.mirror.mirror_handler import MirrorListHandler
@@ -27,9 +26,8 @@ from archinstall.lib.models.bootloader import Bootloader
 from archinstall.lib.models.device import DiskLayoutType
 from archinstall.lib.models.users import User
 from archinstall.lib.network.network_handler import install_network_config
-from archinstall.lib.output import Font, debug, error, info
+from .archinstall_compat import Font, debug, error, info, tui
 from archinstall.lib.profile.profiles_handler import profile_handler
-from archinstall.tui.ui.components import tui
 
 from .config import generate_fontconfig, generate_kmscon_config, get_kmscon_greetd_warning
 from .constants import (

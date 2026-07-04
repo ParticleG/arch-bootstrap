@@ -164,7 +164,7 @@ def copy_log_to_target(chroot_dir: Path) -> None:
         dst_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst_dir / LOG_FILE)
 
-        from archinstall.lib.output import info
+        from .archinstall_compat import info
         info(f'[arch-bootstrap] {t("log.copied")}', fg='cyan')
     except Exception:
         pass  # Best-effort — don't crash the installer

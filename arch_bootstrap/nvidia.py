@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from archinstall.lib.output import Font, debug, info
+from .archinstall_compat import Font, debug, info
 
 _PREFIX = '[NVIDIA]'
 

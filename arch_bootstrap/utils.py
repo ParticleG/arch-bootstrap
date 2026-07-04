@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, TypeVar
 
-from archinstall.lib.output import debug, info
+from .archinstall_compat import debug, info
 
 from .constants import GHPROXY_CHUNK_URL, GHPROXY_FALLBACK
 

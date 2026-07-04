@@ -25,6 +25,7 @@ from archinstall.lib.output import Font, debug, error, info
 
 from .constants import (
     DANKINSTALL_RELEASE_BASE,
+    DESKTOP_PORTAL_PACKAGES,
 )
 from .i18n import t
 from .utils import resolve_github_proxy, retry_on_failure, run_with_retry
@@ -179,15 +180,16 @@ _DMS_EXTRA_PACKAGES = [
     'qt6ct',            # Qt6 platform theme configuration
     'wtype',            # clipboard paste text support
     'i2c-tools',       # I2C/DDC monitor brightness control
+    *DESKTOP_PORTAL_PACKAGES,
 ]
 
 
 def _install_dms_extras(chroot_dir: Path) -> None:
     """Install extra packages that dankinstall does not include.
 
-    These satisfy the warnings reported by ``dms doctor`` after a
-    headless dankinstall run (cups-pk-helper, kimageformats optional
-    deps, cava, qt6ct).
+    These enforce arch-bootstrap's desktop portal policy and satisfy the
+    warnings reported by ``dms doctor`` after a headless dankinstall run
+    (cups-pk-helper, kimageformats optional deps, cava, qt6ct).
     """
     _info('Installing DMS extra packages...')
     _debug(f'Packages: {", ".join(_DMS_EXTRA_PACKAGES)}')

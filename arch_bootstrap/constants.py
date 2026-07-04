@@ -298,10 +298,17 @@ EXO_AUR_PACKAGES: list[str] = [
     'dart-sass',
 ]
 
+# Portal backends for graphical sessions.  GTK remains the generic fallback;
+# GNOME provides ScreenCast/Screenshot for niri.
+DESKTOP_PORTAL_PACKAGES: list[str] = [
+    'xdg-desktop-portal-gtk',
+    'xdg-desktop-portal-gnome',
+]
+
 # Packages installed alongside Exo (compositor, greetd, utils)
 EXO_SYSTEM_PACKAGES: list[str] = [
     'niri',
-    'xdg-desktop-portal-gnome',
+    *DESKTOP_PORTAL_PACKAGES,
     'xwayland-satellite',
     'greetd',
     'kitty',
@@ -322,7 +329,7 @@ DMS_MANUAL_AUR_PACKAGES: list[str] = [
 ]
 
 DMS_MANUAL_SYSTEM_PACKAGES: list[str] = [
-    'quickshell', 'greetd', 'xdg-desktop-portal-gtk',
+    'quickshell', 'greetd', *DESKTOP_PORTAL_PACKAGES,
     'accountsservice', 'matugen',
     'dgop', 'cava', 'cups-pk-helper', 'kimageformats',
     'libavif', 'libheif', 'libjxl', 'qt6ct', 'wtype', 'i2c-tools',

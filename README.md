@@ -23,7 +23,7 @@
 </p>
 
 <p align="center">
-  <strong>Opinionated Arch Linux installer powered by archinstall 4.1</strong>
+  <strong>Opinionated Arch Linux installer powered by archinstall 4.x</strong>
 </p>
 
 <p align="center">
@@ -65,7 +65,7 @@ python arch_bootstrap.pyz
 
 1. Reopens stdin from `/dev/tty` (for pipe-friendly `curl | python` usage)
 2. Detects your country and applies fast mirrors to the live ISO
-3. Upgrades `archinstall` to the latest version (the ISO ships an older one)
+3. Upgrades `archinstall` only when the live ISO has a pre-4 version
 4. Downloads and runs the full installer (`arch_bootstrap.pyz`)
 
 The full installer then:
@@ -148,6 +148,7 @@ These are baked into every installation and are **not configurable** through the
 - **Advanced escape hatch** — archinstall's GlobalMenu available from the confirmation panel for full manual override
 - **Pipe-friendly** — designed for `curl | python` with automatic stdin recovery from `/dev/tty`
 - **GitHub proxy for CN** — auto-detects China region and routes `.pyz` downloads through ghproxy.link / ghfast.top
+- **archinstall 4.x compatibility** — handles upstream logging/TUI module moves through `archinstall_compat.py`
 - **GPU passthrough** — hot-swap scripts supporting both NVIDIA and AMD dGPUs, LookingGlass KVMFR integration
 - **Hibernation support** — optional btrfs swapfile with automatic resume parameter and mkinitcpio configuration
 - **Hostname customization** — configurable hostname with RFC 952 validation
@@ -158,13 +159,16 @@ These are baked into every installation and are **not configurable** through the
 - **GNOME Keyring auto-setup** — sockets auto-enabled when GNOME Keyring is selected
 - **Snapper timers** — snapshot timeline, cleanup, and boot timers auto-enabled
 - **Btrfs tools** — btrfs-assistant and gsmartcontrol auto-installed for non-minimal desktops
+- **Package-source aware installs** — splits repository, archlinuxcn, and exact AUR targets to avoid provider/source prompts in automated installs
+- **Chinese input dictionaries** — installs `fcitx5-pinyin-zhwiki`, `fcitx5-pinyin-moegirl`, and best-effort prebuilt Sougou `sougou.dict`
+- **Arch package rename handling** — installs `awww` for Exo and patches copied configs from `swww`/`swww-daemon` to `awww`/`awww-daemon`
 
 ## Requirements
 
 | Dependency | Notes |
 |------------|-------|
 | Python 3.11+ | Pre-installed on Arch ISO |
-| archinstall 4.1+ | Auto-upgraded by the bootstrap script |
+| archinstall 4.x | Pre-4 ISO versions are auto-upgraded by the bootstrap script |
 | pciutils (`lspci`) + switcheroo-control | `lspci` is pre-installed; `switcheroo-control` is auto-installed on Arch ISO for reliable dGPU detection |
 | Root privileges | Required |
 | Network connection | Required for mirrors and packages |
@@ -200,8 +204,9 @@ python -m zipapp _staging -o arch_bootstrap.pyz -p '/usr/bin/env python3'
 arch-bootstrap/
 ├── install.py              # Bootstrap script (stdlib only, pipe-friendly)
 ├── arch_bootstrap/         # Main Python package
-│   ├── __init__.py         # Version (0.2.0)
+│   ├── __init__.py         # Version metadata
 │   ├── __main__.py         # Entry point: detect → wizard → install
+│   ├── archinstall_compat.py # archinstall 4.x / legacy import compatibility
 │   ├── config.py           # ArchConfig builder
 │   ├── constants.py        # Package definitions, mirrors, option dictionaries
 │   ├── detection.py        # Hardware & environment detection

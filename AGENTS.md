@@ -2,18 +2,19 @@
 
 ## Overview
 
-Opinionated Arch Linux installer. A bootstrap script (`install.py`, stdlib-only) downloads and runs a zipapp (`arch_bootstrap.pyz`) built from the `arch_bootstrap/` package. Targets Python 3.11+ on the Arch ISO with `archinstall >= 4.1`.
+Opinionated Arch Linux installer. A bootstrap script (`install.py`, stdlib-only) downloads and runs a zipapp (`arch_bootstrap.pyz`) built from the `arch_bootstrap/` package. Targets Python 3.11+ on the Arch ISO with `archinstall` 4.x; the bootstrap upgrades only pre-4 ISO `archinstall` installations.
 
 ## Key architecture
 
-- **`install.py`** — standalone bootstrap (stdlib only, no third-party imports). Detects region, upgrades archinstall on ISO, downloads `.pyz`, then `os.execv`s into it. Must stay stdlib-only.
+- **`install.py`** — standalone bootstrap (stdlib only, no third-party imports). Detects region, applies fast mirrors, upgrades pre-4 ISO `archinstall`, downloads `.pyz`, then `os.execv`s into it. Must stay stdlib-only.
 - **`arch_bootstrap/`** — the real installer package. Entry point is `__main__.py:main()`. Depends on `archinstall` (TUI components, disk API, installation API).
+- **`arch_bootstrap/archinstall_compat.py`** — compatibility shim for `archinstall` API moves (logging/output and TUI module paths). Import moved `archinstall` symbols through this shim.
 - **`arch_bootstrap/__init__.py`** — contains `__version__`. CI auto-stamps this on tagged releases; don't manually bump it.
 
 ## Development
 
 ```bash
-# Run from source (requires root + archinstall 4.1+ installed)
+# Run from source (requires root + archinstall 4.x installed)
 python -m arch_bootstrap
 
 # Build zipapp locally
@@ -64,10 +65,19 @@ Wizard steps live in `wizard.py` as `async def step_*(state: WizardState) -> str
 
 All package lists and option dicts are centralized in `constants.py`. Wizard steps and installation code reference these by key — don't scatter package names across files.
 
+Package source matters:
+- Repository packages (`packages`) are installed through `pacman` / archinstall's package API.
+- archlinuxcn-only packages carry `repo: 'archlinuxcn'` and are installed as repo-qualified targets such as `archlinuxcn/mihomo`.
+- AUR packages (`aur_packages`) must be exact AUR targets and installed with `build_paru_aur_install_command()` (`paru -S --aur --noprovides ...`) to avoid provider/source prompts in automation.
+- Prebuilt release assets, such as the fcitx5 Sougou dictionary, belong in `prebuilt_dictionaries` and are downloaded by a dedicated best-effort post-install step, not by `paru` or `makepkg`.
+- Track Arch package renames in constants and post-install config patches; for example `swww` is now `awww`, and Exo copied configs are patched from `swww`/`swww-daemon` to `awww`/`awww-daemon`.
+
 ### archinstall API usage
 
 The codebase imports heavily from `archinstall.lib.*` and `archinstall.tui.*`. Key patterns:
-- TUI widgets: `Selection`, `Input`, `Confirmation` from `archinstall.lib.menu.helpers`; `OptionListScreen`, `MenuItem`, `MenuItemGroup` from `archinstall.tui.ui.*`.
+- TUI high-level prompts: `Selection`, `Input`, `Confirmation` from `archinstall.lib.menu.helpers`.
+- Moved `archinstall` symbols must come from `arch_bootstrap.archinstall_compat`: `Font`, `info`, `debug`, `error`, `tui`, `OptionListScreen`, `MenuItem`, `MenuItemGroup`, `ResultType`, `delayed_warning`.
+- Do not import `archinstall.lib.output` or `archinstall.tui.ui.*` directly; `archinstall` 4.x moved logging to `archinstall.lib.log` and TUI modules to `archinstall.tui.*`.
 - All TUI code runs inside `tui.run(lambda: ...)` (async context managed by archinstall's textual app).
 - Logging must be torn down before TUI and resumed after (`teardown_logging()` / `resume_logging()`) — the TUI and log TeeStream conflict on stdout.
 
@@ -77,4 +87,4 @@ The codebase imports heavily from `archinstall.lib.*` and `archinstall.tui.*`. K
 
 ### Retry helpers
 
-`utils.py` provides `run_with_retry()` (for subprocesses) and `retry_on_failure()` (for callables). Both auto-retry then interactively prompt the user. Use these for any network or pacman operations that can transiently fail.
+`utils.py` provides `run_with_retry()` (for subprocesses) and `retry_on_failure()` (for callables). Both auto-retry then interactively prompt the user. Use these for required network or pacman operations that can transiently fail; avoid them for optional best-effort downloads that must stay non-interactive.

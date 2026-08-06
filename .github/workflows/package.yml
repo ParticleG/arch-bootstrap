@@ -17,6 +17,9 @@ jobs:
           # Fetch main branch so we can push the version bump back to it
           fetch-depth: 0
 
+      - name: Run unit tests
+        run: python3 -m unittest discover -s tests -v
+
       - name: Determine version
         id: version
         run: |

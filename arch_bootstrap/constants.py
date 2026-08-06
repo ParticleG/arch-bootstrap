@@ -317,6 +317,15 @@ EXO_SYSTEM_PACKAGES: list[str] = [
     'dart-sass',
 ]
 
+
+# Runtime packages required by the default DMS font and sound configuration.
+DMS_RUNTIME_PACKAGES: list[str] = [
+    'inter-font',
+    'qt6-multimedia',
+    'qt6-multimedia-ffmpeg',
+]
+
+
 # ---------------------------------------------------------------------------
 # DMS Manual installation (without dankinstall binary)
 # ---------------------------------------------------------------------------
@@ -334,6 +343,7 @@ DMS_MANUAL_SYSTEM_PACKAGES: list[str] = [
     'accountsservice', 'matugen',
     'dgop', 'cava', 'cups-pk-helper', 'kimageformats',
     'libavif', 'libheif', 'libjxl', 'qt6ct', 'wtype', 'i2c-tools',
+    *DMS_RUNTIME_PACKAGES,
 ]
 
 DMS_MANUAL_COMPOSITOR_PACKAGES: dict[str, list[str]] = {

@@ -4,10 +4,9 @@ Downloads the dankinstall binary from GitHub releases and runs it in
 headless mode inside the chroot to install DMS with the user's selected
 compositor and terminal emulator.
 
-This replaces the previous approach of manually replicating dankinstall's
-package lists, config templates, systemd setup, and greetd configuration —
-delegating all of that to dankinstall itself ensures accuracy and avoids
-drift from upstream.
+Dankinstall owns the base package and configuration generation.  This module
+then applies deterministic chroot fixups for greeter synchronization, required
+runtime packages, and service enablement that cannot rely on a running systemd.
 """
 
 from __future__ import annotations
@@ -26,6 +25,7 @@ from .archinstall_compat import Font, debug, error, info
 from .constants import (
     DANKINSTALL_RELEASE_BASE,
     DESKTOP_PORTAL_PACKAGES,
+    DMS_RUNTIME_PACKAGES,
 )
 from .i18n import t
 from .utils import resolve_github_proxy, retry_on_failure, run_with_retry
@@ -93,6 +93,98 @@ def _download_dankinstall(chroot_dir: Path, country: str | None) -> Path:
     size_mb = len(binary_data) / 1024 / 1024
     _info(f'Downloaded dankinstall ({size_mb:.1f} MB)')
     return target
+
+
+# ---------------------------------------------------------------------------
+# DMS greeter configuration
+# ---------------------------------------------------------------------------
+
+_GREETD_CONFIG_TEMPLATE = """\
+[terminal]
+vt = 1
+
+[default_session]
+command = "/usr/bin/dms-greeter --command {compositor}"
+user = "greeter"
+"""
+
+
+def _write_greetd_bootstrap_config(chroot_dir: Path, compositor: str) -> Path:
+    """Write a valid embedded-UI greeter config before running the sync CLI."""
+    if compositor not in {'niri', 'hyprland'}:
+        raise ValueError(f'Unsupported DMS compositor: {compositor}')
+
+    config_path = chroot_dir / 'etc' / 'greetd' / 'config.toml'
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(_GREETD_CONFIG_TEMPLATE.format(compositor=compositor))
+    return config_path
+
+
+def configure_dms_greeter(
+    chroot_dir: Path,
+    username: str,
+    compositor: str,
+) -> bool:
+    """Prepare the greeter account and synchronize DMS state inside a chroot.
+
+    A minimal embedded-UI command is written first, so greetd remains usable
+    even when the optional theme synchronization fails.  The target user is
+    added to the greeter group before ``runuser`` starts; that new process then
+    inherits the group and can read greeter memory during auto-login sync.
+    """
+    _info(t('dms.greeter_configuring'))
+    config_path = _write_greetd_bootstrap_config(chroot_dir, compositor)
+    _debug(t('dms.greeter_bootstrap_written', config_path))
+
+    account_commands = [
+        (
+            ['arch-chroot', str(chroot_dir), 'usermod', '-d', '/var/lib/greeter', 'greeter'],
+            'dms.greeter_home_failed',
+        ),
+        (
+            [
+                'arch-chroot', str(chroot_dir),
+                'install', '-d', '-m', '0755',
+                '-o', 'greeter', '-g', 'greeter',
+                '/var/lib/greeter',
+            ],
+            'dms.greeter_home_create_failed',
+        ),
+        (
+            [
+                'arch-chroot', str(chroot_dir),
+                'install', '-d', '-m', '2770',
+                '-o', 'greeter', '-g', 'greeter',
+                '/var/cache/dms-greeter',
+            ],
+            'dms.greeter_cache_failed',
+        ),
+        (
+            ['arch-chroot', str(chroot_dir), 'usermod', '-aG', 'greeter', username],
+            'dms.greeter_group_failed',
+        ),
+    ]
+
+    for command, failure_key in account_commands:
+        result = subprocess.run(command, check=False)
+        if result.returncode != 0:
+            _info(t(failure_key, result.returncode))
+            return False
+
+    sync_result = subprocess.run(
+        [
+            'arch-chroot', str(chroot_dir),
+            'runuser', '-l', username, '-c',
+            'env LANG=C.UTF-8 DMS_PRIVESC=sudo dms-greeter sync -y',
+        ],
+        check=False,
+    )
+    if sync_result.returncode != 0:
+        _info(t('dms.greeter_sync_failed', sync_result.returncode))
+        return False
+
+    _info(t('dms.greeter_complete'))
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -180,31 +272,29 @@ _DMS_EXTRA_PACKAGES = [
     'qt6ct',            # Qt6 platform theme configuration
     'wtype',            # clipboard paste text support
     'i2c-tools',       # I2C/DDC monitor brightness control
+    *DMS_RUNTIME_PACKAGES,
     *DESKTOP_PORTAL_PACKAGES,
 ]
 
 
-def _install_dms_extras(chroot_dir: Path) -> None:
-    """Install extra packages that dankinstall does not include.
-
-    These enforce arch-bootstrap's desktop portal policy and satisfy the
-    warnings reported by ``dms doctor`` after a headless dankinstall run
-    (cups-pk-helper, kimageformats optional deps, cava, qt6ct).
-    """
-    _info('Installing DMS extra packages...')
+def _install_dms_extras(chroot_dir: Path) -> bool:
+    """Install packages omitted by dankinstall but required by this profile."""
+    _info(t('dms.extras_installing'))
     _debug(f'Packages: {", ".join(_DMS_EXTRA_PACKAGES)}')
 
     result = run_with_retry(
         ['arch-chroot', str(chroot_dir),
          'env', 'LANG=C.UTF-8', 'pacman', '-S', '--noconfirm', '--needed', *_DMS_EXTRA_PACKAGES],
-        description='DMS extra packages',
+        description=t('dms.extras_installing'),
         check=False,
     )
 
-    if result.returncode == 0:
-        _info('DMS extra packages installed')
-    else:
-        _info(f'DMS extra packages installation failed (exit {result.returncode}), some dms-doctor warnings may persist')
+    if result.returncode != 0:
+        _info(t('dms.extras_failed', result.returncode))
+        return False
+
+    _info(t('dms.extras_complete'))
+    return True
 
 
 def _configure_dms_environment(chroot_dir: Path) -> None:
@@ -318,36 +408,28 @@ def install_dms(
     terminal: str,
     country: str | None = None,
     gpu_vendors: list[str] | None = None,
-) -> None:
+) -> bool:
     """Install DMS via dankinstall in headless mode.
 
-    Downloads dankinstall from ParticleG/DankMaterialShell releases,
-    sets up temporary passwordless sudo for the user, and runs
-    dankinstall with the selected compositor and terminal.
+    Downloads the dankinstall binary from ParticleG/DankMaterialShell releases,
+    sets up temporary passwordless sudo for the user, and runs dankinstall with
+    the selected compositor and terminal emulator.
 
     The CN GitHub proxy (if applicable) should already be configured in
-    /etc/gitconfig by the caller before this function is invoked, so
-    dankinstall's internal git operations (AUR clones) are also proxied.
+    /etc/gitconfig by the caller before this function is invoked, so paru's
+    internal git operations are also proxied.
 
-    Args:
-        chroot_dir: Path to the mounted chroot (e.g. /mnt).
-        username: Non-root user account.
-        compositor: 'niri' or 'hyprland'.
-        terminal: 'ghostty', 'kitty', or 'alacritty'.
-        country: User's country code (for CN proxy resolution).
-        gpu_vendors: List of GPU vendor identifiers (e.g. ['nvidia_open', 'amd']).
+    Returns ``True`` only after the shell, greeter, runtime dependencies, and
+    service links are all configured successfully.
     """
-    # 1. Download dankinstall binary
     binary_path = _download_dankinstall(chroot_dir, country)
 
-    # 2. Set up temporary NOPASSWD sudo (dankinstall needs sudo for pacman/makepkg)
     sudoers_tmp = chroot_dir / 'etc' / 'sudoers.d' / 'dankinstall-tmp'
     sudoers_tmp.write_text(f'{username} ALL=(ALL) NOPASSWD: ALL\n')
     sudoers_tmp.chmod(0o440)
     _debug('Temporary NOPASSWD sudoers rule created')
 
     try:
-        # 3. Run dankinstall in headless mode
         _info(t('dms.running_dankinstall'))
         cmd = (
             f'DANKINSTALL_LOG_DIR=/var/tmp '
@@ -364,15 +446,15 @@ def install_dms(
              'runuser', '-l', username, '-c', cmd],
             check=False,
         )
+        if result.returncode != 0:
+            _info(t('dms.failed', result.returncode or -1))
+            _debug('Check /var/tmp/dankinstall-*.log for details')
+            return False
 
-        if result.returncode == 0:
-            _info(t('dms.complete'))
-        else:
-            _info(t('dms.failed') % (result.returncode or -1))
-            _debug('Check /var/tmp/dankinstall-*.log for details; '
-                   'greeter and configs may need manual setup')
+        if not configure_dms_greeter(chroot_dir, username, compositor):
+            _debug(t('dms.greeter_fallback'))
+            return False
     finally:
-        # 4. Clean up: remove temporary sudoers rule and binary
         if sudoers_tmp.exists():
             sudoers_tmp.unlink()
             _debug('Removed temporary sudoers rule')
@@ -380,17 +462,15 @@ def install_dms(
             binary_path.unlink()
             _debug('Removed dankinstall binary')
 
-    # 5. Enable DMS services (systemctl commands fail silently inside chroot)
+    if not _install_dms_extras(chroot_dir):
+        return False
+
+    _configure_dms_environment(chroot_dir)
+    _configure_i2c(chroot_dir, username)
+    _enable_dsearch(chroot_dir, username, compositor)
+
+    # Enable display and user services only after every required step succeeds.
     _enable_dms_services(chroot_dir, username, compositor)
 
-    # 6. Install DMS extras (cups-pk-helper, kimageformats, cava, qt6ct)
-    _install_dms_extras(chroot_dir)
-
-    # 7. Configure environment variables for DMS
-    _configure_dms_environment(chroot_dir)
-
-    # 8. Add user to i2c group for DDC monitor brightness control
-    _configure_i2c(chroot_dir, username)
-
-    # 9. Enable DankSearch user service and generate initial index
-    _enable_dsearch(chroot_dir, username, compositor)
+    _info(t('dms.complete'))
+    return True

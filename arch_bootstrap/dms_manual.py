@@ -15,6 +15,7 @@ from .constants import (
     DMS_MANUAL_TERMINAL_PACKAGES,
     FILE_MANAGER_OPTIONS,
 )
+from .dms import configure_dms_greeter
 from .i18n import t
 from .utils import build_paru_aur_install_command, run_with_retry
 
@@ -31,15 +32,6 @@ def _debug(msg: str) -> None:
     """Log a debug message with a colored [dms-manual] prefix."""
     debug(f'{_PREFIX} {msg}', fg='green')
 
-
-_GREETD_CONFIG_TEMPLATE = """\
-[terminal]
-vt = 1
-
-[default_session]
-command = "dms-greeter --command {compositor} -p /usr/share/quickshell/dms"
-user = "greeter"
-"""
 
 _SUDOERS_FILE = '99-dms-manual-temp'
 
@@ -138,13 +130,13 @@ def _run_dms_setup(
     username: str,
     compositor: str,
     terminal: str,
-) -> None:
+) -> bool:
     """Run ``dms setup`` with automated stdin input."""
     _info(t('dms_manual.running_setup'))
 
     comp_choice = _DMS_SETUP_COMPOSITOR_MAP.get(compositor, '1')
     term_choice = _DMS_SETUP_TERMINAL_MAP.get(terminal, '1')
-    stdin_input = f'{comp_choice}\n{term_choice}\n1\ny\n'  # compositor, terminal, systemd=Yes, confirm=y
+    stdin_input = f'{comp_choice}\n{term_choice}\n1\ny\n'
 
     result = subprocess.run(
         ['arch-chroot', str(chroot_dir),
@@ -153,9 +145,11 @@ def _run_dms_setup(
         text=True,
         check=False,
     )
-
     if result.returncode != 0:
-        _debug(f'dms setup exited with code {result.returncode}')
+        _info(t('dms_manual.failed', result.returncode))
+        return False
+
+    return True
 
 
 def _extra_niri_binds(terminal: str, file_managers: list[str]) -> list[str]:
@@ -201,15 +195,6 @@ def _patch_niri_binds(chroot_dir: Path, username: str, compositor: str, terminal
     _debug('Patched niri binds.kdl with custom key bindings')
 
 
-def _configure_greetd(chroot_dir: Path, compositor: str) -> None:
-    """Write greetd configuration for dms-greeter."""
-    _info(t('dms_manual.configuring_greetd'))
-
-    config_dir = chroot_dir / 'etc' / 'greetd'
-    config_dir.mkdir(parents=True, exist_ok=True)
-    config_path = config_dir / 'config.toml'
-    config_path.write_text(_GREETD_CONFIG_TEMPLATE.format(compositor=compositor))
-    _debug(f'Wrote {config_path}')
 
 
 def _enable_services(
@@ -354,70 +339,41 @@ def install_dms_manual(
     country: str | None = None,
     gpu_vendors: list[str] | None = None,
     file_managers: list[str] | None = None,
-) -> None:
-    """Install DMS desktop environment manually (without dankinstall).
-
-    Installs repository packages with pacman and AUR packages with paru,
-    runs ``dms setup``
-    with stdin piping for automation, configures greetd with dms-greeter,
-    and enables systemd services via manual symlinks.
-
-    The CN GitHub proxy (if applicable) should already be configured in
-    /etc/gitconfig by the caller before this function is invoked, so
-    paru's internal git operations (AUR clones) are also proxied.
-
-    Args:
-        chroot_dir: Path to the mounted chroot (e.g. /mnt).
-        username: Non-root user account.
-        compositor: Compositor to install ('niri' or 'hyprland').
-        terminal: Terminal emulator to install ('ghostty', 'kitty', or 'alacritty').
-        country: User's country code (for CN proxy resolution).
-        gpu_vendors: List of GPU vendor identifiers (e.g. ['nvidia_open', 'amd']).
-    """
+) -> bool:
+    """Install DMS without dankinstall and report whether the profile is usable."""
     gpu_vendors = gpu_vendors or []
     file_managers = file_managers or []
     sudoers_path = chroot_dir / 'etc' / 'sudoers.d' / _SUDOERS_FILE
 
     try:
-        # 1. Temporary NOPASSWD sudoers
         _info(t('dms_manual.setting_up_sudoers'))
         sudoers_path.parent.mkdir(parents=True, exist_ok=True)
         sudoers_path.write_text(f'{username} ALL=(ALL) NOPASSWD: ALL\n')
         sudoers_path.chmod(0o440)
 
-        # 2. Install prerequisite packages (if any)
         if not _install_prereq_packages(chroot_dir, username):
-            return
+            return False
 
-        # 3. Install all remaining packages
         if not _install_packages(chroot_dir, username, compositor, terminal):
-            return
+            return False
 
-        # 4. Run dms setup for initial configuration
-        _run_dms_setup(chroot_dir, username, compositor, terminal)
+        if not _run_dms_setup(chroot_dir, username, compositor, terminal):
+            return False
 
-        # 4a. Patch niri binds with custom key bindings
         _patch_niri_binds(chroot_dir, username, compositor, terminal, file_managers)
 
+        # Normalize ownership before greeter sync applies shared group access.
+        _fix_ownership(chroot_dir, username)
+
+        if not configure_dms_greeter(chroot_dir, username, compositor):
+            return False
     finally:
-        # Always remove temporary sudoers
         if sudoers_path.exists():
             sudoers_path.unlink()
             _debug('Removed temporary sudoers rule')
 
-    # 5. Configure greetd
-    _configure_greetd(chroot_dir, compositor)
-
-    # 6. Enable systemd services
-    _enable_services(chroot_dir, username, compositor)
-
-    # 7. Configure environment variables
     _configure_environment(chroot_dir)
 
-    # 8. Fix file ownership
-    _fix_ownership(chroot_dir, username)
-
-    # 9. Add user to i2c group for DDC monitor brightness control
     _info(t('dms.configuring_i2c'))
     modules_load_dir = chroot_dir / 'etc' / 'modules-load.d'
     modules_load_dir.mkdir(parents=True, exist_ok=True)
@@ -428,7 +384,10 @@ def install_dms_manual(
     )
     _info(t('dms.i2c_configured'))
 
-    # 10. Enable DankSearch user service and generate initial index
     _enable_dsearch(chroot_dir, username, compositor)
 
+    # Enable display and user services only after every required step succeeds.
+    _enable_services(chroot_dir, username, compositor)
+
     _info(t('dms_manual.complete'))
+    return True

@@ -1018,7 +1018,7 @@ def perform_installation(
         if desktop_env == 'dms' and username:
             from .dms import install_dms
             _info('Setting up DMS desktop environment...')
-            install_dms(
+            desktop_ok = install_dms(
                 chroot_dir=chroot_dir,
                 username=username,
                 compositor=dms_compositor,
@@ -1026,13 +1026,17 @@ def perform_installation(
                 country=country,
                 gpu_vendors=gpu_vendors,
             )
-            tracker.record('summary.step.desktop', StepStatus.SUCCESS)
+            tracker.record(
+                'summary.step.desktop',
+                StepStatus.SUCCESS if desktop_ok else StepStatus.FAILED,
+                '' if desktop_ok else t('dms.install_incomplete'),
+            )
 
         # Post-install: DMS Manual desktop environment
         elif desktop_env == 'dms_manual' and username:
             from .dms_manual import install_dms_manual
             _info('Setting up DMS Manual desktop environment...')
-            install_dms_manual(
+            desktop_ok = install_dms_manual(
                 chroot_dir=chroot_dir,
                 username=username,
                 compositor=dms_compositor,
@@ -1041,7 +1045,11 @@ def perform_installation(
                 gpu_vendors=gpu_vendors,
                 file_managers=state.file_managers,
             )
-            tracker.record('summary.step.desktop', StepStatus.SUCCESS)
+            tracker.record(
+                'summary.step.desktop',
+                StepStatus.SUCCESS if desktop_ok else StepStatus.FAILED,
+                '' if desktop_ok else t('dms_manual.install_incomplete'),
+            )
 
         # Post-install: Exo desktop environment
         elif desktop_env == 'exo' and username:

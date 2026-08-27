@@ -1,227 +1,117 @@
 # Arch Bootstrap
 
-<p align="center">
+Arch Bootstrap is an opinionated, interactive Arch Linux installer built on the native Python API and TUI components of `archinstall` 4.x. A small standard-library bootstrap (`install.py`) prepares the live ISO and launches the full `arch_bootstrap` package or release zipapp.
 
-```
-                -@                 ___           _          _     _
-               .##@               / _ \         | |        | |   (_)
-              .####@             / /_\ \_ __ ___| |__      | |    _ _ __  _   ___  __
-              @#####@            |  _  | '__/ __| '_ \     | |   | | '_ \| | | \ \/ /
-            . *######@           | | | | | | (__| | | |    | |___| | | | | |_| |>  <
-           .##@o@#####@          \_| |_/_|  \___|_| |_|    \_____/_|_| |_|\__,_/_/\_\
-          /############@
-         /##############@        ______             _       _
-        @######@**%######@       | ___ \           | |     | |
-       @######`     %#####o      | |_/ / ___   ___ | |_ ___| |_ _ __ __ _ _ __
-      @######@       ######%     | ___ \/ _ \ / _ \| __/ __| __| '__/ _` | '_ \
-    -@#######h       ######@.`   | |_/ / (_) | (_) | |_\__ \ |_| | | (_| | |_) |
-   /#####h**``       `**%@####@  \____/ \___/ \___/ \__|___/\__|_|  \__,_| .__/
-  @H@*`                    `*%#@                                         | |
- *`                            `*                                        |_|
-```
+## Project status
 
-</p>
+This is a public, non-archived, standalone repository rather than a fork. It automates destructive installation onto a selected block device and should be used only from an Arch live environment after backups and target-disk verification. The checkout includes the configuration conversion layer, zipapp workflow, and a focused DMS installer test module; it is not a general replacement for all `archinstall` profiles.
 
-<p align="center">
-  <strong>Opinionated Arch Linux installer powered by archinstall 4.x</strong>
-</p>
+## Architecture and data flow
 
-<p align="center">
-  <a href="https://github.com/ParticleG/arch-bootstrap/actions"><img src="https://github.com/ParticleG/arch-bootstrap/actions/workflows/package.yml/badge.svg" alt="Build"></a>
-  <a href="https://github.com/ParticleG/arch-bootstrap/releases/latest"><img src="https://img.shields.io/github/v/release/ParticleG/arch-bootstrap?label=release" alt="Release"></a>
-  <a href="https://github.com/ParticleG/arch-bootstrap/blob/main/LICENSE"><img src="https://img.shields.io/github/license/ParticleG/arch-bootstrap" alt="License"></a>
-</p>
+1. `install.py` reopens `/dev/tty` for piped execution, detects region, adjusts live-ISO mirrors, upgrades pre-4 `archinstall` when required, downloads the release zipapp, and replaces itself with that process.
+2. `arch_bootstrap/__main__.py` detects the environment, starts the wizard, passes `WizardState` into `config.py`, and invokes installation after confirmation.
+3. `wizard.py` collects localized choices and supports an advanced `archinstall` GlobalMenu escape hatch.
+4. `config.py` supplies `build_default_config()` and `apply_wizard_state_to_config()`, converting wizard selections into the `ArchConfig` model.
+5. `disk.py` creates the opinionated EFI/Btrfs layout; `installation.py` coordinates archinstall and post-install tasks.
+6. `constants.py` centralizes choices and packages; `detection.py`, `mirrors.py`, and `utils.py` provide environment/network support.
+7. Desktop integrations are divided among `dms.py`, `dms_manual.py`, and `exo.py`; compatibility imports live in `archinstall_compat.py`.
 
----
+Installation logs are written to `/var/log/arch-bootstrap/install.log` and copied into the installed system.
 
-A multi-step TUI wizard that walks you through Arch Linux installation using archinstall's native Python API. No manual JSON editing required — the installer detects your hardware, guides you through options, and runs the installation directly.
+## Requirements
 
-## Quick Start
+- An Arch Linux live ISO in UEFI mode
+- Root privileges
+- A working network connection
+- Python 3.12 or newer for direct package/zipapp execution: `wizard.py` uses PEP 695 generic class syntax
+- `archinstall` 4.x for the full installer; `install.py` upgrades an older live-ISO version
+- A destination disk whose existing contents may be erased
 
-Boot the [Arch Linux ISO](https://archlinux.org/download/), connect to the network, then:
+The bootstrap script itself stays standard-library-only. Hardware detection and installation additionally invoke system utilities supplied by the live ISO or installed during preparation.
+
+## Setup and commands
+
+Boot the official [Arch Linux ISO](https://archlinux.org/download/), connect to the network, inspect available disks, and run the published bootstrap:
 
 ```bash
 curl -sL https://raw.githubusercontent.com/ParticleG/arch-bootstrap/main/install.py | python
 ```
 
-Or use the domain shortcut:
+Piping remote code into a root installer executes the fetched content immediately. For reviewability, download and inspect it first:
 
 ```bash
-curl -sL http://arch-bootstrap.studio26f.org | python
+curl -sLO https://raw.githubusercontent.com/ParticleG/arch-bootstrap/main/install.py
+less install.py
+sudo python install.py
 ```
 
-Or download the pre-built zipapp from [Releases](https://github.com/ParticleG/arch-bootstrap/releases/latest):
-
-```bash
-curl -LO https://github.com/ParticleG/arch-bootstrap/releases/latest/download/arch_bootstrap.pyz
-python arch_bootstrap.pyz
-```
-
-> **CN users:** The bootstrap script automatically detects your region and routes GitHub downloads through a proxy (ghproxy.link / ghfast.top) for faster access.
-
-## How It Works
-
-`install.py` is a lightweight bootstrap script (stdlib only) that:
-
-1. Reopens stdin from `/dev/tty` (for pipe-friendly `curl | python` usage)
-2. Detects your country and applies fast mirrors to the live ISO
-3. Upgrades `archinstall` only when the live ISO has a pre-4 version
-4. Downloads and runs the full installer (`arch_bootstrap.pyz`)
-
-The full installer then:
-
-1. **Auto-detects** your country (IP geolocation), GPU (`lspci`), and preferred disk
-2. **Walks you through a multi-step wizard** with pre-selected defaults
-3. Shows a **confirmation panel**: Install / Advanced Modify (archinstall GlobalMenu) / Cancel
-4. Cleans up disk locks (swap, LVM, LUKS), formats the disk, installs Arch Linux
-5. Presents **post-install options**: exit, reboot, or arch-chroot
-
-> All operations are logged to `/var/log/arch-bootstrap/install.log` (on both the live ISO and installed system).
-
-## Wizard Steps
-
-| # | Step | Condition | Description |
-|---|------|-----------|-------------|
-| 1 | Language | Always | System locale (`en_US`, `zh_CN`, `ja_JP`) |
-| 2 | Input Method | Non-English | Fcitx5 input method (Chinese / Japanese) |
-| 3 | Console Font | Non-English | kmscon font for CJK console rendering |
-| 4 | Fonts | Always | Base fonts + Nerd fonts (multi-select) |
-| 5 | Region | Always | Mirror country (auto-detected via IP) |
-| 6 | Proxy Tools | CN only | Proxy client (FlClash / Mihomo / etc.) |
-| 7 | Disk | Always | Target block device with partition preview |
-| 8 | Hibernation | Always | Enable swap file for hibernation (default: No) |
-| 9 | Network | Always | Backend: NetworkManager + iwd / wpa_supplicant |
-| 10 | Hostname | Always | System hostname (default: `archlinux`) |
-| 11 | Repos | Always | Enable `multilib` (32-bit / Steam support) |
-| 12 | GPU Drivers | Always | Auto-detected vendor; AMD / Intel / NVIDIA / nouveau |
-| 13 | Audio Firmware | Always | SOF (modern Intel) or ALSA (legacy) |
-| 14 | Desktop | Always | minimal / DMS / DMS Manual / Exo |
-| 15 | Compositor | DMS only | Niri or Hyprland |
-| 16 | Terminal | DMS only | Ghostty / Kitty / Alacritty |
-| 17 | Polkit Agent | Non-minimal | MATE / GNOME polkit agent |
-| 18 | Keyring | Non-minimal | GNOME Keyring / KWallet |
-| 19 | File Manager | Non-minimal | Yazi / Nautilus / Dolphin / Thunar |
-| 20 | Device Purpose | Always | Development / Gaming / etc. (multi-select) |
-| 21 | Dev Tools | Development | Docker, Go, Bun, Node.js, Python, Rust, Chezmoi, etc. |
-| 22 | Gaming | Gaming + multilib | Steam, Lutris, GameMode, MangoHud |
-| 23 | Virtual Machine | Selected Virtual Machine + dGPU detected | KVM/QEMU, GPU passthrough, LookingGlass, nested virtualization |
-| 24 | Browser | Always | Firefox, Chromium, Chrome, Edge (multi-select) |
-| 25 | Remote Desktop | Always | Remmina, Parsec, Moonlight, RustDesk |
-| 26 | Communication | CN only | QQ, WeChat, Feishu, DingTalk (multi-select) |
-| 27 | Username | Always | With format validation |
-| 28 | User Password | Always | Masked input |
-| 29 | Root Password | Always | Optional |
-
-### Navigation
-
-| Key | Action |
-|-----|--------|
-| Enter | Confirm / proceed |
-| Esc | Go back to previous step |
-| Arrow keys | Navigate menu items |
-| Type to filter | Available in region selection |
-
-## Opinionated Defaults
-
-These are baked into every installation and are **not configurable** through the wizard:
-
-| Option | Value |
-|--------|-------|
-| Bootloader | EFISTUB + Unified Kernel Image (UKI) |
-| Filesystem | Btrfs with `zstd` compression + Snapper snapshots |
-| Subvolumes | `@` `/`, `@home` `/home`, `@log` `/var/log`, `@pkg` `/var/cache/pacman/pkg` (+ `@swap` `/swap` if hibernation enabled) |
-| Partitions | 1 GiB EFI (FAT32) + remaining space Btrfs |
-| Audio | PipeWire |
-| Bluetooth | Enabled |
-| Power | tuned |
-| Swap | zram (lzo-rle) |
-| Base packages | `neovim`, `git`, `7zip`, `base-devel`, `zsh` |
-| CN extras | `archlinuxcn` repo auto-added for CN region |
-| Snapper | Timeline, cleanup, and boot timers auto-enabled |
-
-## Features
-
-- **archinstall native TUI** — uses archinstall's textual-based Selection, Input, and Confirmation components
-- **Auto-detection** — IP geolocation for mirror region, GPU vendor via `lspci`, dGPU presence via `vga_switcheroo`/`switcherooctl` with PCI fallback, `lsblk` for target disks
-- **Smart mirrors** — per-country fallback mirror pools (CN, US, JP, DE); applied to live ISO before any `pacman` operation
-- **i18n** — English, Simplified Chinese, and Japanese (auto-fallback to English on raw TTY where CJK cannot render)
-- **Advanced escape hatch** — archinstall's GlobalMenu available from the confirmation panel for full manual override
-- **Pipe-friendly** — designed for `curl | python` with automatic stdin recovery from `/dev/tty`
-- **GitHub proxy for CN** — auto-detects China region and routes `.pyz` downloads through ghproxy.link / ghfast.top
-- **archinstall 4.x compatibility** — handles upstream logging/TUI module moves through `archinstall_compat.py`
-- **GPU passthrough** — hot-swap scripts supporting both NVIDIA and AMD dGPUs, LookingGlass KVMFR integration
-- **Hibernation support** — optional btrfs swapfile with automatic resume parameter and mkinitcpio configuration
-- **Hostname customization** — configurable hostname with RFC 952 validation
-- **CN communication apps** — optional QQ, WeChat, Feishu, DingTalk installation for CN users
-- **Installation logging** — full installation log saved to `/var/log/arch-bootstrap/install.log` on both live ISO and installed system
-- **Reflector integration** — automatic mirror management with reflector timer for non-CN users
-- **Per-app Electron flags** — Wayland flags written only for installed Electron apps
-- **GNOME Keyring auto-setup** — sockets auto-enabled when GNOME Keyring is selected
-- **Snapper timers** — snapshot timeline, cleanup, and boot timers auto-enabled
-- **Btrfs tools** — btrfs-assistant and gsmartcontrol auto-installed for non-minimal desktops
-- **Package-source aware installs** — splits repository, archlinuxcn, and exact AUR targets to avoid provider/source prompts in automated installs
-- **Chinese input dictionaries** — installs `fcitx5-pinyin-zhwiki`, `fcitx5-pinyin-moegirl`, and best-effort prebuilt Sougou `sougou.dict`
-- **Arch package rename handling** — installs `awww` for Exo and patches copied configs from `swww`/`swww-daemon` to `awww`/`awww-daemon`
-
-## Requirements
-
-| Dependency | Notes |
-|------------|-------|
-| Python 3.11+ | Pre-installed on Arch ISO |
-| archinstall 4.x | Pre-4 ISO versions are auto-upgraded by the bootstrap script |
-| pciutils (`lspci`) + switcheroo-control | `lspci` is pre-installed; `switcheroo-control` is auto-installed on Arch ISO for reliable dGPU detection |
-| Root privileges | Required |
-| Network connection | Required for mirrors and packages |
-
-## Development
-
-Run from source:
+Run a trusted checkout directly:
 
 ```bash
 git clone https://github.com/ParticleG/arch-bootstrap.git
 cd arch-bootstrap
-python install.py
+sudo python -m arch_bootstrap
 ```
 
-Or invoke the package directly:
+Build a zipapp from the checkout:
 
 ```bash
-python -m arch_bootstrap
-```
-
-Build the zipapp manually:
-
-```bash
+rm -rf _staging
 mkdir -p _staging
 cp -r arch_bootstrap _staging/arch_bootstrap
 printf 'from arch_bootstrap.__main__ import main\nmain()\n' > _staging/__main__.py
 python -m zipapp _staging -o arch_bootstrap.pyz -p '/usr/bin/env python3'
+rm -rf _staging
 ```
 
-## Project Structure
+Run the focused tests without starting installation:
 
-```
-arch-bootstrap/
-├── install.py              # Bootstrap script (stdlib only, pipe-friendly)
-├── arch_bootstrap/         # Main Python package
-│   ├── __init__.py         # Version metadata
-│   ├── __main__.py         # Entry point: detect → wizard → install
-│   ├── archinstall_compat.py # archinstall 4.x / legacy import compatibility
-│   ├── config.py           # ArchConfig builder
-│   ├── constants.py        # Package definitions, mirrors, option dictionaries
-│   ├── detection.py        # Hardware & environment detection
-│   ├── disk.py             # Btrfs disk layout builder
-│   ├── i18n.py             # Trilingual translations (en/zh/ja)
-│   ├── installation.py     # archinstall API integration
-│   ├── log.py              # Installation logging (TeeStream, log copy)
-│   ├── mirrors.py          # Mirror resolution & fallback
-│   ├── utils.py            # Command retry, GitHub proxy, logging helpers
-│   └── wizard.py           # Multi-step interactive wizard
-└── .github/
-    └── workflows/
-        └── package.yml     # CI: build .pyz + GitHub Release
+```bash
+python -m unittest discover -s tests -v
 ```
 
-## License
+## Installation behavior and side effects
 
-See [LICENSE](LICENSE) for details.
+The wizard selects language/input, mirrors, disk, hibernation, network backend, hostname, repositories, GPU/audio support, desktop, development/gaming packages, applications, and credentials. Defaults include EFISTUB with a Unified Kernel Image, Btrfs with Snapper, PipeWire, zram, and system services selected by the chosen profile.
+
+Before the wizard reaches final installation confirmation, `install.py` can already modify the live ISO: it may replace the live mirror list, synchronize/install packages, upgrade `archinstall`, start `switcheroo-control.service`, and download the zipapp. These preparation mutations affect the live environment but do not repartition the selected target disk.
+
+After final confirmation, the full installer can:
+
+- stop swap and release LVM/LUKS/device-mapper locks;
+- repartition and format the selected disk, destroying existing data;
+- create EFI and Btrfs layouts and optional hibernation swap state;
+- install packages from official repositories, archlinuxcn, AUR, and selected upstream assets;
+- change mirror and repository configuration;
+- create users and store the credentials needed during installation;
+- enable services, boot configuration, Snapper timers, desktop integrations, virtualization, and GPU passthrough;
+- download packages and external release assets; and
+- offer reboot or `arch-chroot` after completion.
+
+Back up data, verify the selected device by stable identifiers, and keep network/power available. Use the final confirmation screen to cancel if the disk or configuration is wrong.
+
+## Project structure
+
+- `install.py` — stdlib-only live-ISO bootstrap.
+- `arch_bootstrap/__main__.py` — full installer entry point.
+- `arch_bootstrap/wizard.py` — multi-step localized TUI.
+- `arch_bootstrap/config.py` — default config and wizard-to-`ArchConfig` conversion.
+- `arch_bootstrap/disk.py` — partition/Btrfs model.
+- `arch_bootstrap/installation.py` — destructive install and post-install orchestration.
+- `arch_bootstrap/constants.py` — package/option data.
+- `arch_bootstrap/i18n.py` — English, Simplified Chinese, and Japanese strings.
+- `arch_bootstrap/archinstall_compat.py` — archinstall API compatibility boundary.
+- `tests/test_dms_installers.py` — focused DMS behavior tests.
+- `.github/workflows/package.yml` — zipapp build and tagged release automation.
+
+## Limitations
+
+- The installer intentionally applies opinionated disk, boot, filesystem, package, and service choices.
+- It depends on live network services, mirrors, package repositories, GitHub-hosted sources, and evolving `archinstall` APIs.
+- Only part of the installation surface has automated unit coverage; disk and full installation behavior require disposable-machine testing.
+- Hardware detection and third-party package availability can vary by machine, region, and time.
+- Python 3.11 is insufficient for the current `wizard.py` syntax even if an older Arch ISO happens to provide it.
+
+## License and attribution
+
+The repository does not contain a license file in this checkout. No permission beyond applicable default copyright law should be inferred; obtain clarification from the repository owner before reuse or redistribution. Arch Linux and `archinstall` are upstream projects used by this installer and are not authored by this repository.

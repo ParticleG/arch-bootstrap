@@ -4,7 +4,7 @@ Arch Bootstrap is an opinionated, interactive Arch Linux installer built on the 
 
 ## Project status
 
-This is a public, non-archived, standalone repository rather than a fork. It automates destructive installation onto a selected block device and should be used only from an Arch live environment after backups and target-disk verification. The checkout includes the configuration conversion layer, zipapp workflow, and a focused DMS installer test module; it is not a general replacement for all `archinstall` profiles.
+This is a public, non-archived, standalone repository rather than a fork. It automates destructive installation onto a selected block device and should be used only from an Arch live environment after backups and target-disk verification. The checkout includes the configuration conversion layer, zipapp workflow, and focused desktop-installer and post-install maintenance tests; it is not a general replacement for all `archinstall` profiles.
 
 ## Architecture and data flow
 
@@ -70,6 +70,31 @@ Run the focused tests without starting installation:
 python -m unittest discover -s tests -v
 ```
 
+## Post-install maintenance
+
+### Remove the GitHub source-download proxy
+
+CN installations deploy `/usr/local/bin/github-proxy-dl` and configure the HTTPS entry in `/etc/makepkg.conf` to use it. To remove this wrapper, run the standalone uninstall script on the installed system, not the live-ISO installer:
+
+```bash
+sudo bash arch_bootstrap/scripts/uninstall-github-proxy-dl.sh
+```
+
+If the installed system does not have a checkout, download and inspect the script first:
+
+```bash
+curl -fLo uninstall-github-proxy-dl.sh \
+  https://raw.githubusercontent.com/ParticleG/arch-bootstrap/main/arch_bootstrap/scripts/uninstall-github-proxy-dl.sh
+less uninstall-github-proxy-dl.sh
+sudo bash uninstall-github-proxy-dl.sh
+```
+
+The script requires only Bash and standard Arch system utilities; it does not import `archinstall` or run installation. It restores the HTTPS download command written by arch-bootstrap to `/usr/bin/curl`, then removes the wrapper. Other download agents, build settings, Git URL rewrites, network proxy applications, and package caches are left unchanged.
+
+It is safe to run again if the wrapper is already absent. If the configuration contains a modified wrapper reference that the script cannot safely restore, it exits without changing the configuration or removing the wrapper; review that reference manually before retrying. Start a new `makepkg` or AUR-helper invocation after removal so it reads the updated configuration.
+
+The script is available from the repository; it is not automatically installed into the target system. Future bootstrap deployments can install the proxy again.
+
 ## Installation behavior and side effects
 
 The wizard selects language/input, mirrors, disk, hibernation, network backend, hostname, repositories, GPU/audio support, desktop, development/gaming packages, applications, and credentials. Defaults include EFISTUB with a Unified Kernel Image, Btrfs with Snapper, PipeWire, zram, and system services selected by the chosen profile.
@@ -101,7 +126,9 @@ Back up data, verify the selected device by stable identifiers, and keep network
 - `arch_bootstrap/constants.py` — package/option data.
 - `arch_bootstrap/i18n.py` — English, Simplified Chinese, and Japanese strings.
 - `arch_bootstrap/archinstall_compat.py` — archinstall API compatibility boundary.
+- `arch_bootstrap/scripts/uninstall-github-proxy-dl.sh` — standalone post-install download-proxy removal.
 - `tests/test_dms_installers.py` — focused DMS behavior tests.
+- `tests/test_github_proxy_uninstall.py` — configuration preservation and uninstall behavior tests.
 - `.github/workflows/package.yml` — zipapp build and tagged release automation.
 
 ## Limitations

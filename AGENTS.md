@@ -10,9 +10,10 @@ Arch Bootstrap is an opinionated Arch Linux installer using `archinstall` 4.x. `
 - `arch_bootstrap/__main__.py` wires detection → wizard → `config.py` → confirmation → installation.
 - `wizard.py` mutates `WizardState`; `config.py:build_default_config()` creates the base `ArchConfig`, and `apply_wizard_state_to_config()` maps wizard fields into it.
 - `disk.py` builds the EFI/Btrfs layout. `installation.py` performs archinstall and post-install mutations.
-- `constants.py` is the source for package lists and option dictionaries. `i18n.py` owns all localized user text.
+- `constants.py` is the source for package lists and option dictionaries. `i18n.py` owns all localized user text. `packages.py` normalizes optional selections and splits them into official, post-repo, and AUR package sources.
 - `archinstall_compat.py` isolates moved logging and TUI imports across archinstall versions.
-- `dms.py`, `dms_manual.py`, and `exo.py` implement desktop-specific install surfaces.
+- `dms.py` and `exo.py` implement desktop-specific install surfaces.
+- Dux uses one native `dms` desktop path: repository/AUR packages, upstream `dms setup headless`, supported keybinding overrides, and offline service activation after required configuration succeeds. Do not reintroduce a separate manual configuration or downloaded installer.
 
 When a wizard field changes, update its state definition, step order, translations, configuration mapping, and installation consumer together.
 
@@ -20,7 +21,7 @@ When a wizard field changes, update its state definition, step order, translatio
 
 - `arch_bootstrap/` — production installer package.
 - `arch_bootstrap/scripts/` — files installed or invoked by post-install flows.
-- `tests/` — focused `unittest` coverage, currently centered on DMS installers.
+- `tests/` — focused `unittest` coverage for installers and package selection.
 - `.github/workflows/` — zipapp packaging and release automation.
 - `docs/plans/` — design notes; code remains authoritative.
 

@@ -264,18 +264,6 @@ FONTCONFIG_CJK_ALIASES: dict[str, list[str]] = {
     ],
 }
 
-# ---------------------------------------------------------------------------
-# DMS (DankMaterialShell) desktop environment
-# ---------------------------------------------------------------------------
-
-# dankinstall is downloaded from this GitHub releases base URL.
-# Currently using ParticleG's fork which adds headless CLI support.
-# Once upstream merges the PR, switch to AvengeMedia/DankMaterialShell.
-DANKINSTALL_RELEASE_BASE = (
-    'https://github.com/ParticleG/DankMaterialShell'
-    '/releases/latest/download'
-)
-
 # GitHub proxy constants (reused from install.py pattern)
 GHPROXY_CHUNK_URL = 'https://ghproxy.link/js/src_views_home_HomeView_vue.js'
 GHPROXY_FALLBACK = 'https://ghfast.top'
@@ -318,40 +306,36 @@ EXO_SYSTEM_PACKAGES: list[str] = [
 ]
 
 
-# Runtime packages required by the default DMS font and sound configuration.
-DMS_RUNTIME_PACKAGES: list[str] = [
-    'inter-font',
+# Runtime packages required by the default Dux Shell theming and sound configuration.
+DUX_RUNTIME_PACKAGES: list[str] = [
+    'adw-gtk-theme',
     'qt6-multimedia',
     'qt6-multimedia-ffmpeg',
 ]
 
 
 # ---------------------------------------------------------------------------
-# DMS Manual installation (without dankinstall binary)
+# Dux Shell native installation
 # ---------------------------------------------------------------------------
 
-# DMS Manual installation packages
-DMS_MANUAL_PREREQ_PACKAGES: list[str] = []
-
-DMS_MANUAL_AUR_PACKAGES: list[str] = [
-    'greetd-dms-greeter-git',
-    'dsearch-bin',
+DUX_AUR_PACKAGES: list[str] = [
+    'dux-greeter-bin', 'dux-search-bin',
 ]
 
-DMS_MANUAL_SYSTEM_PACKAGES: list[str] = [
-    'quickshell', 'greetd', *DESKTOP_PORTAL_PACKAGES,
+DUX_SYSTEM_PACKAGES: list[str] = [
+    'dux-shell', 'dux-gop', 'greetd', 'xdg-desktop-portal-gtk',
     'accountsservice', 'matugen',
-    'dgop', 'cava', 'cups-pk-helper', 'kimageformats',
+    'cava', 'cups-pk-helper', 'kimageformats',
     'libavif', 'libheif', 'libjxl', 'qt6ct', 'wtype', 'i2c-tools',
-    *DMS_RUNTIME_PACKAGES,
+    *DUX_RUNTIME_PACKAGES,
 ]
 
-DMS_MANUAL_COMPOSITOR_PACKAGES: dict[str, list[str]] = {
-    'niri': ['niri', 'xwayland-satellite', 'dms-shell-niri'],
-    'hyprland': ['hyprland', 'dms-shell-hyprland'],
+DUX_COMPOSITOR_PACKAGES: dict[str, list[str]] = {
+    'niri': ['niri', 'xwayland-satellite', 'xdg-desktop-portal-gnome'],
+    'hyprland': ['hyprland', 'hyprland-guiutils', 'xdg-desktop-portal-hyprland'],
 }
 
-DMS_MANUAL_TERMINAL_PACKAGES: dict[str, str] = {
+DUX_TERMINAL_PACKAGES: dict[str, str] = {
     'ghostty': 'ghostty',
     'kitty': 'kitty',
     'alacritty': 'alacritty',
@@ -374,9 +358,26 @@ BROWSER_OPTIONS: dict[str, dict] = {
 # Clipboard tools
 # ---------------------------------------------------------------------------
 
-CLIPBOARD_PACKAGES: list[str] = ['cliphist', 'xclip']
+CLIPBOARD_PACKAGES: list[str] = ['xclip']
 CLIPBOARD_WAYLAND_PACKAGES: list[str] = ['wl-clipboard']
-CLIPBOARD_WAYLAND_AUR_PACKAGES: list[str] = ['comalot-clipsync-git']
+EXO_CLIPBOARD_PACKAGES: list[str] = ['cliphist']
+
+DESKTOP_APPLICATION_PACKAGES: list[str] = [
+    'file-roller', 'loupe', 'mpv', 'mpv-mpris', 'xdg-utils',
+]
+
+# Ordered desktop IDs used for MIME defaults. FileRoller handles archives,
+# mpv media, and Loupe images; later entries take precedence for images.
+DESKTOP_APPLICATION_IDS: list[str] = [
+    'org.gnome.FileRoller.desktop',
+    'mpv.desktop',
+    'org.gnome.Loupe.desktop',
+]
+
+# Exo ships Nautilus as its desktop file manager.
+EXO_AUTO_FILE_MANAGER: str = 'nautilus'
+
+NAUTILUS_GHOSTTY_PACKAGES: list[str] = ['ghostty-nautilus']
 
 # ---------------------------------------------------------------------------
 # Terminal enhancement (always installed)
@@ -393,6 +394,7 @@ INPUT_METHOD_PACKAGES: dict[str, dict] = {
         'label': 'Fcitx5 (Chinese)',
         'packages': ['fcitx5', 'fcitx5-chinese-addons', 'fcitx5-configtool', 'fcitx5-pinyin-zhwiki'],
         'aur_packages': ['fcitx5-pinyin-moegirl'],
+        'regional_packages': {'CN': ['archlinuxcn/fcitx5-pinyin-moegirl']},
         'prebuilt_dictionaries': [
             {
                 'url': 'https://github.com/blackteahamburger/fcitx5-pinyin-sougou-dict/releases/latest/download/sougou.dict',
@@ -502,7 +504,7 @@ POLKIT_AGENT_OPTIONS: dict[str, dict] = {
 KEYRING_OPTIONS: dict[str, dict] = {
     'gnome': {
         'label': 'GNOME Keyring (recommended)',
-        'packages': ['gnome-keyring'],
+        'packages': ['gnome-keyring', 'gcr-4'],
         'pam_module': 'pam_gnome_keyring.so',
         'pam_auth': 'auth       optional     pam_gnome_keyring.so',
         'pam_session': 'session    optional     pam_gnome_keyring.so auto_start',
@@ -534,8 +536,15 @@ REMOTE_DESKTOP_OPTIONS: dict[str, dict] = {
         'packages': ['moonlight-qt'],
     },
     'rustdesk': {
-        'label': 'RustDesk (AUR)',
-        'aur_packages': ['rustdesk'],
+        'label': 'RustDesk',
+        'aur_packages': ['rustdesk-bin'],
+        'regional_packages': {'CN': ['archlinuxcn/rustdesk']},
+    },
+    'sunshine': {
+        'label': 'Sunshine',
+        'aur_packages': ['sunshine-bin'],
+        'regional_packages': {'CN': ['archlinuxcn/sunshine']},
+        'graphical_only': True,
     },
 }
 
@@ -551,17 +560,20 @@ FILE_MANAGER_OPTIONS: dict[str, dict] = {
     },
     'nautilus': {
         'label': 'Nautilus (GNOME)',
-        'packages': ['nautilus'],
+        'packages': ['nautilus', 'gvfs', 'gvfs-mtp', 'gvfs-smb', 'ffmpegthumbnailer'],
+        'desktop_id': 'org.gnome.Nautilus.desktop',
         'tui': False,
     },
     'dolphin': {
         'label': 'Dolphin (KDE)',
         'packages': ['dolphin'],
+        'desktop_id': 'org.kde.dolphin.desktop',
         'tui': False,
     },
     'thunar': {
         'label': 'Thunar (XFCE)',
         'packages': ['thunar'],
+        'desktop_id': 'thunar.desktop',
         'tui': False,
     },
 }
@@ -625,7 +637,7 @@ DEVICE_PURPOSES: dict[str, str] = {
 VM_OPTIONS: dict[str, dict] = {
     'kvm_base': {
         'label': 'KVM/QEMU + virt-manager',
-        'packages': ['qemu-full', 'virt-manager', 'swtpm', 'dnsmasq', 'edk2-ovmf'],
+        'packages': ['qemu-full', 'virt-manager', 'virt-viewer', 'swtpm', 'dnsmasq', 'edk2-ovmf'],
         'services': ['libvirtd'],
     },
     'nested_virt': {
@@ -642,7 +654,7 @@ VM_OPTIONS: dict[str, dict] = {
         'label': 'LookingGlass (KVMFR)',
         'packages': ['linux-headers'],
         'services': [],
-        'aur_packages': ['looking-glass-module-dkms-git', 'looking-glass-git'],
+        'aur_packages': ['looking-glass', 'looking-glass-module-dkms'],
     },
 }
 
@@ -665,8 +677,7 @@ DEV_ENVIRONMENT_OPTIONS: dict[str, dict] = {
     },
     'nodejs': {
         'label': 'Node.js (LTS)',
-        # NOTE: Update LTS codename when new LTS is released (current: Jod/v22)
-        'packages': ['nodejs-lts-jod', 'npm'],
+        'packages': ['nodejs-lts-krypton', 'npm'],
         'services': [],
     },
     'python': {
@@ -699,6 +710,15 @@ DEV_ENVIRONMENT_OPTIONS: dict[str, dict] = {
         'packages': ['chezmoi'],
         'services': [],
     },
+    'github-cli': {'label': 'GitHub CLI', 'packages': ['github-cli']},
+    'jq': {'label': 'jq', 'packages': ['jq']},
+    'uv': {'label': 'uv', 'packages': ['uv']},
+    'shellcheck': {'label': 'ShellCheck', 'packages': ['shellcheck']},
+    'oh-my-pi': {
+        'label': 'oh-my-pi',
+        'aur_packages': ['oh-my-pi'],
+        'regional_packages': {'CN': ['archlinuxcn/oh-my-pi']},
+    },
 }
 
 DEV_EDITOR_OPTIONS: dict[str, dict] = {
@@ -729,7 +749,52 @@ GAMING_OPTIONS: dict[str, dict] = {
         'label': 'MangoHud',
         'packages': ['mangohud', 'lib32-mangohud'],
     },
+    'gamescope': {'label': 'Gamescope', 'packages': ['gamescope']},
+    'protontricks': {'label': 'Protontricks', 'packages': ['protontricks']},
+    'protonup-qt': {'label': 'ProtonUp-Qt (AUR)', 'aur_packages': ['protonup-qt']},
+    'uuplugin': {
+        'label': 'UU Network Accelerator (AUR)',
+        'aur_packages': ['uuplugin-bin'],
+        'countries': ['CN'],
+    },
 }
+
+# ArtCraft targets are optional, category-specific binary packages from AUR.
+MEDIA_OPTIONS: dict[str, dict] = {
+    'obs': {'label': 'OBS Studio', 'packages': ['obs-studio']},
+    'blender': {'label': 'Blender', 'packages': ['blender']},
+    'soundcraft': {'label': 'SoundCraft (AUR)', 'aur_packages': ['soundcraft-bin']},
+    'filmcraft': {'label': 'FilmCraft (AUR)', 'aur_packages': ['filmcraft-bin']},
+    'effectcraft': {'label': 'EffectCraft (AUR)', 'aur_packages': ['effectcraft-bin']},
+    'photocraft': {'label': 'PhotoCraft (AUR)', 'aur_packages': ['photocraft-bin']},
+    'vectorcraft': {'label': 'VectorCraft (AUR)', 'aur_packages': ['vectorcraft-bin']},
+    'lightcraft': {'label': 'LightCraft (AUR)', 'aur_packages': ['lightcraft-bin']},
+}
+
+INDUSTRIAL_OPTIONS: dict[str, dict] = {
+    'openscad': {'label': 'OpenSCAD', 'packages': ['openscad']},
+    'freecad': {'label': 'FreeCAD', 'packages': ['freecad']},
+    'orca-slicer': {
+        'label': 'OrcaSlicer',
+        'aur_packages': ['orca-slicer-bin'],
+        'regional_packages': {'CN': ['archlinuxcn/orca-slicer']},
+    },
+    'bambustudio': {'label': 'Bambu Studio (AUR)', 'aur_packages': ['bambustudio-bin']},
+    'lceda-pro': {
+        'label': 'LCEDA Pro',
+        'repo': 'archlinuxcn',
+        'packages': ['lceda-pro'],
+        'countries': ['CN'],
+    },
+    'cadcraft': {'label': 'CADCraft (AUR)', 'aur_packages': ['cadcraft-bin']},
+}
+
+EDGE_FLAGS: str = """\
+--ozone-platform=x11
+--use-angle=gl
+--enable-features=Vulkan
+--disable-features=VulkanFromANGLE
+"""
 
 # ---------------------------------------------------------------------------
 # Electron / VS Code Wayland flags

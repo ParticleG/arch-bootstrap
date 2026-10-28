@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import textwrap
 import time
+from configparser import ConfigParser
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -33,12 +34,12 @@ from .config import generate_fontconfig, generate_kmscon_config, get_kmscon_gree
 from .constants import (
     ARCHLINUXCN_URL,
     BROWSER_OPTIONS,
-    CLIPBOARD_WAYLAND_AUR_PACKAGES,
-    CN_APP_OPTIONS,
-    DEV_EDITOR_OPTIONS,
+    DESKTOP_APPLICATION_IDS,
     DEV_ENVIRONMENT_OPTIONS,
+    EDGE_FLAGS,
     ELECTRON_WAYLAND_FLAGS,
     FCITX5_ENVIRONMENT,
+    FILE_MANAGER_OPTIONS,
     INPUT_METHOD_PACKAGES,
     OMZ_INSTALL_URL,
     OMZ_REMOTE_GITHUB,
@@ -46,7 +47,6 @@ from .constants import (
     NERD_FONT_OPTIONS,
     PROXY_TOOL_OPTIONS,
     REFLECTOR_CONF,
-    REMOTE_DESKTOP_OPTIONS,
     VSCODE_ARGV_JSON,
     VM_OPTIONS,
 )
@@ -54,6 +54,7 @@ from .detection import calculate_kmscon_font_size, needs_kmscon
 from .i18n import get_lang, t
 from .log import copy_log_to_target
 from .mirrors import format_cn_mirrorlist
+from .packages import collect_optional_packages
 from .utils import build_paru_aur_install_command, get_clone_url, install_github_proxy_dl, resolve_github_proxy, run_with_retry
 
 
@@ -257,11 +258,12 @@ def _patch_zshrc_plugins(zshrc_path: str) -> None:
     content = path.read_text()
     import re
 
-    # Add fast-syntax-highlighting to plugins=(...) if not already present
-    if 'fast-syntax-highlighting' not in content:
-        content = re.sub(
-            r'plugins=\(([^)]*)\)',
-            lambda m: f'plugins=({m.group(1)} fast-syntax-highlighting)',
+    # Match the active assignment, not Oh My Zsh's commented example.
+    plugin_assignment = re.compile(r'^([ \t]*plugins=\()([^)]*)(\))', re.MULTILINE)
+    match = plugin_assignment.search(content)
+    if match and 'fast-syntax-highlighting' not in match.group(2).split():
+        content = plugin_assignment.sub(
+            lambda m: f'{m.group(1)}{m.group(2).rstrip()} fast-syntax-highlighting{m.group(3)}',
             content,
             count=1,
         )
@@ -621,6 +623,163 @@ def _ensure_user_in_groups(chroot_dir: Path, username: str, groups: list[str]) -
     )
     return result.returncode == 0
 
+
+def _gpu_passthrough_parameters(cpuinfo: str) -> list[str]:
+    """Return the host CPU's IOMMU requirements without device-specific quirks."""
+    if 'GenuineIntel' in cpuinfo:
+        return ['intel_iommu=on', 'iommu=pt']
+    if 'AuthenticAMD' in cpuinfo:
+        return ['iommu=pt']
+    raise ValueError(t('post.gpu_iommu_unsupported'))
+
+
+def _configure_desktop_defaults(chroot_dir: Path, username: str, file_managers: list[str]) -> bool:
+    """Merge installed applications' supported MIME types into user defaults."""
+    applications = chroot_dir / 'usr/share/applications'
+    associations: dict[str, str] = {}
+    for desktop_id in DESKTOP_APPLICATION_IDS:
+        desktop_path = applications / desktop_id
+        if not desktop_path.is_file():
+            _debug(f'Desktop application missing: {desktop_id}')
+            return False
+        entry = ConfigParser(interpolation=None)
+        entry.read(desktop_path)
+        for mime in entry.get('Desktop Entry', 'MimeType', fallback='').split(';'):
+            if mime and not mime.startswith('x-scheme-handler/'):
+                associations[mime] = desktop_id + ';'
+
+    for manager in file_managers:
+        desktop_id = FILE_MANAGER_OPTIONS.get(manager, {}).get('desktop_id')
+        if desktop_id:
+            if not (applications / desktop_id).is_file():
+                _debug(f'File manager desktop entry missing: {desktop_id}')
+                return False
+            associations['inode/directory'] = desktop_id + ';'
+            break
+
+    config_dir = chroot_dir / 'home' / username / '.config'
+    config_dir.mkdir(parents=True, exist_ok=True)
+    mimeapps = config_dir / 'mimeapps.list'
+    defaults = ConfigParser(interpolation=None)
+    defaults.optionxform = str
+    defaults.read(mimeapps)
+    if not defaults.has_section('Default Applications'):
+        defaults.add_section('Default Applications')
+    for mime, desktop_id in associations.items():
+        if not defaults.has_option('Default Applications', mime):
+            defaults.set('Default Applications', mime, desktop_id)
+    with mimeapps.open('w') as stream:
+        defaults.write(stream, space_around_delimiters=False)
+    result = run_with_retry(
+        ['arch-chroot', str(chroot_dir), 'chown', f'{username}:{username}',
+         f'/home/{username}/.config', f'/home/{username}/.config/mimeapps.list'],
+        max_retries=1, retry_delay=0, check=False,
+        description='desktop application defaults ownership',
+    )
+    return result.returncode == 0
+
+
+def _configure_application_flags(
+    chroot_dir: Path,
+    username: str,
+    browsers: list[str],
+    editors: list[str],
+    cn_apps: list[str],
+) -> bool:
+    """Keep Edge's GPU workaround separate from generic Wayland flags."""
+    contents = {'.config/electron-flags.conf': ELECTRON_WAYLAND_FLAGS}
+    directories = ['.config']
+    if 'vscode' in editors:
+        contents['.config/code-flags.conf'] = ELECTRON_WAYLAND_FLAGS
+        contents['.vscode/argv.json'] = VSCODE_ARGV_JSON
+        directories.append('.vscode')
+    if 'linuxqq-nt-bwrap' in cn_apps:
+        contents['.config/qq-electron-flags.conf'] = ELECTRON_WAYLAND_FLAGS
+    if 'edge' in browsers:
+        contents['.config/microsoft-edge-stable-flags.conf'] = EDGE_FLAGS
+    for relative_path, content in contents.items():
+        path = chroot_dir / 'home' / username / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+    result = run_with_retry(
+        ['arch-chroot', str(chroot_dir), 'chown', f'{username}:{username}',
+         *[f'/home/{username}/{path}' for path in [*directories, *contents]]],
+        max_retries=1, retry_delay=0, check=False,
+        description='application flags ownership',
+    )
+    return result.returncode == 0
+
+
+def _configure_gtk_input_method(chroot_dir: Path, username: str) -> bool:
+    """Add Fcitx settings without duplicating Dux-generated GTK sections."""
+    home = chroot_dir / 'home' / username
+    gtk2 = home / '.gtkrc-2.0'
+    lines = gtk2.read_text().splitlines() if gtk2.exists() else []
+    lines = [line for line in lines if not line.lstrip().startswith('gtk-im-module')]
+    gtk2.write_text('\n'.join([*lines, 'gtk-im-module="fcitx"']) + '\n')
+    owned = [f'/home/{username}/.gtkrc-2.0']
+    for version in ('gtk-3.0', 'gtk-4.0'):
+        directory = home / '.config' / version
+        directory.mkdir(parents=True, exist_ok=True)
+        settings = ConfigParser(interpolation=None, strict=False)
+        settings.optionxform = str
+        path = directory / 'settings.ini'
+        settings.read(path)
+        if not settings.has_section('Settings'):
+            settings.add_section('Settings')
+        settings.set('Settings', 'gtk-im-module', 'fcitx')
+        with path.open('w') as stream:
+            settings.write(stream, space_around_delimiters=False)
+        owned.extend([
+            f'/home/{username}/.config/{version}',
+            f'/home/{username}/.config/{version}/settings.ini',
+        ])
+    result = run_with_retry(
+        ['arch-chroot', str(chroot_dir), 'chown', f'{username}:{username}', *owned],
+        max_retries=1, retry_delay=0, check=False,
+        description='GTK input method settings ownership',
+    )
+    return result.returncode == 0
+
+
+def _configure_gnome_keyring(chroot_dir: Path, username: str) -> bool:
+    """Enable keyring sockets and expose the GCR SSH agent to user services."""
+    environment_dir = chroot_dir / 'home' / username / '.config/environment.d'
+    environment_dir.mkdir(parents=True, exist_ok=True)
+    (environment_dir / '10-gcr-ssh-agent.conf').write_text(
+        'SSH_AUTH_SOCK=${XDG_RUNTIME_DIR}/gcr/ssh\n'
+    )
+    result = run_with_retry(
+        ['arch-chroot', str(chroot_dir), 'chown', '-R', f'{username}:{username}',
+         f'/home/{username}/.config/environment.d'],
+        max_retries=1, retry_delay=0, check=False,
+        description='GCR SSH agent environment ownership',
+    )
+    if result.returncode:
+        return False
+    result = run_with_retry(
+        ['arch-chroot', str(chroot_dir), 'systemctl', '--global', 'enable',
+         'gnome-keyring-daemon.socket', 'p11-kit-server.socket', 'gcr-ssh-agent.socket'],
+        max_retries=1, retry_delay=0, check=False,
+        description='GNOME Keyring and GCR SSH agent sockets',
+    )
+    return result.returncode == 0
+
+
+def _enable_sunshine(chroot_dir: Path) -> bool:
+    """Enable the packaged user service, never a duplicate custom unit."""
+    service = 'app-dev.lizardbyte.app.Sunshine.service'
+    if not (chroot_dir / 'usr/lib/systemd/user' / service).is_file():
+        _debug(f'Sunshine service missing: {service}')
+        return False
+    result = run_with_retry(
+        ['arch-chroot', str(chroot_dir), 'systemctl', '--global', 'enable', service],
+        max_retries=1, retry_delay=0, check=False,
+        description='Sunshine user service',
+    )
+    return result.returncode == 0
+
+
 # =============================================================================
 # Installation
 # =============================================================================
@@ -632,6 +791,8 @@ def perform_installation(
 ) -> None:
     """Execute the installation using archinstall's Installer."""
     from .wizard import WizardState  # noqa: F811 — deferred to avoid circular import
+    # Normalize hidden selections before either package phase or service setup.
+    _, repo_packages, aur_packages = collect_optional_packages(state)
 
     # Unpack frequently used state fields
     kmscon_font_name = state.kmscon_font_name
@@ -660,6 +821,11 @@ def perform_installation(
     locale_config = config.locale_config
     optional_repos = config.mirror_config.optional_repositories if config.mirror_config else []
     mountpoint = disk_config.mountpoint if disk_config.mountpoint else Path('/mnt')
+    iommu_parameters: list[str] = []
+    if 'gpu_passthrough' in state.vm_options:
+        if not config.bootloader_config or config.bootloader_config.bootloader == Bootloader.NO_BOOTLOADER:
+            raise ValueError(t('post.gpu_iommu_unsupported'))
+        iommu_parameters = _gpu_passthrough_parameters(Path('/proc/cpuinfo').read_text())
 
     with Installer(
         mountpoint,
@@ -667,10 +833,15 @@ def perform_installation(
         kernels=config.kernels,
         silent=False,
     ) as installation:
+        # archinstall 4.x uses this list for every bootloader and embedded UKI
+        # command line. Set it before boot generation, not in host boot files.
+        if iommu_parameters:
+            _info(t('post.gpu_iommu'))
+            installation._kernel_params.extend(iommu_parameters)
         if disk_config.config_type != DiskLayoutType.Pre_mount:
             installation.mount_ordered_layout()
 
-        installation.sanity_check(offline=False, skip_ntp=False, skip_wkd=False)
+        installation.sanity_check(skip_ntp=False, skip_wkd=False)
 
         if country == 'CN':
             # CN live ISO mirrorlist was already written by
@@ -840,7 +1011,7 @@ def perform_installation(
 
         # Write login warning for minimal installs where kmscon is on tty1.
         # Users who later install greetd will see a reminder to move kmscon.
-        if desktop_env not in ('dms', 'dms_manual', 'exo'):
+        if desktop_env not in ('dms', 'exo'):
             warning_dir = chroot_dir / 'etc' / 'profile.d'
             warning_dir.mkdir(parents=True, exist_ok=True)
             warning_file = warning_dir / 'kmscon-warning.sh'
@@ -929,19 +1100,6 @@ def perform_installation(
         else:
             tracker.record('summary.step.aur_helper', StepStatus.SKIPPED)
 
-        # Post-install: clipboard Wayland AUR packages
-        if has_paru and desktop_env != 'minimal' and username:
-            _info(t('post.clipboard'))
-            aur_cmd = build_paru_aur_install_command(CLIPBOARD_WAYLAND_AUR_PACKAGES)
-            run_with_retry(
-                ['arch-chroot', str(chroot_dir), 'runuser', '-l', username, '-c', aur_cmd],
-                max_retries=3, retry_delay=5,
-                description='clipboard AUR packages',
-            )
-            tracker.record('summary.step.clipboard', StepStatus.SUCCESS)
-        else:
-            tracker.record('summary.step.clipboard', StepStatus.SKIPPED)
-
         # Post-install: set default shell to zsh and install oh-my-zsh
         if username:
             subprocess.run(
@@ -1017,38 +1175,18 @@ def perform_installation(
         # Post-install: DMS desktop environment
         if desktop_env == 'dms' and username:
             from .dms import install_dms
-            _info('Setting up DMS desktop environment...')
+            _info(t('step.desktop.dms'))
             desktop_ok = install_dms(
                 chroot_dir=chroot_dir,
                 username=username,
                 compositor=dms_compositor,
                 terminal=dms_terminal,
-                country=country,
-                gpu_vendors=gpu_vendors,
-            )
-            tracker.record(
-                'summary.step.desktop',
-                StepStatus.SUCCESS if desktop_ok else StepStatus.FAILED,
-                '' if desktop_ok else t('dms.install_incomplete'),
-            )
-
-        # Post-install: DMS Manual desktop environment
-        elif desktop_env == 'dms_manual' and username:
-            from .dms_manual import install_dms_manual
-            _info('Setting up DMS Manual desktop environment...')
-            desktop_ok = install_dms_manual(
-                chroot_dir=chroot_dir,
-                username=username,
-                compositor=dms_compositor,
-                terminal=dms_terminal,
-                country=country,
-                gpu_vendors=gpu_vendors,
                 file_managers=state.file_managers,
             )
             tracker.record(
                 'summary.step.desktop',
                 StepStatus.SUCCESS if desktop_ok else StepStatus.FAILED,
-                '' if desktop_ok else t('dms_manual.install_incomplete'),
+                '' if desktop_ok else t('dms.install_incomplete'),
             )
 
         # Post-install: Exo desktop environment
@@ -1074,45 +1212,16 @@ def perform_installation(
         else:
             tracker.record('summary.step.browser', StepStatus.SKIPPED)
 
-        # Post-install: Electron / VS Code Wayland flags
+        # Post-install: application-specific display and GPU configuration
         if desktop_env != 'minimal' and username:
             _info(t('post.electron_flags'))
-            home = f'/home/{username}'
-            config_dir = str(chroot_dir / 'home' / username / '.config')
-            os.makedirs(config_dir, exist_ok=True)
-            flag_files: list[str] = []
-            # electron-flags.conf: always for non-minimal (catches generic electron apps)
-            electron_path = os.path.join(config_dir, 'electron-flags.conf')
-            with open(electron_path, 'w') as f:
-                f.write(ELECTRON_WAYLAND_FLAGS)
-            flag_files.append(f'{home}/.config/electron-flags.conf')
-            # code-flags.conf: only when VS Code is selected
-            if 'vscode' in state.dev_editors:
-                code_path = os.path.join(config_dir, 'code-flags.conf')
-                with open(code_path, 'w') as f:
-                    f.write(ELECTRON_WAYLAND_FLAGS)
-                flag_files.append(f'{home}/.config/code-flags.conf')
-                # argv.json: gnome-libsecret keyring integration
-                vscode_dir = str(chroot_dir / 'home' / username / '.vscode')
-                os.makedirs(vscode_dir, exist_ok=True)
-                argv_path = os.path.join(vscode_dir, 'argv.json')
-                with open(argv_path, 'w') as f:
-                    f.write(VSCODE_ARGV_JSON)
-                flag_files.append(f'{home}/.vscode/argv.json')
-            # qq-electron-flags.conf: only when QQ is selected
-            if 'linuxqq-nt-bwrap' in state.cn_apps:
-                qq_path = os.path.join(config_dir, 'qq-electron-flags.conf')
-                with open(qq_path, 'w') as f:
-                    f.write(ELECTRON_WAYLAND_FLAGS)
-                flag_files.append(f'{home}/.config/qq-electron-flags.conf')
-            # Fix ownership
-            run_with_retry(
-                ['arch-chroot', str(chroot_dir),
-                 'chown', '-R', f'{username}:{username}'] + flag_files,
-                max_retries=1, retry_delay=0,
-                description='fix electron flags ownership',
+            flags_ok = _configure_application_flags(
+                chroot_dir, username, browsers, state.dev_editors, state.cn_apps,
             )
-            tracker.record('summary.step.electron_flags', StepStatus.SUCCESS)
+            tracker.record(
+                'summary.step.electron_flags',
+                StepStatus.SUCCESS if flags_ok else StepStatus.FAILED,
+            )
         else:
             tracker.record('summary.step.electron_flags', StepStatus.SKIPPED)
 
@@ -1124,24 +1233,9 @@ def perform_installation(
                 for key, value in FCITX5_ENVIRONMENT.items():
                     f.write(f'{key}={value}\n')
 
-            # Write per-toolkit GTK IM config for XWayland apps.
-            # GTK_IM_MODULE is not set globally (Wayland apps use
-            # text-input-v3 natively); these files only affect
-            # GTK2/3 apps running under XWayland.
+            input_ok = True
             if username:
-                # Create GTK IM config files as the user (not root)
-                gtk_im_cmd = (
-                    'printf \'gtk-im-module="fcitx"\\n\' >> ~/.gtkrc-2.0'
-                    ' && mkdir -p ~/.config/gtk-3.0'
-                    ' && printf \'[Settings]\\ngtk-im-module=fcitx\\n\' >> ~/.config/gtk-3.0/settings.ini'
-                    ' && mkdir -p ~/.config/gtk-4.0'
-                    ' && printf \'[Settings]\\ngtk-im-module=fcitx\\n\' >> ~/.config/gtk-4.0/settings.ini'
-                )
-                subprocess.run(
-                    ['arch-chroot', str(chroot_dir),
-                     'runuser', '-l', username, '-c', gtk_im_cmd],
-                    check=False,
-                )
+                input_ok = _configure_gtk_input_method(chroot_dir, username)
                 _install_prebuilt_input_dictionaries(
                     chroot_dir,
                     username,
@@ -1149,49 +1243,15 @@ def perform_installation(
                     country,
                 )
 
-            tracker.record('summary.step.input_method', StepStatus.SUCCESS)
+            tracker.record(
+                'summary.step.input_method',
+                StepStatus.SUCCESS if input_ok else StepStatus.FAILED,
+            )
         else:
             tracker.record('summary.step.input_method', StepStatus.SKIPPED)
 
-        # Post-install: additional repository/AUR packages
-        repo_packages: list[str] = []
-        aur_packages: list[str] = []
-
-        # Proxy tools are installed here since archlinuxcn and paru are already
-        # configured at this point.
-        if state.proxy_tool and state.proxy_tool in PROXY_TOOL_OPTIONS:
-            opt = PROXY_TOOL_OPTIONS[state.proxy_tool]
-            repo = opt.get('repo')
-            repo_packages.extend(
-                f'{repo}/{pkg}' if repo else pkg
-                for pkg in opt.get('packages', [])
-            )
-            aur_packages.extend(opt.get('aur_packages', []))
-
-        for de_key in state.dev_editors:
-            if de_key in DEV_EDITOR_OPTIONS:
-                aur_packages.extend(DEV_EDITOR_OPTIONS[de_key].get('aur_packages', []))
-
-        # CN communication apps (all AUR)
-        if state and state.cn_apps:
-            for app_key in state.cn_apps:
-                app = CN_APP_OPTIONS.get(app_key)
-                if app:
-                    aur_packages.extend(app.get('aur_packages', []))
-
-        # VM AUR packages (looking_glass)
-        for vm_key in state.vm_options:
-            if vm_key in VM_OPTIONS:
-                for pkg in VM_OPTIONS[vm_key].get('aur_packages', []):
-                    if pkg not in aur_packages:
-                        aur_packages.append(pkg)
-
-        # Input method AUR extras (e.g. Sougou/Moegirl dictionaries for Chinese pinyin)
-        for im_key in state.input_methods:
-            if im_key in INPUT_METHOD_PACKAGES:
-                for pkg in INPUT_METHOD_PACKAGES[im_key].get('aur_packages', []):
-                    if pkg not in aur_packages:
-                        aur_packages.append(pkg)
+        # Region-qualified packages are installed only after archlinuxcn setup.
+        # The shared collector also includes all selected AUR application groups.
 
         additional_packages = bool(repo_packages or aur_packages)
         additional_failed = False
@@ -1226,6 +1286,26 @@ def perform_installation(
             tracker.record('summary.step.aur_packages', StepStatus.SUCCESS)
         else:
             tracker.record('summary.step.aur_packages', StepStatus.SKIPPED)
+
+        if 'sunshine' in state.remote_desktop and desktop_env != 'minimal':
+            _info(t('post.sunshine'))
+            sunshine_ok = not additional_failed and _enable_sunshine(chroot_dir)
+            tracker.record(
+                'summary.step.sunshine',
+                StepStatus.SUCCESS if sunshine_ok else StepStatus.FAILED,
+            )
+        else:
+            tracker.record('summary.step.sunshine', StepStatus.SKIPPED)
+
+        if desktop_env != 'minimal' and username:
+            _info(t('post.desktop_defaults'))
+            defaults_ok = _configure_desktop_defaults(chroot_dir, username, state.file_managers)
+            tracker.record(
+                'summary.step.desktop_defaults',
+                StepStatus.SUCCESS if defaults_ok else StepStatus.FAILED,
+            )
+        else:
+            tracker.record('summary.step.desktop_defaults', StepStatus.SKIPPED)
 
         # Post-install: enable services for dev tools (docker, etc.)
         if state.dev_environments:
@@ -1415,16 +1495,6 @@ cgroup_device_acl = [
                 description='rustup default stable',
             )
 
-        # Post-install: enable clipboard sync service
-        if desktop_env != 'minimal' and username:
-            _info(t('post.clipsync'))
-            run_with_retry(
-                ['arch-chroot', str(chroot_dir),
-                 'systemctl', '--global', 'enable', 'clipsync'],
-                max_retries=1, retry_delay=0,
-                description='enable clipsync service',
-            )
-
         # Post-install: enable snapper timers for btrfs snapshots
         _info(t('post.snapper_timers'))
         for timer in ('snapper-timeline.timer', 'snapper-cleanup.timer', 'snapper-boot.timer'):
@@ -1434,21 +1504,16 @@ cgroup_device_acl = [
                 description=f'enable {timer}',
             )
 
-        # Post-install: enable GNOME Keyring sockets (user-level)
-        if state and state.keyring == 'gnome':
-            _info(t('post.gnome_keyring'))
-            run_with_retry(
-                ['arch-chroot', str(chroot_dir),
-                 'systemctl', '--global', 'enable', 'gnome-keyring-daemon.socket'],
-                max_retries=1, retry_delay=0,
-                description='enable gnome-keyring-daemon.socket',
+        # GCR supplies SSH-agent functionality separately from GNOME Keyring.
+        if state.keyring == 'gnome' and username:
+            _info(t('post.gcr_ssh'))
+            keyring_ok = _configure_gnome_keyring(chroot_dir, username)
+            tracker.record(
+                'summary.step.keyring',
+                StepStatus.SUCCESS if keyring_ok else StepStatus.FAILED,
             )
-            run_with_retry(
-                ['arch-chroot', str(chroot_dir),
-                 'systemctl', '--global', 'enable', 'p11-kit-server.socket'],
-                max_retries=1, retry_delay=0,
-                description='enable p11-kit-server.socket',
-            )
+        else:
+            tracker.record('summary.step.keyring', StepStatus.SKIPPED)
 
         # Post-install: configure PAM for keyring auto-unlock at login
         if state and state.keyring and state.keyring in KEYRING_OPTIONS:

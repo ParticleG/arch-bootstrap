@@ -37,25 +37,19 @@ from .constants import (
     CLIPBOARD_PACKAGES,
     CLIPBOARD_WAYLAND_PACKAGES,
     COUNTRY_TIMEZONES,
-    DEV_ENVIRONMENT_OPTIONS,
-    FILE_MANAGER_OPTIONS,
+    DESKTOP_APPLICATION_PACKAGES,
+    EXO_CLIPBOARD_PACKAGES,
     FONTCONFIG_CJK_ALIASES,
     FONTCONFIG_CJK_MONO,
     FONTCONFIG_MONO_ALIASES,
-    GAMING_OPTIONS,
     GPU_PACKAGES,
-    INPUT_METHOD_PACKAGES,
-    KEYRING_OPTIONS,
     NERD_FONT_OPTIONS,
-    POLKIT_AGENT_OPTIONS,
-    PROXY_TOOL_OPTIONS,
-    REMOTE_DESKTOP_OPTIONS,
     TERMINAL_ENHANCEMENT_PACKAGES,
-    VM_OPTIONS,
 )
 from .detection import calculate_kmscon_font_size, needs_kmscon
 from .disk import build_disk_layout
 from .mirrors import build_mirror_config
+from .packages import collect_optional_packages, normalize_optional_state
 
 if TYPE_CHECKING:
     from .wizard import WizardState
@@ -315,6 +309,9 @@ def apply_wizard_state_to_config(
     mirror_list_handler: MirrorListHandler,
 ) -> None:
     """Apply wizard selections to ArchConfig."""
+    normalize_optional_state(state)
+    graphical = state.desktop_env != 'minimal'
+
     # Locale
     config.locale_config = LocaleConfiguration(
         kb_layout='',
@@ -386,10 +383,10 @@ def apply_wizard_state_to_config(
         if pkg and pkg not in all_packages:
             all_packages.append(pkg)
     # upower for desktop environments that require it
-    if state.desktop_env in ('dms', 'dms_manual', 'exo') and 'upower' not in all_packages:
+    if state.desktop_env in ('dms', 'exo') and 'upower' not in all_packages:
         all_packages.append('upower')
     # btrfs-assistant and gsmartcontrol for non-minimal desktops
-    if state.desktop_env != 'minimal':
+    if graphical:
         if 'btrfs-assistant' not in all_packages:
             all_packages.append('btrfs-assistant')
         if 'gsmartcontrol' not in all_packages:
@@ -402,17 +399,14 @@ def apply_wizard_state_to_config(
 
     # Clipboard support (Wayland extras when a desktop is selected)
     all_packages.extend(CLIPBOARD_PACKAGES)
-    if state.desktop_env != 'minimal':
+    if graphical:
         all_packages.extend(CLIPBOARD_WAYLAND_PACKAGES)
-        # Note: CLIPBOARD_WAYLAND_AUR_PACKAGES (comalot-clipsync-git) handled in installation.py
+        all_packages.extend(DESKTOP_APPLICATION_PACKAGES)
+    if state.desktop_env == 'exo':
+        all_packages.extend(EXO_CLIPBOARD_PACKAGES)
 
     # Archive extraction
     all_packages.append('unzip')
-
-    # Input method packages
-    for im_key in state.input_methods:
-        if im_key in INPUT_METHOD_PACKAGES:
-            all_packages.extend(INPUT_METHOD_PACKAGES[im_key]['packages'])
 
     # Font packages
     for font_key in state.base_fonts:
@@ -427,42 +421,13 @@ def apply_wizard_state_to_config(
         if af_key in AUDIO_FIRMWARE_OPTIONS:
             all_packages.extend(AUDIO_FIRMWARE_OPTIONS[af_key]['packages'])
 
-    # Polkit agent
-    if state.polkit_agent and state.polkit_agent in POLKIT_AGENT_OPTIONS:
-        all_packages.extend(POLKIT_AGENT_OPTIONS[state.polkit_agent]['packages'])
-
-    # Keyring
-    if state.keyring and state.keyring in KEYRING_OPTIONS:
-        all_packages.extend(KEYRING_OPTIONS[state.keyring]['packages'])
-
-    # File managers (non-AUR only; AUR ones handled in installation.py)
-    for fm_key in state.file_managers:
-        if fm_key in FILE_MANAGER_OPTIONS:
-            all_packages.extend(FILE_MANAGER_OPTIONS[fm_key]['packages'])
+    # Optional selections are normalized and split by install-time source.
+    optional_official, _late_repo_packages, _aur_packages = collect_optional_packages(state)
+    all_packages.extend(optional_official)
 
     # Minimal install: default to yazi as file manager
-    if state.desktop_env == 'minimal':
+    if not graphical:
         all_packages.append('yazi')
-
-    # Remote desktop (non-AUR only)
-    for rd_key in state.remote_desktop:
-        if rd_key in REMOTE_DESKTOP_OPTIONS and 'packages' in REMOTE_DESKTOP_OPTIONS[rd_key]:
-            all_packages.extend(REMOTE_DESKTOP_OPTIONS[rd_key]['packages'])
-
-    # Dev environment packages (non-AUR only)
-    for de_key in state.dev_environments:
-        if de_key in DEV_ENVIRONMENT_OPTIONS:
-            all_packages.extend(DEV_ENVIRONMENT_OPTIONS[de_key]['packages'])
-
-    # Gaming packages (non-AUR only)
-    for g_key in state.gaming_tools:
-        if g_key in GAMING_OPTIONS:
-            all_packages.extend(GAMING_OPTIONS[g_key]['packages'])
-
-    # VM packages (non-AUR only)
-    for vm_key in state.vm_options:
-        if vm_key in VM_OPTIONS:
-            all_packages.extend(VM_OPTIONS[vm_key]['packages'])
 
     # Deduplicate packages while preserving order
     config.packages = list(dict.fromkeys(all_packages))
@@ -482,7 +447,7 @@ def apply_wizard_state_to_config(
 
     # Custom commands for kmscon setup
     if needs_kmscon(state.locale):
-        if state.desktop_env in ('dms', 'dms_manual', 'exo'):
+        if state.desktop_env in ('dms', 'exo'):
             # Graphical DEs use greetd on tty1; put kmscon on tty2 to avoid
             # DRM master contention (kmscon holds /dev/dri/card* open).
             config.custom_commands = [

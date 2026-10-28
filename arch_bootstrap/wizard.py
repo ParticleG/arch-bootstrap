@@ -29,10 +29,12 @@ from .constants import (
     GAMING_OPTIONS,
     GPU_LABELS,
     GPU_VENDORS,
+    INDUSTRIAL_OPTIONS,
     INPUT_METHOD_PACKAGES,
     KEYRING_OPTIONS,
     KMSCON_FONT_OPTIONS,
     LANGUAGES,
+    MEDIA_OPTIONS,
     NERD_FONT_OPTIONS,
     NETWORK_BACKENDS,
     POLKIT_AGENT_OPTIONS,
@@ -44,6 +46,12 @@ from .constants import (
 from .detection import detect_audio, is_raw_tty, needs_kmscon
 from .i18n import set_lang, t
 from .mirrors import apply_mirrors_to_live_iso
+from .packages import (
+    GPU_VM_OPTIONS,
+    VM_DEPENDENT_OPTIONS,
+    normalize_optional_state,
+    option_allowed,
+)
 
 from collections.abc import Callable
 
@@ -105,7 +113,7 @@ class WizardState:
         self.kmscon_font_package: str = ''
         self.screen_resolution: tuple[int, int] | None = None
         # DMS desktop environment
-        self.desktop_env: str = 'minimal'      # 'minimal' | 'dms' | 'dms_manual' | 'exo'
+        self.desktop_env: str = 'minimal'      # 'minimal' | 'dms' | 'exo'
         self.dms_compositor: str = 'niri'       # 'niri' | 'hyprland'
         self.dms_terminal: str = 'ghostty'      # 'ghostty' | 'kitty' | 'alacritty'
         # Browser selection
@@ -123,12 +131,23 @@ class WizardState:
         self.dev_environments: list[str] = []     # keys from DEV_ENVIRONMENT_OPTIONS
         self.dev_editors: list[str] = []          # keys from DEV_EDITOR_OPTIONS
         self.gaming_tools: list[str] = []         # keys from GAMING_OPTIONS
+        self.media_tools: list[str] = []          # keys from MEDIA_OPTIONS
+        self.industrial_tools: list[str] = []     # keys from INDUSTRIAL_OPTIONS
         self.vm_options: list[str] = []          # keys from VM_OPTIONS
         self.remote_desktop: list[str] = []       # keys from REMOTE_DESKTOP_OPTIONS
         self.cn_apps: list[str] = []              # keys from CN_APP_OPTIONS
         self.hostname: str = 'archlinux'          # system hostname
         self.hibernation: bool = False            # enable hibernation (btrfs swapfile)
         self.detected_audio: list[str] = []       # auto-detected audio firmware keys
+
+
+def _is_dux(state: WizardState) -> bool:
+    return state.desktop_env == 'dms'
+
+
+def _purpose_label(key: str) -> str:
+    label = t(f'purpose.{key}')
+    return label if label != f'purpose.{key}' else DEVICE_PURPOSES.get(key, key)
 
 
 async def step_language(state: WizardState) -> str:
@@ -497,7 +516,6 @@ async def step_desktop_env(state: WizardState) -> str:
     items = [
         MenuItem(t('step.desktop.minimal'), value='minimal'),
         MenuItem(t('step.desktop.dms'), value='dms'),
-        MenuItem(t('step.desktop.dms_manual'), value='dms_manual'),
         MenuItem(t('step.desktop.exo'), value='exo'),
     ]
     group = MenuItemGroup(items)
@@ -515,7 +533,7 @@ async def step_desktop_env(state: WizardState) -> str:
         case ResultType.Selection:
             state.desktop_env = result.get_value()
             # Clear stale DMS state when switching away from DMS
-            if state.desktop_env not in ('dms', 'dms_manual'):
+            if state.desktop_env != 'dms':
                 state.dms_compositor = 'niri'
                 state.dms_terminal = 'ghostty'
             return 'next'
@@ -525,7 +543,7 @@ async def step_desktop_env(state: WizardState) -> str:
 
 async def step_dms_compositor(state: WizardState) -> str:
     """Select DMS compositor (only shown if DMS selected)."""
-    if state.desktop_env not in ('dms', 'dms_manual'):
+    if state.desktop_env != 'dms':
         return 'next'
 
     items = [
@@ -553,7 +571,7 @@ async def step_dms_compositor(state: WizardState) -> str:
 
 async def step_dms_terminal(state: WizardState) -> str:
     """Select DMS terminal emulator (only shown if DMS selected)."""
-    if state.desktop_env not in ('dms', 'dms_manual'):
+    if state.desktop_env != 'dms':
         return 'next'
 
     items = [
@@ -613,6 +631,7 @@ async def step_browser(state: WizardState) -> str:
 async def step_input_method(state: WizardState) -> str:
     """Select input method frameworks. Auto-skip for English locale."""
     if state.locale == 'en_US.UTF-8':
+        state.input_methods = []
         return 'next'
 
     # Filter options by locale prefix
@@ -633,9 +652,10 @@ async def step_input_method(state: WizardState) -> str:
     group = MenuItemGroup(items)
 
     # Pre-select current choices or default to first item
-    preselect = state.input_methods if state.input_methods else [items[0].value]
-    if preselect:
-        group.set_selected_by_value(preselect)
+    preselect = [key for key in state.input_methods if key in available]
+    if not preselect:
+        preselect = [items[0].value]
+    group.set_selected_by_value(preselect)
 
     result = await Selection[str](
         group,
@@ -717,6 +737,7 @@ async def step_fonts(state: WizardState) -> str:
 async def step_proxy_tools(state: WizardState) -> str:
     """Select proxy tool (CN region only)."""
     if state.country != 'CN':
+        state.proxy_tool = None
         return 'next'
 
     items = [
@@ -778,8 +799,9 @@ async def step_audio_firmware(state: WizardState) -> str:
 
 
 async def step_polkit_agent(state: WizardState) -> str:
-    """Select polkit agent (non-minimal desktop only)."""
-    if state.desktop_env == 'minimal':
+    """Select polkit agent (non-minimal, non-Dux desktop only)."""
+    if state.desktop_env == 'minimal' or _is_dux(state):
+        state.polkit_agent = None
         return 'next'
 
     items = [
@@ -812,6 +834,7 @@ async def step_polkit_agent(state: WizardState) -> str:
 async def step_keyring(state: WizardState) -> str:
     """Select keyring implementation (non-minimal desktop only)."""
     if state.desktop_env == 'minimal':
+        state.keyring = None
         return 'next'
 
     items = [
@@ -844,6 +867,7 @@ async def step_keyring(state: WizardState) -> str:
 async def step_file_manager(state: WizardState) -> str:
     """Select file managers (non-minimal desktop only)."""
     if state.desktop_env == 'minimal':
+        state.file_managers = []
         return 'next'
 
     items = [
@@ -876,8 +900,8 @@ async def step_file_manager(state: WizardState) -> str:
 async def step_device_purpose(state: WizardState) -> str:
     """Select device purposes."""
     items = [
-        MenuItem(label, value=key)
-        for key, label in DEVICE_PURPOSES.items()
+        MenuItem(_purpose_label(key), value=key)
+        for key in DEVICE_PURPOSES
     ]
     group = MenuItemGroup(items)
 
@@ -905,6 +929,8 @@ async def step_device_purpose(state: WizardState) -> str:
 async def step_dev_tools(state: WizardState) -> str:
     """Select development tools (only if development purpose selected)."""
     if 'development' not in state.device_purposes:
+        state.dev_environments = []
+        state.dev_editors = []
         return 'next'
 
     # --- Dev environment (multi-select, optional) ---
@@ -962,19 +988,28 @@ async def step_dev_tools(state: WizardState) -> str:
 
 async def step_gaming(state: WizardState) -> str:
     """Select gaming tools (only if gaming purpose selected and multilib enabled)."""
-    if 'gaming' not in state.device_purposes:
+    if 'gaming' not in state.device_purposes or not state.multilib:
+        state.gaming_tools = []
         return 'next'
-    if not state.multilib:
+
+    available = {
+        key: info
+        for key, info in GAMING_OPTIONS.items()
+        if option_allowed(info, state.country)
+    }
+    if not available:
+        state.gaming_tools = []
         return 'next'
 
     items = [
         MenuItem(info['label'], value=key)
-        for key, info in GAMING_OPTIONS.items()
+        for key, info in available.items()
     ]
     group = MenuItemGroup(items)
 
-    if state.gaming_tools:
-        group.set_selected_by_value(state.gaming_tools)
+    preselect = [key for key in state.gaming_tools if key in available]
+    if preselect:
+        group.set_selected_by_value(preselect)
 
     result = await Selection[str](
         group,
@@ -988,13 +1023,95 @@ async def step_gaming(state: WizardState) -> str:
             state.gaming_tools = []
             return 'next'
         case ResultType.Selection:
-            state.gaming_tools = result.get_values()
+            state.gaming_tools = [
+                key for key in result.get_values() if key in available
+            ]
             return 'next'
         case _:
             return 'next'
+
+
+async def step_media_tools(state: WizardState) -> str:
+    """Select media production tools (only if media purpose selected)."""
+    if 'media' not in state.device_purposes:
+        state.media_tools = []
+        return 'next'
+
+    items = [
+        MenuItem(info['label'], value=key)
+        for key, info in MEDIA_OPTIONS.items()
+        if option_allowed(info, state.country)
+    ]
+    group = MenuItemGroup(items)
+
+    preselect = [
+        key for key in state.media_tools
+        if key in MEDIA_OPTIONS and option_allowed(MEDIA_OPTIONS[key], state.country)
+    ]
+    if preselect:
+        group.set_selected_by_value(preselect)
+
+    result = await Selection[str](
+        group,
+        header=_build_progress_header(state, step_media_tools, 'opt.media.title'),
+        multi=True,
+        allow_skip=True,
+    ).show()
+
+    match result.type_:
+        case ResultType.Skip:
+            state.media_tools = []
+            return 'next'
+        case ResultType.Selection:
+            state.media_tools = result.get_values()
+            return 'next'
+        case _:
+            return 'next'
+
+
+async def step_industrial_tools(state: WizardState) -> str:
+    """Select industrial design tools (only if industrial purpose selected)."""
+    if 'industrial' not in state.device_purposes:
+        state.industrial_tools = []
+        return 'next'
+
+    items = [
+        MenuItem(info['label'], value=key)
+        for key, info in INDUSTRIAL_OPTIONS.items()
+        if option_allowed(info, state.country)
+    ]
+    group = MenuItemGroup(items)
+
+    preselect = [
+        key for key in state.industrial_tools
+        if key in INDUSTRIAL_OPTIONS
+        and option_allowed(INDUSTRIAL_OPTIONS[key], state.country)
+    ]
+    if preselect:
+        group.set_selected_by_value(preselect)
+
+    result = await Selection[str](
+        group,
+        header=_build_progress_header(state, step_industrial_tools, 'opt.industrial.title'),
+        multi=True,
+        allow_skip=True,
+    ).show()
+
+    match result.type_:
+        case ResultType.Skip:
+            state.industrial_tools = []
+            return 'next'
+        case ResultType.Selection:
+            state.industrial_tools = result.get_values()
+            return 'next'
+        case _:
+            return 'next'
+
+
 async def step_virtual_machine(state: WizardState) -> str:
     """Select VM components (only if virtual_machine purpose selected)."""
     if 'virtual_machine' not in state.device_purposes:
+        state.vm_options = []
         return 'next'
 
     # Show GPU passthrough features when multiple display controller devices
@@ -1004,7 +1121,7 @@ async def step_virtual_machine(state: WizardState) -> str:
     # Build option items - only show GPU-related options if dGPU detected
     items = []
     for key, info in VM_OPTIONS.items():
-        if key in ('gpu_passthrough', 'looking_glass') and not has_dgpu:
+        if key in GPU_VM_OPTIONS and not has_dgpu:
             continue
         items.append(MenuItem(info['label'], value=key))
 
@@ -1014,8 +1131,12 @@ async def step_virtual_machine(state: WizardState) -> str:
     preselect = ['kvm_base', 'nested_virt']
     if has_dgpu:
         preselect.extend(['gpu_passthrough', 'looking_glass'])
-    if state.vm_options:
-        group.set_selected_by_value(state.vm_options)
+    chosen_preselect = [
+        key for key in state.vm_options
+        if key in VM_OPTIONS and (has_dgpu or key not in GPU_VM_OPTIONS)
+    ]
+    if chosen_preselect:
+        group.set_selected_by_value(chosen_preselect)
     else:
         group.set_selected_by_value(preselect)
 
@@ -1031,13 +1152,16 @@ async def step_virtual_machine(state: WizardState) -> str:
             state.vm_options = []
             return 'next'
         case ResultType.Selection:
-            selected = result.get_values()
-
-            # Enforce dependency: looking_glass requires gpu_passthrough
-            if 'looking_glass' in selected and 'gpu_passthrough' not in selected:
-                selected.remove('looking_glass')
-
-            state.vm_options = selected
+            chosen = set(result.get_values())
+            if not has_dgpu:
+                chosen -= GPU_VM_OPTIONS
+            # Enforce dependency: looking_glass requires gpu_passthrough.
+            if 'looking_glass' in chosen and 'gpu_passthrough' not in chosen:
+                chosen.discard('looking_glass')
+            # Enforce dependency: dependent VM features require the KVM base.
+            if chosen & VM_DEPENDENT_OPTIONS:
+                chosen.add('kvm_base')
+            state.vm_options = [key for key in VM_OPTIONS if key in chosen]
             return 'next'
         case _:
             return 'next'
@@ -1045,14 +1169,25 @@ async def step_virtual_machine(state: WizardState) -> str:
 
 async def step_remote_desktop(state: WizardState) -> str:
     """Select remote desktop tools."""
+    available = {
+        key: info
+        for key, info in REMOTE_DESKTOP_OPTIONS.items()
+        if option_allowed(info, state.country)
+        and not (info.get('graphical_only') and state.desktop_env == 'minimal')
+    }
+    if not available:
+        state.remote_desktop = []
+        return 'next'
+
     items = [
         MenuItem(info['label'], value=key)
-        for key, info in REMOTE_DESKTOP_OPTIONS.items()
+        for key, info in available.items()
     ]
     group = MenuItemGroup(items)
 
-    if state.remote_desktop:
-        group.set_selected_by_value(state.remote_desktop)
+    preselect = [key for key in state.remote_desktop if key in available]
+    if preselect:
+        group.set_selected_by_value(preselect)
 
     result = await Selection[str](
         group,
@@ -1066,7 +1201,9 @@ async def step_remote_desktop(state: WizardState) -> str:
             state.remote_desktop = []
             return 'next'
         case ResultType.Selection:
-            state.remote_desktop = result.get_values()
+            state.remote_desktop = [
+                key for key in result.get_values() if key in available
+            ]
             return 'next'
         case _:
             return 'next'
@@ -1075,6 +1212,7 @@ async def step_remote_desktop(state: WizardState) -> str:
 async def step_cn_apps(state: WizardState) -> str:
     """Select CN communication apps (CN region only, multi-select)."""
     if state.country != 'CN':
+        state.cn_apps = []
         return 'next'
 
     items = [
@@ -1206,7 +1344,7 @@ WIZARD_CATEGORIES: list[tuple[str, list[Callable]]] = [
     ('category.system', [step_proxy_tools, step_disk, step_hibernation, step_network, step_hostname]),
     ('category.hardware', [step_repos, step_gpu_drivers, step_audio_firmware]),
     ('category.desktop', [step_desktop_env, step_dms_compositor, step_dms_terminal, step_polkit_agent, step_keyring, step_file_manager]),
-    ('category.software', [step_device_purpose, step_dev_tools, step_gaming, step_virtual_machine, step_browser, step_remote_desktop, step_cn_apps]),
+    ('category.software', [step_device_purpose, step_dev_tools, step_gaming, step_media_tools, step_industrial_tools, step_virtual_machine, step_browser, step_remote_desktop, step_cn_apps]),
     ('category.account', [step_username, step_user_password, step_root_password]),
 ]
 
@@ -1216,13 +1354,15 @@ _STEP_SKIP_CONDITIONS: dict[Callable, Callable[[WizardState], bool]] = {
     step_input_method: lambda s: s.locale == 'en_US.UTF-8',
     step_kmscon_font: lambda s: not needs_kmscon(s.locale),
     step_proxy_tools: lambda s: s.country != 'CN',
-    step_dms_compositor: lambda s: s.desktop_env not in ('dms', 'dms_manual'),
-    step_dms_terminal: lambda s: s.desktop_env not in ('dms', 'dms_manual'),
-    step_polkit_agent: lambda s: s.desktop_env == 'minimal',
+    step_dms_compositor: lambda s: s.desktop_env != 'dms',
+    step_dms_terminal: lambda s: s.desktop_env != 'dms',
+    step_polkit_agent: lambda s: s.desktop_env in ('minimal', 'dms'),
     step_keyring: lambda s: s.desktop_env == 'minimal',
     step_file_manager: lambda s: s.desktop_env == 'minimal',
     step_dev_tools: lambda s: 'development' not in s.device_purposes,
     step_gaming: lambda s: 'gaming' not in s.device_purposes or not s.multilib,
+    step_media_tools: lambda s: 'media' not in s.device_purposes,
+    step_industrial_tools: lambda s: 'industrial' not in s.device_purposes,
     step_virtual_machine: lambda s: 'virtual_machine' not in s.device_purposes,
     step_cn_apps: lambda s: s.country != 'CN',
 }
@@ -1264,6 +1404,7 @@ async def step_confirm(
     """Confirmation panel: Install / Advanced Modify / Cancel."""
     # Build summary text with dynamic left-aligned padding
     kmscon_needed = needs_kmscon(state.locale)
+    normalize_optional_state(state)
 
     def _row(label: str, value: str, indent: int = 0) -> tuple[int, str, str]:
         """Return (indent, label, value) for later formatting."""
@@ -1310,7 +1451,7 @@ async def step_confirm(
         ),
         _row(
             t('confirm.device_purpose'),
-            ', '.join(DEVICE_PURPOSES[k] for k in state.device_purposes) if state.device_purposes else 'None',
+            ', '.join(_purpose_label(k) for k in state.device_purposes) if state.device_purposes else 'None',
         ),
         _row(
             t('confirm.remote_desktop'),
@@ -1358,10 +1499,20 @@ async def step_confirm(
             t('confirm.gaming'),
             ', '.join(GAMING_OPTIONS[k]['label'] for k in state.gaming_tools) if state.gaming_tools else 'None',
         ))
+    if 'media' in state.device_purposes:
+        rows.append(_row(
+            t('confirm.media'),
+            ', '.join(MEDIA_OPTIONS[k]['label'] for k in state.media_tools) if state.media_tools else 'None',
+        ))
+    if 'industrial' in state.device_purposes:
+        rows.append(_row(
+            t('confirm.industrial'),
+            ', '.join(INDUSTRIAL_OPTIONS[k]['label'] for k in state.industrial_tools) if state.industrial_tools else 'None',
+        ))
     if 'virtual_machine' in state.device_purposes and state.vm_options:
         rows.append(_row(
             t('confirm.vm_options'),
-            ', '.join(VM_OPTIONS[k]['label'] for k in state.vm_options if k in VM_OPTIONS),
+            ', '.join(VM_OPTIONS[k]['label'] for k in state.vm_options),
         ))
 
     fixed_rows: list[tuple[int, str, str]] = [
@@ -1373,11 +1524,7 @@ async def step_confirm(
         _row('Swap', 'zram (lzo-rle)'),
     ]
     if state.desktop_env == 'dms':
-        fixed_rows.append(_row(t('confirm.desktop'), 'DankMaterialShell (DankInstall)'))
-        fixed_rows.append(_row(t('confirm.compositor'), state.dms_compositor, indent=2))
-        fixed_rows.append(_row(t('confirm.terminal'), state.dms_terminal, indent=2))
-    elif state.desktop_env == 'dms_manual':
-        fixed_rows.append(_row(t('confirm.desktop'), 'DankMaterialShell (Manual)'))
+        fixed_rows.append(_row(t('confirm.desktop'), 'Dux Shell'))
         fixed_rows.append(_row(t('confirm.compositor'), state.dms_compositor, indent=2))
         fixed_rows.append(_row(t('confirm.terminal'), state.dms_terminal, indent=2))
     elif state.desktop_env == 'exo':
@@ -1459,6 +1606,8 @@ async def run_wizard(
         step_device_purpose,
         step_dev_tools,
         step_gaming,
+        step_media_tools,
+        step_industrial_tools,
         step_virtual_machine,
         step_browser,
         step_remote_desktop,

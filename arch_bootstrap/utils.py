@@ -250,6 +250,7 @@ set -euo pipefail
 url="$1"
 output="$2"
 PROXY="__PROXY__"
+FALLBACK_PROXY="__FALLBACK_PROXY__"
 
 CURL_OPTS=(-gqb "" -fLC - --retry 3 --retry-delay 3)
 
@@ -260,13 +261,19 @@ case "$url" in
     | https://codeload.github.com/* \
     | https://github-releases.githubusercontent.com/*)
         # Some GitHub/proxy connections reset HTTP/2 streams during large downloads.
-        # Keep the same transport for the proxy and direct fallback, including redirects.
+        # Keep the same transport for both proxies and the origin, including redirects.
         CURL_OPTS+=(--http1.1)
         proxied="${PROXY}/${url}"
         if /usr/bin/curl "${CURL_OPTS[@]}" -o "$output" "$proxied"; then
             exit 0
         fi
-        echo "github-proxy-dl: proxy failed, trying direct download..." >&2
+        if [[ "$PROXY" != "$FALLBACK_PROXY" ]]; then
+            echo "github-proxy-dl: proxy failed, trying fallback ${FALLBACK_PROXY}..." >&2
+            if /usr/bin/curl "${CURL_OPTS[@]}" -o "$output" "${FALLBACK_PROXY}/${url}"; then
+                exit 0
+            fi
+        fi
+        echo "github-proxy-dl: proxy download failed, trying direct download..." >&2
         ;;
 esac
 
@@ -279,14 +286,17 @@ def install_github_proxy_dl(chroot_dir: Path, proxy: str) -> None:
 
     Installs ``/usr/local/bin/github-proxy-dl`` and rewrites the HTTPS
     DLAGENT in ``/etc/makepkg.conf`` so that makepkg source downloads
-    from GitHub domains are transparently proxied.
+    from GitHub domains try the selected proxy, the configured fallback proxy,
+    and finally the original URL. An identical fallback is not retried.
 
     Args:
         chroot_dir: Absolute path to the mounted chroot.
         proxy: Proxy base URL, e.g. ``'https://ghfast.top'``.
     """
     # 1. Write the download agent script
-    script = _GITHUB_PROXY_DL_TEMPLATE.replace('__PROXY__', proxy)
+    script = _GITHUB_PROXY_DL_TEMPLATE.replace('__PROXY__', proxy).replace(
+        '__FALLBACK_PROXY__', GHPROXY_FALLBACK,
+    )
     script_path = chroot_dir / 'usr' / 'local' / 'bin' / 'github-proxy-dl'
     script_path.parent.mkdir(parents=True, exist_ok=True)
     script_path.write_text(script)

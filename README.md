@@ -78,7 +78,7 @@ Desktop configuration integration tests require `archinstall`; the shell-plugin 
 
 The CN makepkg download agent uses HTTP/1.1 for GitHub URLs, their proxy requests, and redirects. This avoids HTTP/2 stream-reset errors such as `curl: (92) ... PROTOCOL_ERROR` on affected routes. Other HTTPS sources retain their normal protocol negotiation.
 
-Proxy failures remain visible before the agent falls back to the original URL. Both attempts retain the existing partial download for range-based resume; the final curl error is returned to makepkg if neither route succeeds. Retry counts and makepkg source verification are unchanged. This does not make an unreachable or very slow GitHub connection reliable.
+For GitHub sources, the agent tries the selected proxy, then `https://ghfast.top`, and finally the original GitHub URL. If the selected proxy is already `ghfast.top`, the duplicate fallback stage is skipped. Errors remain visible at each stage, and all routes retain the existing partial download for range-based resume. If every route fails, the final curl error is returned to makepkg. Each route keeps the existing retry settings; TLS verification and makepkg source verification are unchanged. This does not make an unreachable or very slow connection reliable.
 
 Updating the installer only changes download agents deployed by subsequent installations. To recover an older installation without restarting the installer, edit `/usr/local/bin/github-proxy-dl` on the target system. Inside its GitHub `case` branch, immediately before `proxied=...`, add:
 
@@ -87,6 +87,8 @@ CURL_OPTS+=(--http1.1)
 ```
 
 From the live ISO, the same file is normally at `/mnt/usr/local/bin/github-proxy-dl`. Retry at the existing prompt after saving; a running download does not reload the script. Do not rely on `~/.curlrc`, because the agent disables the default curl configuration with `-q`.
+
+For immediate recovery with an older agent, its `PROXY=` value can also be set to `https://ghfast.top`. This selects that proxy directly; it does not retrofit the new multi-stage fallback into an already deployed script.
 
 If the download still fails, answer `n` at the **additional AUR packages** retry prompt to continue the remaining installation steps, then retry the missing application from a working network after boot. Already installed packages are not removed. Do not rerun the destructive installer or clear the download cache merely to retry an optional application.
 

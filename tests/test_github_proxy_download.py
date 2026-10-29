@@ -15,6 +15,7 @@ from arch_bootstrap import utils
 
 ASSET_URL = 'https://github.com/example/project/releases/download/v1/asset.deb'
 PROXY_HOST = 'proxy.invalid'
+FALLBACK_HOST = 'ghfast.top'
 PAYLOAD = b'arch-bootstrap release asset fixture\n' * 32
 
 
@@ -44,7 +45,7 @@ class TunnelHandler(BaseHTTPRequestHandler):
 
     def do_CONNECT(self) -> None:
         host, _, port = self.path.rpartition(':')
-        if host not in {'github.com', PROXY_HOST, 'downloads.invalid'} or port != '443':
+        if host not in {'github.com', PROXY_HOST, FALLBACK_HOST, 'downloads.invalid'} or port != '443':
             self.send_error(502)
             return
         self.send_response(200)
@@ -82,7 +83,7 @@ class GitHubProxyDownloadTests(unittest.TestCase):
                 'openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
                 '-keyout', str(key), '-out', str(cls.certificate), '-days', '1',
                 '-subj', '/CN=github.com',
-                '-addext', 'subjectAltName=DNS:github.com,DNS:proxy.invalid,DNS:downloads.invalid',
+                '-addext', f'subjectAltName=DNS:github.com,DNS:{PROXY_HOST},DNS:{FALLBACK_HOST},DNS:downloads.invalid',
             ],
             check=True, capture_output=True, text=True,
         )
@@ -144,7 +145,7 @@ class GitHubProxyDownloadTests(unittest.TestCase):
         self.assertEqual(self.server.protocols, [(PROXY_HOST, 'http/1.1')])
         self.assertEqual(self.server.requests, [(PROXY_HOST, '/' + ASSET_URL, None)])
 
-    def test_failed_proxy_reports_error_and_resumes_direct_download(self) -> None:
+    def test_failed_proxies_report_errors_and_resume_direct_download(self) -> None:
         self.output.write_bytes(PAYLOAD[:17])
         self.server.responses[('github.com', '/example/project/releases/download/v1/asset.deb')] = (200, PAYLOAD)
 
@@ -155,11 +156,45 @@ class GitHubProxyDownloadTests(unittest.TestCase):
         self.assertIn('404', result.stderr)
         self.assertEqual(
             self.server.protocols,
-            [(PROXY_HOST, 'http/1.1'), ('github.com', 'http/1.1')],
+            [(PROXY_HOST, 'http/1.1'), (FALLBACK_HOST, 'http/1.1'), ('github.com', 'http/1.1')],
         )
         self.assertEqual(
             self.server.requests[-1],
             ('github.com', '/example/project/releases/download/v1/asset.deb', 'bytes=17-'),
+        )
+
+    def test_failed_primary_resumes_from_ghfast_before_direct(self) -> None:
+        self.output.write_bytes(PAYLOAD[:17])
+        self.server.responses[(FALLBACK_HOST, '/' + ASSET_URL)] = (200, PAYLOAD)
+
+        result = self.download()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.output.read_bytes(), PAYLOAD)
+        self.assertEqual(
+            self.server.requests,
+            [
+                (PROXY_HOST, '/' + ASSET_URL, 'bytes=17-'),
+                (FALLBACK_HOST, '/' + ASSET_URL, 'bytes=17-'),
+            ],
+        )
+        self.assertEqual(
+            self.server.protocols,
+            [(PROXY_HOST, 'http/1.1'), (FALLBACK_HOST, 'http/1.1')],
+        )
+
+    def test_ghfast_primary_is_not_repeated_when_it_fails(self) -> None:
+        with patch.object(utils, '_info'), patch.object(utils, '_debug'):
+            utils.install_github_proxy_dl(self.root, f'https://{FALLBACK_HOST}')
+        self.server.responses[('github.com', '/example/project/releases/download/v1/asset.deb')] = (200, PAYLOAD)
+
+        result = self.download()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.output.read_bytes(), PAYLOAD)
+        self.assertEqual(
+            [host for host, _, _ in self.server.requests],
+            [FALLBACK_HOST, 'github.com'],
         )
 
     def test_failed_origin_preserves_partial_file_and_returns_curl_error(self) -> None:
@@ -172,7 +207,7 @@ class GitHubProxyDownloadTests(unittest.TestCase):
         self.assertEqual(self.output.read_bytes(), partial)
         self.assertEqual(
             [host for host, _, _ in self.server.requests],
-            [PROXY_HOST, 'github.com'],
+            [PROXY_HOST, FALLBACK_HOST, 'github.com'],
         )
 
     def test_other_https_sources_bypass_github_proxy(self) -> None:

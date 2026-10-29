@@ -259,8 +259,11 @@ case "$url" in
     | https://objects.githubusercontent.com/* \
     | https://codeload.github.com/* \
     | https://github-releases.githubusercontent.com/*)
+        # Some GitHub/proxy connections reset HTTP/2 streams during large downloads.
+        # Keep the same transport for the proxy and direct fallback, including redirects.
+        CURL_OPTS+=(--http1.1)
         proxied="${PROXY}/${url}"
-        if /usr/bin/curl "${CURL_OPTS[@]}" -o "$output" "$proxied" 2>/dev/null; then
+        if /usr/bin/curl "${CURL_OPTS[@]}" -o "$output" "$proxied"; then
             exit 0
         fi
         echo "github-proxy-dl: proxy failed, trying direct download..." >&2

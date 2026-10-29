@@ -70,9 +70,26 @@ Run the focused tests without starting installation:
 python -m unittest discover -s tests -v
 ```
 
-Desktop configuration integration tests require `archinstall`; the shell-plugin test additionally requires `zsh`. Those tests are skipped when their dependencies are unavailable. Package-selection, Dux lifecycle, translation, and maintenance-script tests also run without `archinstall`.
+Desktop configuration integration tests require `archinstall`; the shell-plugin test additionally requires `zsh`. Download integration tests require `/usr/bin/curl`, OpenSSL, and Python TLS ALPN support. Tests with missing dependencies are skipped. The download tests use local HTTPS fixtures, not public GitHub downloads.
 
 ## Post-install maintenance
+
+### Recover GitHub release downloads
+
+The CN makepkg download agent uses HTTP/1.1 for GitHub URLs, their proxy requests, and redirects. This avoids HTTP/2 stream-reset errors such as `curl: (92) ... PROTOCOL_ERROR` on affected routes. Other HTTPS sources retain their normal protocol negotiation.
+
+Proxy failures remain visible before the agent falls back to the original URL. Both attempts retain the existing partial download for range-based resume; the final curl error is returned to makepkg if neither route succeeds. Retry counts and makepkg source verification are unchanged. This does not make an unreachable or very slow GitHub connection reliable.
+
+Updating the installer only changes download agents deployed by subsequent installations. To recover an older installation without restarting the installer, edit `/usr/local/bin/github-proxy-dl` on the target system. Inside its GitHub `case` branch, immediately before `proxied=...`, add:
+
+```bash
+CURL_OPTS+=(--http1.1)
+```
+
+From the live ISO, the same file is normally at `/mnt/usr/local/bin/github-proxy-dl`. Retry at the existing prompt after saving; a running download does not reload the script. Do not rely on `~/.curlrc`, because the agent disables the default curl configuration with `-q`.
+
+If the download still fails, answer `n` at the **additional AUR packages** retry prompt to continue the remaining installation steps, then retry the missing application from a working network after boot. Already installed packages are not removed. Do not rerun the destructive installer or clear the download cache merely to retry an optional application.
+
 
 ### Remove the GitHub source-download proxy
 
@@ -180,6 +197,7 @@ Personal configuration belongs in a separate chezmoi source repository, not in t
 - `tests/test_package_selection.py` — conditional selections, source routing, and package dependencies.
 - `tests/test_desktop_configuration.py` — shell activation, GTK/MIME preservation, and IOMMU parameters.
 - `tests/test_github_proxy_uninstall.py` — configuration preservation and uninstall behavior tests.
+- `tests/test_github_proxy_download.py` — real curl transfers over local TLS, proxy fallback, partial-file resume, and failure propagation.
 - `.github/workflows/package.yml` — zipapp build and tagged release automation.
 
 ## Limitations

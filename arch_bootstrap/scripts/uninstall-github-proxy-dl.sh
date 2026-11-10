@@ -1,6 +1,46 @@
 #!/usr/bin/env bash
-# Remove the makepkg download proxy deployed by arch-bootstrap.
+# Remove the GitHub download and Git proxies deployed by arch-bootstrap.
 set -euo pipefail
+
+remove_github_git_proxy() {
+    local config="$1"
+    [[ -f "$config" ]] || return 0
+
+    local -a git_config=(git config --file "$config")
+    if (( EUID == 0 )) && [[ ! -O "$config" ]]; then
+        # Git replaces the config via a lock file; keep user files user-owned.
+        git_config=(runuser -u "$(stat -Lc %U -- "$config")" -- "${git_config[@]}")
+    fi
+
+    # NUL-delimited records preserve spaces; deduplicate repeated config values.
+    "${git_config[@]}" --null --list | sort -zu |
+        while IFS= read -r -d '' entry; do
+            local key="${entry%%$'\n'*}"
+            local value="${entry#*$'\n'}"
+            local target
+            case "$key" in
+                url.*.insteadof)
+                    target="${key#url.}"
+                    target="${target%.insteadof}"
+                    if [[ "$value" == 'https://github.com/' ]] &&
+                        [[ "$target" == https://*/https://github.com/ ||
+                           "$target" == http://*/https://github.com/ ]]; then
+                        "${git_config[@]}" --fixed-value --unset-all "$key" "$value"
+                        printf 'Removed GitHub proxy rewrite from %s.\n' "$config"
+                    fi
+                    ;;
+                remote.*.url|remote.*.pushurl)
+                    case "$value" in
+                        https://*/https://github.com/*|http://*/https://github.com/*)
+                            target="https://github.com/${value#*/https://github.com/}"
+                            "${git_config[@]}" --fixed-value --replace-all "$key" "$target" "$value"
+                            printf 'Restored %s to %s in %s.\n' "$key" "$target" "$config"
+                            ;;
+                    esac
+                    ;;
+            esac
+        done
+}
 
 uninstall_github_proxy_dl() {
     local root="${1%/}"
@@ -28,6 +68,19 @@ uninstall_github_proxy_dl() {
 
     rm -f -- "$wrapper"
     printf 'Removed %s (if present).\n' "$wrapper"
+
+    local git_config home git_dir
+    for git_config in "$root/etc/gitconfig" "$root/etc/makepkg.d/gitconfig"; do
+        remove_github_git_proxy "$git_config"
+    done
+
+    for home in "$root/root" "$root"/home/*; do
+        [[ -d "$home/.oh-my-zsh" ]] || continue
+        find "$home/.oh-my-zsh" -type d -name .git -prune -print0 |
+            while IFS= read -r -d '' git_dir; do
+                remove_github_git_proxy "$git_dir/config"
+            done
+    done
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

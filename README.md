@@ -93,9 +93,9 @@ For immediate recovery with an older agent, its `PROXY=` value can also be set t
 If the download still fails, answer `n` at the **additional AUR packages** retry prompt to continue the remaining installation steps, then retry the missing application from a working network after boot. Already installed packages are not removed. Do not rerun the destructive installer or clear the download cache merely to retry an optional application.
 
 
-### Remove the GitHub source-download proxy
+### Remove GitHub download and Git proxies
 
-CN installations deploy `/usr/local/bin/github-proxy-dl` and configure the HTTPS entry in `/etc/makepkg.conf` to use it. To remove this wrapper, run the standalone uninstall script on the installed system, not the live-ISO installer:
+CN installations deploy `/usr/local/bin/github-proxy-dl`, configure the HTTPS entry in `/etc/makepkg.conf`, and write GitHub URL rewrites to `/etc/gitconfig` and `/etc/makepkg.d/gitconfig`. Oh My Zsh and its custom plugins can also retain proxy-prefixed Git remotes. To remove these proxies, run the standalone uninstall script on the installed system, not the live-ISO installer:
 
 ```bash
 sudo bash arch_bootstrap/scripts/uninstall-github-proxy-dl.sh
@@ -110,9 +110,15 @@ less uninstall-github-proxy-dl.sh
 sudo bash uninstall-github-proxy-dl.sh
 ```
 
-The script requires only Bash and standard Arch system utilities; it does not import `archinstall` or run installation. It restores the HTTPS download command written by arch-bootstrap to `/usr/bin/curl`, then removes the wrapper. Other download agents, build settings, Git URL rewrites, network proxy applications, and package caches are left unchanged.
+The script requires Bash, Git, and standard Arch system utilities (`find`, `sort`, `stat`, and `runuser` for user-owned Git files when running as root). It does not import `archinstall` or run installation. It:
 
-It is safe to run again if the wrapper is already absent. If the configuration contains a modified wrapper reference that the script cannot safely restore, it exits without changing the configuration or removing the wrapper; review that reference manually before retrying. Start a new `makepkg` or AUR-helper invocation after removal so it reads the updated configuration.
+- Restores the HTTPS download command written by arch-bootstrap to `/usr/bin/curl`, then removes `/usr/local/bin/github-proxy-dl`.
+- Removes proxy-prefixed GitHub `insteadOf` values from `/etc/gitconfig` and `/etc/makepkg.d/gitconfig`, preserving other values and settings in those files.
+- Restores proxy-prefixed fetch and push URLs in standard Git repositories under `/root/.oh-my-zsh` and `/home/*/.oh-my-zsh`, including custom plugins. User-owned Git files are edited as their owner to avoid leaving root-owned configs.
+
+Git proxy cleanup recognizes HTTP(S) mirror prefixes wrapping `https://github.com/`, not just `ghfast.top`, because the installer resolves the mirror dynamically. Direct HTTPS/SSH remotes, non-GitHub URLs, other download agents, build settings, and package caches are preserved. User-global Git configuration, ordinary projects outside those Oh My Zsh directories, custom Oh My Zsh installation paths, repositories using a `.git` file instead of a directory, and network proxy applications are not changed.
+
+It is safe to run again if the wrapper or Git proxy settings are already absent. If the makepkg configuration contains a modified wrapper reference that the script cannot safely restore, it exits before changing any configuration or removing the wrapper; review that reference manually before retrying. Git configuration errors also stop cleanup with a nonzero exit status; earlier successful changes are not rolled back. Start a new `makepkg` or AUR-helper invocation after removal so it reads the updated configuration.
 
 The script is available from the repository; it is not automatically installed into the target system. Future bootstrap deployments can install the proxy again.
 
@@ -194,7 +200,7 @@ Personal configuration belongs in a separate chezmoi source repository, not in t
 - `arch_bootstrap/dms.py` — native Dux installation, official setup, and retained desktop customizations.
 - `arch_bootstrap/i18n.py` — English, Simplified Chinese, and Japanese strings.
 - `arch_bootstrap/archinstall_compat.py` — archinstall API compatibility boundary.
-- `arch_bootstrap/scripts/uninstall-github-proxy-dl.sh` — standalone post-install download-proxy removal.
+- `arch_bootstrap/scripts/uninstall-github-proxy-dl.sh` — standalone post-install download and Git proxy removal.
 - `tests/test_dms_installers.py` — focused DMS behavior tests.
 - `tests/test_package_selection.py` — conditional selections, source routing, and package dependencies.
 - `tests/test_desktop_configuration.py` — shell activation, GTK/MIME preservation, and IOMMU parameters.
